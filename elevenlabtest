@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ElevenLabs API Test</title>
+    <script>
+        async function testElevenLabs() {
+            const apiKey = "sk_19aea2de82fa5155ddd3287d6bf01edaf8c4f7d08598cbd9"; // Replace with your actual ElevenLabs API key
+            const voiceId = "fEVT2ExfHe1MyjuiIiU9";  // Replace with a valid voice ID from your account
+
+            if (!apiKey) {
+                console.error("ElevenLabs API key is missing.  Please replace 'YOUR_ELEVENLABS_API_KEY' with your key.");
+                return;
+            }
+
+            if (!voiceId) {
+                console.error("ElevenLabs Voice ID is missing. Please replace 'YOUR_VOICE_ID' with a valid voice ID from your account.");
+                return;
+            }
+
+            try {
+                const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Accept': 'audio/mpeg',
+                        'Content-Type': 'application/json',
+                        'xi-api-key': apiKey,
+                    },
+                    body: JSON.stringify({
+                        text: "This is a test message.",
+                        model_id: "eleven_monolingual_v1",
+                        voice_settings: {
+                            stability: 0.5,
+                            similarity_boost: 0.5,
+                        },
+                    }),
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error(`ElevenLabs API error: ${response.status} - ${errorText}`);
+                    return;
+                }
+
+                const audioData = await response.arrayBuffer();
+                const audioContext = new AudioContext();
+                audioContext.decodeAudioData(audioData, (buffer) => {
+                    const source = audioContext.createBufferSource();
+                    source.buffer = buffer;
+                    source.connect(audioContext.destination);
+                    source.start();
+                }, (error) => {
+                    console.error("Error decoding audio data:", error);
+                });
+
+            } catch (error) {
+                console.error("Error:", error);
+            }
+        }
+    </script>
+</head>
+<body>
+    <button onclick="testElevenLabs()">Test ElevenLabs API</button>
+</body>
+</html>
