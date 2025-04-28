@@ -5,7 +5,6 @@ require("dotenv").config();
 const express = require("express");
 const axios = require("axios");
 const cors = require("cors");
-const fs = require("fs");
 
 // Setup Express app
 const app = express();
@@ -18,12 +17,11 @@ console.log("🧪 ENV DEBUG:", {
   CHATBASE_BOT_ID: process.env.CHATBASE_BOT_ID,
   ELEVEN_API_KEY: process.env.ELEVEN_API_KEY,
   ELEVEN_VOICE_ID: process.env.ELEVEN_VOICE_ID,
-  OPENAI_API_KEY: process.env.OPENAI_API_KEY,
 });
 
 // Root route
 app.get("/", (req, res) => {
-  res.send("Welcome to BetterChat! The chatbot that improves conversations.");
+  res.send("Welcome to Waterwheel Village Chatbot!");
 });
 
 // Chat endpoint (using Chatbase)
@@ -32,10 +30,11 @@ app.post("/chat", async (req, res) => {
     const userText = req.body.text;
 
     const chatbaseResponse = await axios.post(
-      "https://www.chatbase.co/api/v1/chat",
+      "https://www.chatbase.co/api/v1/chat/completions",
       {
         messages: [{ role: "user", content: userText }],
         chatbotId: process.env.CHATBASE_BOT_ID,
+        stream: false
       },
       {
         headers: {
@@ -45,7 +44,7 @@ app.post("/chat", async (req, res) => {
       }
     );
 
-    const replyText = chatbaseResponse.data?.messages?.[0]?.content || "Sorry, I had trouble understanding you.";
+    const replyText = chatbaseResponse.data?.choices?.[0]?.message?.content || "Sorry, I had trouble understanding you.";
     res.json({ text: replyText });
   } catch (error) {
     console.error("🔥 Chatbase error:", error?.response?.data || error.message);
@@ -76,9 +75,9 @@ app.post("/speakbase", async (req, res) => {
       console.log(`🎩 Detected character: ${nameDetected}`);
     }
 
-    // Get chat response from live server
+    // Get chat response
     const chatResponse = await axios.post(
-      "https://betterchat-app.onrender.com/chat",
+      "https://waterwheel-village.onrender.com/chat",
       { text: userText },
       { headers: { "Content-Type": "application/json" } }
     );
