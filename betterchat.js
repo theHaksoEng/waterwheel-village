@@ -24,10 +24,10 @@ console.log("🧪 ENV DEBUG:", {
 
 // Root route
 app.get("/", (req, res) => {
-  res.send("🌟 Welcome to Waterwheel Village Chatbot!");
+  res.send("Welcome to Waterwheel Village Chatbot!");
 });
 
-// Chat endpoint (Talks with your Chatbase bot)
+// Chat endpoint (using Chatbase + Waterwheel System Prompt)
 app.post("/chat", async (req, res) => {
   try {
     const userText = req.body.text;
@@ -35,12 +35,15 @@ app.post("/chat", async (req, res) => {
     const chatbaseResponse = await axios.post(
       "https://www.chatbase.co/api/v1/chat",
       {
-        messages: [{ role: "user", content: userText }],
+        messages: [
+          { role: "system", content: "You are Aaron Hakso from Waterwheel Village. You help learners practice English naturally by roleplaying as different friendly villagers, including Fatima the healer from Sudan. Stay in character, answer warmly and expressively, and encourage conversation." },
+          { role: "user", content: userText }
+        ],
         chatbotId: process.env.CHATBASE_BOT_ID,
       },
       {
         headers: {
-          "Authorization": `Bearer ${process.env.CHATBASE_API_KEY}`,
+          Authorization: `Bearer ${process.env.CHATBASE_API_KEY}`,
           "Content-Type": "application/json",
         },
       }
@@ -48,9 +51,10 @@ app.post("/chat", async (req, res) => {
 
     const replyText = chatbaseResponse.data?.messages?.[0]?.content || "Sorry, I had trouble understanding you.";
     res.json({ text: replyText });
+
   } catch (error) {
     console.error("🔥 Chatbase error:", error?.response?.data || error.message);
-    res.status(500).json({ text: "Sorry, I had trouble understanding you." });
+    res.status(500).send("Chatbase error");
   }
 });
 
@@ -77,7 +81,7 @@ app.post("/speakbase", async (req, res) => {
       console.log(`🎩 Detected character: ${nameDetected}`);
     }
 
-    // Get chat response again for speaking
+    // Get chat response from live server
     const chatResponse = await axios.post(
       "https://waterwheel-village.onrender.com/chat",
       { text: userText },
@@ -119,7 +123,7 @@ app.post("/speakbase", async (req, res) => {
     res.send(voiceResponse.data);
 
   } catch (error) {
-    console.error("❌ Speakbase error:", error?.response?.data || error.message);
+    console.error("❌ Speakbase Error:", error?.response?.data || error.message);
     res.status(500).json({ error: "Speakbase error occurred." });
   }
 });
@@ -129,4 +133,3 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
-
