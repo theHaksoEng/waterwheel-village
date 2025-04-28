@@ -5,6 +5,7 @@ require("dotenv").config();
 const express = require("express");
 const axios = require("axios");
 const cors = require("cors");
+const fs = require("fs");
 
 // Setup Express app
 const app = express();
@@ -17,50 +18,41 @@ console.log("🧪 ENV DEBUG:", {
   CHATBASE_BOT_ID: process.env.CHATBASE_BOT_ID,
   ELEVEN_API_KEY: process.env.ELEVEN_API_KEY,
   ELEVEN_VOICE_ID: process.env.ELEVEN_VOICE_ID,
-  FATIMA_VOICE_ID: process.env.FATIMA_VOICE_ID,   // <-- ADD this
-  OPENAI_API_KEY: process.env.OPENAI_API_KEY      // <-- ADD this
+  FATIMA_VOICE_ID: process.env.FATIMA_VOICE_ID,
+  OPENAI_API_KEY: process.env.OPENAI_API_KEY,
 });
-
 
 // Root route
 app.get("/", (req, res) => {
-  res.send("Welcome to Waterwheel Village Chatbot!");
+  res.send("🌟 Welcome to Waterwheel Village Chatbot!");
 });
 
-// Chat endpoint (using Chatbase)
-// Chat endpoint (corrected for Chatbase)
+// Chat endpoint (Talks with your Chatbase bot)
 app.post("/chat", async (req, res) => {
   try {
     const userText = req.body.text;
 
     const chatbaseResponse = await axios.post(
-      "https://www.chatbase.co/api/v1/chat", // Correct Chatbase endpoint
+      "https://www.chatbase.co/api/v1/chat",
       {
-        messages: [
-          {
-            role: "user",
-            content: userText
-          }
-        ],
-        chatbotId: process.env.CHATBASE_BOT_ID
+        messages: [{ role: "user", content: userText }],
+        chatbotId: process.env.CHATBASE_BOT_ID,
       },
       {
         headers: {
-          Authorization: `Bearer ${process.env.CHATBASE_API_KEY}`,
-          "Content-Type": "application/json"
-        }
+          "Authorization": `Bearer ${process.env.CHATBASE_API_KEY}`,
+          "Content-Type": "application/json",
+        },
       }
     );
 
     const replyText = chatbaseResponse.data?.messages?.[0]?.content || "Sorry, I had trouble understanding you.";
     res.json({ text: replyText });
-
   } catch (error) {
     console.error("🔥 Chatbase error:", error?.response?.data || error.message);
-    res.status(500).send("Chatbase error");
+    res.status(500).json({ text: "Sorry, I had trouble understanding you." });
   }
 });
-
 
 // Speakbase endpoint (Chatbase + ElevenLabs voice)
 app.post("/speakbase", async (req, res) => {
@@ -85,7 +77,7 @@ app.post("/speakbase", async (req, res) => {
       console.log(`🎩 Detected character: ${nameDetected}`);
     }
 
-    // Get chat response
+    // Get chat response again for speaking
     const chatResponse = await axios.post(
       "https://waterwheel-village.onrender.com/chat",
       { text: userText },
@@ -127,7 +119,7 @@ app.post("/speakbase", async (req, res) => {
     res.send(voiceResponse.data);
 
   } catch (error) {
-    console.error("❌ Speakbase Error:", error?.response?.data || error.message);
+    console.error("❌ Speakbase error:", error?.response?.data || error.message);
     res.status(500).json({ error: "Speakbase error occurred." });
   }
 });
@@ -137,3 +129,4 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
+
