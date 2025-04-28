@@ -17,7 +17,10 @@ console.log("🧪 ENV DEBUG:", {
   CHATBASE_BOT_ID: process.env.CHATBASE_BOT_ID,
   ELEVEN_API_KEY: process.env.ELEVEN_API_KEY,
   ELEVEN_VOICE_ID: process.env.ELEVEN_VOICE_ID,
+  FATIMA_VOICE_ID: process.env.FATIMA_VOICE_ID,   // <-- ADD this
+  OPENAI_API_KEY: process.env.OPENAI_API_KEY      // <-- ADD this
 });
+
 
 // Root route
 app.get("/", (req, res) => {
