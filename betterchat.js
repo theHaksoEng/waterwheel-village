@@ -28,32 +28,39 @@ app.get("/", (req, res) => {
 });
 
 // Chat endpoint (using Chatbase)
+// Chat endpoint (corrected for Chatbase)
 app.post("/chat", async (req, res) => {
   try {
     const userText = req.body.text;
 
     const chatbaseResponse = await axios.post(
-      "https://www.chatbase.co/api/v1/chat/completions",
+      "https://www.chatbase.co/api/v1/chat", // Correct Chatbase endpoint
       {
-        messages: [{ role: "user", content: userText }],
-        chatbotId: process.env.CHATBASE_BOT_ID,
-        stream: false
+        messages: [
+          {
+            role: "user",
+            content: userText
+          }
+        ],
+        chatbotId: process.env.CHATBASE_BOT_ID
       },
       {
         headers: {
           Authorization: `Bearer ${process.env.CHATBASE_API_KEY}`,
-          "Content-Type": "application/json",
-        },
+          "Content-Type": "application/json"
+        }
       }
     );
 
-    const replyText = chatbaseResponse.data?.choices?.[0]?.message?.content || "Sorry, I had trouble understanding you.";
+    const replyText = chatbaseResponse.data?.messages?.[0]?.content || "Sorry, I had trouble understanding you.";
     res.json({ text: replyText });
+
   } catch (error) {
     console.error("🔥 Chatbase error:", error?.response?.data || error.message);
     res.status(500).send("Chatbase error");
   }
 });
+
 
 // Speakbase endpoint (Chatbase + ElevenLabs voice)
 app.post("/speakbase", async (req, res) => {
