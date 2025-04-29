@@ -4,18 +4,14 @@ require("dotenv").config();
 // Import packages
 const express = require("express");
 const axios = require("axios");
-const fs = require("fs");
 const cors = require("cors");
-app.use(cors({
-  origin: "*", // <-- Allow all origins (for now)
-  methods: ["GET", "POST"], // <-- Allow POST
-}));
-
+const fs = require("fs");
 
 // Setup Express app
-const app = express();
-app.use(cors({ origin: "*" }));
+const app = express();   // <<< FIRST create app
+app.use(cors({ origin: "*" }));  // <<< THEN you can use app.use
 app.use(express.json());
+
 
 // ENV Debug Printout
 console.log("\ud83e\uddea ENV DEBUG:", {
