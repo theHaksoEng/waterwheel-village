@@ -5,14 +5,13 @@ require("dotenv").config();
 const express = require("express");
 const axios = require("axios");
 const cors = require("cors");
-const fs = require("fs");
 
 // Setup Express app
 const app = express();
 app.use(cors({ origin: "*" }));
 app.use(express.json());
 
-// ENV Debug Printout
+// ENV Debug
 console.log("🧪 ENV DEBUG:", {
   CHATBASE_API_KEY: process.env.CHATBASE_API_KEY,
   CHATBASE_BOT_ID: process.env.CHATBASE_BOT_ID,
@@ -24,10 +23,10 @@ console.log("🧪 ENV DEBUG:", {
 
 // Root route
 app.get("/", (req, res) => {
-  res.send("Welcome to Waterwheel Village Chatbot!");
+  res.send("Welcome to Waterwheel Village chatbot!");
 });
 
-// Chat endpoint (using Chatbase + Waterwheel System Prompt)
+// 📚 Chat endpoint (Corrected for Chatbase!)
 app.post("/chat", async (req, res) => {
   try {
     const userText = req.body.text;
@@ -35,10 +34,7 @@ app.post("/chat", async (req, res) => {
     const chatbaseResponse = await axios.post(
       "https://www.chatbase.co/api/v1/chat",
       {
-        messages: [
-          { role: "system", content: "You are Aaron Hakso from Waterwheel Village. You help learners practice English naturally by roleplaying as different friendly villagers, including Fatima the healer from Sudan. Stay in character, answer warmly and expressively, and encourage conversation." },
-          { role: "user", content: userText }
-        ],
+        messages: [{ role: "user", content: userText }],
         chatbotId: process.env.CHATBASE_BOT_ID,
       },
       {
@@ -49,7 +45,7 @@ app.post("/chat", async (req, res) => {
       }
     );
 
-    const replyText = chatbaseResponse.data?.messages?.[0]?.content || "Sorry, I had trouble understanding you.";
+    const replyText = chatbaseResponse.data.messages[0]?.content || "Sorry, I had trouble understanding you.";
     res.json({ text: replyText });
 
   } catch (error) {
@@ -58,7 +54,7 @@ app.post("/chat", async (req, res) => {
   }
 });
 
-// Speakbase endpoint (Chatbase + ElevenLabs voice)
+// 🎤 Speakbase endpoint (Chat + ElevenLabs voice)
 app.post("/speakbase", async (req, res) => {
   console.log("🌟 /speakbase was hit!");
 
@@ -81,15 +77,8 @@ app.post("/speakbase", async (req, res) => {
       console.log(`🎩 Detected character: ${nameDetected}`);
     }
 
-    // Get chat response from live server
-    const chatResponse = await axios.post(
-      "https://waterwheel-village.onrender.com/chat",
-      { text: userText },
-      { headers: { "Content-Type": "application/json" } }
-    );
-
-    const rawText = chatResponse.data.text;
-    const spokenText = rawText
+    // Directly use incoming text
+    const spokenText = userText
       .replace(/\*\*(.*?)\*\*/g, "$1")
       .replace(/\*/g, "")
       .replace(/[_~`]/g, "")
