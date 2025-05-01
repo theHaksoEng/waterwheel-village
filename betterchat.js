@@ -1,10 +1,10 @@
-// Load environment variables
-require("dotenv").config();
+require("dotenv").config();  // must be first!
+console.log("🔐 FINAL OpenAI Key:", process.env.OPENAI_API_KEY);
 
-// Import packages
 const express = require("express");
 const axios = require("axios");
 const cors = require("cors");
+
 
 // Setup Express app
 const app = express();
