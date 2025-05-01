@@ -11,7 +11,7 @@ const app = express();
 app.use(cors({ origin: "*" }));
 app.use(express.json());
 
-// Debug: print environment variables (safely, not in production)
+// Debug: print environment variables on startup
 console.log("🧪 ENV DEBUG:", {
   CHATBASE_API_KEY: process.env.CHATBASE_API_KEY,
   CHATBASE_BOT_ID: process.env.CHATBASE_BOT_ID,
@@ -37,12 +37,18 @@ app.get("/", (req, res) => {
   res.send("🎉 Welcome to Waterwheel Village - BetterChat is alive!");
 });
 
-// /chat endpoint — Text only
+// /chat → DIRECT to Chatbase
 app.post("/chat", async (req, res) => {
   try {
-    const userText = req.body.text;
+    let userText = req.body.text || "";
 
-    // Debug log to verify payload
+    // Clean up the input
+    userText = userText
+      .replace(/[“”]/g, '"')
+      .replace(/[‘’]/g, "'")
+      .trim();
+
+    // Debug payload
     console.log("🔎 Sending to Chatbase:", {
       chatbotId: process.env.CHATBASE_BOT_ID,
       text: userText
@@ -62,7 +68,8 @@ app.post("/chat", async (req, res) => {
       }
     );
 
-    const replyText = chatbaseResponse.data?.messages?.[0]?.content ||
+    const replyText =
+      chatbaseResponse.data?.messages?.[0]?.content ||
       "Sorry, I had trouble understanding you.";
     res.json({ text: replyText });
 
@@ -72,7 +79,7 @@ app.post("/chat", async (req, res) => {
   }
 });
 
-// /speakbase endpoint — Text + Voice
+// /speakbase → Chat via Render, Voice via ElevenLabs
 app.post("/speakbase", async (req, res) => {
   console.log("🌟 /speakbase was hit!");
 
@@ -80,7 +87,7 @@ app.post("/speakbase", async (req, res) => {
     const userText = req.body.text || "";
     const lowerCaseText = userText.toLowerCase();
 
-    // Detect character and select voice
+    // Detect character and choose voice
     let selectedVoiceId = process.env.ELEVEN_VOICE_ID;
     const detected = Object.keys(characterVoices).find(name =>
       lowerCaseText.includes(name)
@@ -91,14 +98,14 @@ app.post("/speakbase", async (req, res) => {
       console.log(`🎩 Detected character: ${detected}`);
     }
 
-    // Get response from Chatbase
+    // Send to the hosted chat endpoint on Render
     const chatResponse = await axios.post(
-      "http://localhost:3000/chat", // using local endpoint
+      "https://waterwheel-village.onrender.com/chat",
       { text: userText },
       { headers: { "Content-Type": "application/json" } }
     );
 
-    // Clean text for TTS
+    // Clean response text for TTS
     const rawText = chatResponse.data.text;
     const spokenText = rawText
       .replace(/\*\*(.*?)\*\*/g, "$1")
@@ -108,7 +115,7 @@ app.post("/speakbase", async (req, res) => {
     console.log("🗣 Text to speak:", spokenText);
     console.log("🎤 Voice ID:", selectedVoiceId);
 
-    // Call ElevenLabs API
+    // ElevenLabs voice generation
     const voiceResponse = await axios({
       method: "POST",
       url: `https://api.elevenlabs.io/v1/text-to-speech/${selectedVoiceId}`,
