@@ -1,17 +1,17 @@
-require("dotenv").config();  // must be first!
-console.log("🔐 FINAL OpenAI Key:", process.env.OPENAI_API_KEY);
+// Load environment variables
+require("dotenv").config();
 
+// Import packages
 const express = require("express");
 const axios = require("axios");
 const cors = require("cors");
-
 
 // Setup Express app
 const app = express();
 app.use(cors({ origin: "*" }));
 app.use(express.json());
 
-// Debug: print environment variables on startup
+// Log environment keys (for dev/debug only)
 console.log("🧪 ENV DEBUG:", {
   CHATBASE_API_KEY: process.env.CHATBASE_API_KEY,
   CHATBASE_BOT_ID: process.env.CHATBASE_BOT_ID,
@@ -20,39 +20,29 @@ console.log("🧪 ENV DEBUG:", {
   OPENAI_API_KEY: process.env.OPENAI_API_KEY
 });
 
-// Character → Voice ID map
+// Voice ID map (loaded from .env or hardcoded fallback)
 const characterVoices = {
-  fatima: "VJPdWR5GhEdG6LxWu8AS",
-  ibrahim: "VJPdWR5GhEdG6LxWu8AS",
-  anika: "GCPLhb1XrVwcoKUJYcvz",
-  kwame: "tlETan7Okc4pzjD0z62P",
-  sophia: "0q9TlrIoQJIdxZP9oZh7",
-  liang: "VJPdWR5GhEdG6LxWu8AS",
-  johannes: "JgHmW3ojZwT0NDP5D1JJ",
-  aleksanderi: "tIFPE2y0DAU6xfZn3Fka"
+  fatima: process.env.VOICE_FATIMA,
+  ibrahim: process.env.VOICE_IBRAHIM,
+  anika: process.env.VOICE_ANIKA,
+  kwame: process.env.VOICE_KWAME,
+  sophia: process.env.VOICE_SOPHIA,
+  liang: process.env.VOICE_LIANG,
+  johannes: process.env.VOICE_JOHANNES,
+  aleksanderi: process.env.VOICE_ALEKSANDERI
 };
 
 // Root route
 app.get("/", (req, res) => {
-  res.send("🎉 Welcome to Waterwheel Village - BetterChat is alive!");
+  res.send("🌍 Welcome to Waterwheel Village - BetterChat is running!");
 });
 
-// /chat → DIRECT to Chatbase
+// /chat endpoint (Text only)
 app.post("/chat", async (req, res) => {
   try {
-    let userText = req.body.text || "";
+    const userText = req.body.text?.trim();
 
-    // Clean up the input
-    userText = userText
-      .replace(/[“”]/g, '"')
-      .replace(/[‘’]/g, "'")
-      .trim();
-
-    // Debug payload
-    console.log("🔎 Sending to Chatbase:", {
-      chatbotId: process.env.CHATBASE_BOT_ID,
-      text: userText
-    });
+    console.log("🔎 Sending to Chatbase:", userText);
 
     const chatbaseResponse = await axios.post(
       "https://www.chatbase.co/api/v1/chat",
@@ -70,43 +60,56 @@ app.post("/chat", async (req, res) => {
 
     const replyText =
       chatbaseResponse.data?.messages?.[0]?.content ||
+      chatbaseResponse.data?.text ||
       "Sorry, I had trouble understanding you.";
+
     res.json({ text: replyText });
 
   } catch (error) {
     console.error("🔥 Chatbase error:", error?.response?.data || error.message);
-    res.status(500).send("Chatbase error");
+    res.status(500).json({ error: "Chatbase failed." });
   }
 });
 
-// /speakbase → Chat via Render, Voice via ElevenLabs
+// /speakbase endpoint (Text + Voice)
 app.post("/speakbase", async (req, res) => {
   console.log("🌟 /speakbase was hit!");
 
   try {
-    const userText = req.body.text || "";
+    const userText = req.body.text?.trim() || "";
     const lowerCaseText = userText.toLowerCase();
 
-    // Detect character and choose voice
+    // Detect character and assign voice
     let selectedVoiceId = process.env.ELEVEN_VOICE_ID;
     const detected = Object.keys(characterVoices).find(name =>
       lowerCaseText.includes(name)
     );
-
     if (detected) {
       selectedVoiceId = characterVoices[detected];
       console.log(`🎩 Detected character: ${detected}`);
     }
 
-    // Send to the hosted chat endpoint on Render
+    // Call Chatbase directly
     const chatResponse = await axios.post(
-      "https://waterwheel-village.onrender.com/chat",
-      { text: userText },
-      { headers: { "Content-Type": "application/json" } }
+      "https://www.chatbase.co/api/v1/chat",
+      {
+        messages: [{ role: "user", content: userText }],
+        chatbotId: process.env.CHATBASE_BOT_ID
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.CHATBASE_API_KEY}`,
+          "Content-Type": "application/json"
+        }
+      }
     );
 
-    // Clean response text for TTS
-    const rawText = chatResponse.data.text;
+    const rawText =
+      chatResponse.data?.messages?.[0]?.content ||
+      chatResponse.data?.text ||
+      "Sorry, I had trouble understanding you.";
+
+    // Clean up markdown for TTS
     const spokenText = rawText
       .replace(/\*\*(.*?)\*\*/g, "$1")
       .replace(/[*_~`]/g, "")
@@ -146,7 +149,7 @@ app.post("/speakbase", async (req, res) => {
   }
 });
 
-// Start the server
+// Start server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 BetterChat server running on port ${PORT}`);
