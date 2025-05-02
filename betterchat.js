@@ -77,7 +77,7 @@ app.post("/speakbase", async (req, res) => {
     const userText = req.body.text?.trim() || "";
     const lower = userText.toLowerCase();
 
-    // ✅ Fix: define voice map inside the route to ensure .env values are available
+    // ✅ Fix: voice map inside the route
     const characterVoices = {
       fatima: process.env.VOICE_FATIMA,
       ibrahim: process.env.VOICE_IBRAHIM,
@@ -102,8 +102,64 @@ app.post("/speakbase", async (req, res) => {
       console.log("⚠️ No matching voice ID found — using fallback voice.");
     }
 
-    // (continue with Chatbase + ElevenLabs as you already have)
+    // ✅ Get Chatbase reply
+    const chatResponse = await axios.post(
+      "https://www.chatbase.co/api/v1/chat",
+      {
+        messages: [{ role: "user", content: userText }],
+        chatbotId: process.env.CHATBASE_BOT_ID
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.CHATBASE_API_KEY}`,
+          "Content-Type": "application/json"
+        }
+      }
+    );
 
+    const replyText =
+      chatResponse.data?.messages?.[0]?.content ||
+      chatResponse.data?.text ||
+      "Sorry, I had trouble understanding you.";
+
+    // ✅ Clean markdown for speech
+    const spokenText = replyText
+      .replace(/\*\*(.*?)\*\*/g, "$1")
+      .replace(/[*_~`]/g, "")
+      .trim();
+
+    console.log("🗣️ Speaking text:", spokenText);
+    console.log("🔊 Voice ID:", selectedVoiceId);
+
+    // ✅ Send to ElevenLabs
+    const voiceResponse = await axios({
+      method: "POST",
+      url: `https://api.elevenlabs.io/v1/text-to-speech/${selectedVoiceId}`,
+      headers: {
+        "xi-api-key": process.env.ELEVEN_API_KEY,
+        "Content-Type": "application/json"
+      },
+      data: {
+        text: spokenText,
+        model_id: "eleven_monolingual_v1",
+        voice_settings: {
+          stability: 0.4,
+          similarity_boost: 0.8
+        }
+      },
+      responseType: "arraybuffer"
+    });
+
+    res.set({
+      "Content-Type": "audio/mpeg",
+      "Content-Length": voiceResponse.data.length
+    });
+
+    res.send(voiceResponse.data);
+
+  } catch (error) {
+    console.error("❌ /speakbase error:", error?.response?.data || error.message);
+    res.status(500).json({ error: "Speakbase error occurred." });
   }
 });
 
