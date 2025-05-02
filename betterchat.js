@@ -77,71 +77,33 @@ app.post("/speakbase", async (req, res) => {
     const userText = req.body.text?.trim() || "";
     const lower = userText.toLowerCase();
 
-    // Voice selection
-    let voiceId = process.env.ELEVEN_VOICE_ID;
-    const detected = Object.keys(characterVoices).find(name => lower.includes(name));
-    if (detected) {
-      voiceId = characterVoices[detected];
-      console.log(`🎩 Character detected: ${detected}`);
-    }
+    // ✅ Fix: define voice map inside the route to ensure .env values are available
+    const characterVoices = {
+      fatima: process.env.VOICE_FATIMA,
+      ibrahim: process.env.VOICE_IBRAHIM,
+      anika: process.env.VOICE_ANIKA,
+      kwame: process.env.VOICE_KWAME,
+      sophia: process.env.VOICE_SOPHIA,
+      liang: process.env.VOICE_LIANG,
+      johannes: process.env.VOICE_JOHANNES,
+      aleksanderi: process.env.VOICE_ALEKSANDERI
+    };
 
-    // Get Chatbase response
-    const chatbaseResponse = await axios.post(
-      "https://www.chatbase.co/api/v1/chat",
-      {
-        messages: [{ role: "user", content: userText }],
-        chatbotId: process.env.CHATBASE_BOT_ID
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.CHATBASE_API_KEY}`,
-          "Content-Type": "application/json"
-        }
-      }
+    // ✅ Character detection
+    let selectedVoiceId = process.env.ELEVEN_VOICE_ID; // fallback
+    const detected = Object.keys(characterVoices).find(name =>
+      lower.includes(name)
     );
 
-    const replyText =
-      chatbaseResponse.data?.messages?.[0]?.content ||
-      chatbaseResponse.data?.text ||
-      "Sorry, I had trouble understanding you.";
+    if (detected && characterVoices[detected]) {
+      selectedVoiceId = characterVoices[detected];
+      console.log(`🎩 Character detected: ${detected}`);
+    } else {
+      console.log("⚠️ No matching voice ID found — using fallback voice.");
+    }
 
-    // Clean up for speech
-    const spokenText = replyText
-      .replace(/\*\*(.*?)\*\*/g, "$1")
-      .replace(/[*_~`]/g, "")
-      .trim();
+    // (continue with Chatbase + ElevenLabs as you already have)
 
-    console.log("🗣️ Speaking text:", spokenText);
-    console.log("🔊 Voice ID:", voiceId);
-
-    // ElevenLabs TTS
-    const voiceResponse = await axios({
-      method: "POST",
-      url: `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
-      headers: {
-        "xi-api-key": process.env.ELEVEN_API_KEY,
-        "Content-Type": "application/json"
-      },
-      data: {
-        text: spokenText,
-        model_id: "eleven_monolingual_v1",
-        voice_settings: {
-          stability: 0.4,
-          similarity_boost: 0.8
-        }
-      },
-      responseType: "arraybuffer"
-    });
-
-    res.set({
-      "Content-Type": "audio/mpeg",
-      "Content-Length": voiceResponse.data.length
-    });
-    res.send(voiceResponse.data);
-
-  } catch (error) {
-    console.error("❌ /speakbase error:", error?.response?.data || error.message);
-    res.status(500).json({ error: "Speakbase error" });
   }
 });
 
