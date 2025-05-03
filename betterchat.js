@@ -26,7 +26,9 @@ const characterVoices = {
   sophia: process.env.VOICE_SOPHIA,
   liang: process.env.VOICE_LIANG,
   johannes: process.env.VOICE_JOHANNES,
-  aleksanderi: process.env.VOICE_ALEKSANDERI
+  aleksanderi: process.env.VOICE_ALEKSANDERI,
+  nadia: process.env.VOICE_NADIA   // ✅ add this line
+
 };
 
 // Root
@@ -80,7 +82,9 @@ app.post("/speakbase", async (req, res) => {
       sophia: process.env.VOICE_SOPHIA,
       liang: process.env.VOICE_LIANG,
       johannes: process.env.VOICE_JOHANNES,
-      aleksanderi: process.env.VOICE_ALEKSANDERI
+      aleksanderi: process.env.VOICE_ALEKSANDERI,
+      nadia: process.env.VOICE_NADIA   // ✅ add this line
+
     };
 
     // Character detection
