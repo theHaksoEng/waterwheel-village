@@ -39,8 +39,6 @@ app.post("/chat", async (req, res) => {
   try {
     const userText = req.body.text?.trim() || "";
 
-    console.log("💬 /chat input:", userText);
-
     const chatbaseResponse = await axios.post(
       "https://www.chatbase.co/api/v1/chat",
       {
@@ -60,9 +58,7 @@ app.post("/chat", async (req, res) => {
       chatbaseResponse.data?.text ||
       "Sorry, I had trouble understanding you.";
 
-    console.log("🧠 /chat reply:", replyText);
     res.json({ text: replyText });
-
   } catch (error) {
     console.error("❌ /chat error:", error?.response?.data || error.message);
     res.status(500).json({ error: "Chatbase error" });
@@ -75,9 +71,7 @@ app.post("/speakbase", async (req, res) => {
 
   try {
     const userText = req.body.text?.trim() || "";
-    const lower = userText.toLowerCase();
 
-    // ✅ Fix: voice map inside the route
     const characterVoices = {
       fatima: process.env.VOICE_FATIMA,
       ibrahim: process.env.VOICE_IBRAHIM,
@@ -89,10 +83,10 @@ app.post("/speakbase", async (req, res) => {
       aleksanderi: process.env.VOICE_ALEKSANDERI
     };
 
-    // ✅ Character detection
-    let selectedVoiceId = process.env.ELEVEN_VOICE_ID; // fallback
+    // Character detection
+    let selectedVoiceId = process.env.ELEVEN_VOICE_ID;
     const detected = Object.keys(characterVoices).find(name =>
-      lower.includes(name)
+      new RegExp(`\\b${name}\\b`, "i").test(userText)
     );
 
     if (detected && characterVoices[detected]) {
@@ -102,28 +96,8 @@ app.post("/speakbase", async (req, res) => {
       console.log("⚠️ No matching voice ID found — using fallback voice.");
     }
 
-    // ✅ Get Chatbase reply
-    const chatResponse = await axios.post(
-      "https://www.chatbase.co/api/v1/chat",
-      {
-        messages: [{ role: "user", content: userText }],
-        chatbotId: process.env.CHATBASE_BOT_ID
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.CHATBASE_API_KEY}`,
-          "Content-Type": "application/json"
-        }
-      }
-    );
-
-    const replyText =
-      chatResponse.data?.messages?.[0]?.content ||
-      chatResponse.data?.text ||
-      "Sorry, I had trouble understanding you.";
-
-    // ✅ Clean markdown for speech
-    const spokenText = replyText
+    // Clean text for speech
+    const spokenText = userText
       .replace(/\*\*(.*?)\*\*/g, "$1")
       .replace(/[*_~`]/g, "")
       .trim();
@@ -131,7 +105,6 @@ app.post("/speakbase", async (req, res) => {
     console.log("🗣️ Speaking text:", spokenText);
     console.log("🔊 Voice ID:", selectedVoiceId);
 
-    // ✅ Send to ElevenLabs
     const voiceResponse = await axios({
       method: "POST",
       url: `https://api.elevenlabs.io/v1/text-to-speech/${selectedVoiceId}`,
@@ -159,9 +132,10 @@ app.post("/speakbase", async (req, res) => {
 
   } catch (error) {
     console.error("❌ /speakbase error:", error?.response?.data || error.message);
-    res.status(500).json({ error: "Speakbase error occurred." });
+    res.status(500).json({ error: "Speakbase error" });
   }
 });
+
 
 // Start the server
 const PORT = process.env.PORT || 3000;
