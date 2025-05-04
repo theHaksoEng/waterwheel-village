@@ -14,7 +14,6 @@ console.log("🧪 ENV DEBUG:", {
   CHATBASE_API_KEY: process.env.CHATBASE_API_KEY,
   ELEVEN_API_KEY: process.env.ELEVEN_API_KEY,
   ELEVEN_VOICE_ID: process.env.ELEVEN_VOICE_ID,
-  OPENAI_API_KEY: process.env.OPENAI_API_KEY
 });
 
 // Voice map (customizable from .env)
