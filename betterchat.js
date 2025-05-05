@@ -73,6 +73,7 @@ app.post("/speakbase", async (req, res) => {
   try {
     const userText = req.body.text?.trim() || "";
 
+    // ✅ Voice ID map with all characters
     const characterVoices = {
       fatima: process.env.VOICE_FATIMA,
       ibrahim: process.env.VOICE_IBRAHIM,
@@ -82,14 +83,15 @@ app.post("/speakbase", async (req, res) => {
       liang: process.env.VOICE_LIANG,
       johannes: process.env.VOICE_JOHANNES,
       aleksanderi: process.env.VOICE_ALEKSANDERI,
-      nadia: process.env.VOICE_NADIA   // ✅ add this line
-
+      nadia: process.env.VOICE_NADIA
     };
 
-    // Character detection
-    let selectedVoiceId = process.env.ELEVEN_VOICE_ID;
+    // ✅ Character detection
+    let selectedVoiceId = process.env.ELEVEN_VOICE_ID; // fallback
+    const lowerText = userText.toLowerCase();
+
     const detected = Object.keys(characterVoices).find(name =>
-      new RegExp(`\\b${name}\\b`, "i").test(userText)
+      lowerText.includes(name)
     );
 
     if (detected && characterVoices[detected]) {
@@ -99,14 +101,16 @@ app.post("/speakbase", async (req, res) => {
       console.log("⚠️ No matching voice ID found — using fallback voice.");
     }
 
-    // Clean text for speech
+    console.log("🧪 Selected voice ID:", selectedVoiceId);
+
+    // 🧼 Clean the text for speech
     const spokenText = userText
-      .replace(/\*\*(.*?)\*\*/g, "$1")
-      .replace(/[*_~`]/g, "")
+      .replace(/\*\*(.*?)\*\*/g, "$1")   // remove bold markdown
+      .replace(/[*_~`]/g, "")            // strip remaining markdown
+      .replace(/[^a-zA-Z0-9,?.!'"\s]/g, "") // remove strange characters
       .trim();
 
     console.log("🗣️ Speaking text:", spokenText);
-    console.log("🔊 Voice ID:", selectedVoiceId);
 
     const voiceResponse = await axios({
       method: "POST",
