@@ -89,7 +89,8 @@ app.post("/speakbase", async (req, res) => {
     const detected = Object.keys(characterVoices).find(name =>
       new RegExp(`\\b${name}\\b`, "i").test(userText)
     );
-    
+    console.log("🎤 Voice Map:", characterVoices);
+
     // ✅ Aliases to help with detection
     const aliasMap = {
       fatima: ["fatima", "teacher fatima"],
