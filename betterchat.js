@@ -73,7 +73,7 @@ app.post("/speakbase", async (req, res) => {
   try {
     const userText = req.body.text?.trim() || "";
 
-    // ✅ Voice ID map with all characters
+    // ✅ Character voice IDs from .env
     const characterVoices = {
       fatima: process.env.VOICE_FATIMA,
       ibrahim: process.env.VOICE_IBRAHIM,
@@ -83,34 +83,50 @@ app.post("/speakbase", async (req, res) => {
       liang: process.env.VOICE_LIANG,
       johannes: process.env.VOICE_JOHANNES,
       aleksanderi: process.env.VOICE_ALEKSANDERI,
-      nadia: process.env.VOICE_NADIA
+      nadia: process.env.VOICE_NADIA,
+      mcarthur: process.env.VOICE_MCARTHUR
+    };
+
+    // ✅ Aliases to help with detection
+    const aliasMap = {
+      fatima: ["fatima", "teacher fatima"],
+      ibrahim: ["ibrahim", "blacksmith", "smith"],
+      anika: ["anika", "annika", "seamstress"],
+      kwame: ["kwame", "farmer kwame"],
+      sophia: ["sophia", "teacher sophia"],
+      liang: ["liang", "mr liang", "entrepreneur"],
+      johannes: ["johannes", "farmer johannes"],
+      aleksanderi: ["aleksanderi", "alexanderi", "alex", "priest"],
+      nadia: ["nadia", "architect"],
+      mcarthur: ["mcarthur", "elder", "aaron"]
     };
 
     // ✅ Character detection
-    let selectedVoiceId = process.env.ELEVEN_VOICE_ID; // fallback
-    const lowerText = userText.toLowerCase();
+    let selectedVoiceId = process.env.ELEVEN_VOICE_ID;
+    let detectedCharacter = null;
 
-    const detected = Object.keys(characterVoices).find(name =>
-      lowerText.includes(name)
-    );
+    for (const [key, aliases] of Object.entries(aliasMap)) {
+      if (aliases.some(alias => userText.toLowerCase().includes(alias))) {
+        selectedVoiceId = characterVoices[key];
+        detectedCharacter = key;
+        break;
+      }
+    }
 
-    if (detected && characterVoices[detected]) {
-      selectedVoiceId = characterVoices[detected];
-      console.log(`🎩 Character detected: ${detected}`);
+    if (detectedCharacter) {
+      console.log(`🎩 Character detected: ${detectedCharacter}`);
     } else {
       console.log("⚠️ No matching voice ID found — using fallback voice.");
     }
 
-    console.log("🧪 Selected voice ID:", selectedVoiceId);
-
-    // 🧼 Clean the text for speech
+    // ✅ Clean text
     const spokenText = userText
-      .replace(/\*\*(.*?)\*\*/g, "$1")   // remove bold markdown
-      .replace(/[*_~`]/g, "")            // strip remaining markdown
-      .replace(/[^a-zA-Z0-9,?.!'"\s]/g, "") // remove strange characters
+      .replace(/\*\*(.*?)\*\*/g, "$1")
+      .replace(/[*_~`]/g, "")
       .trim();
 
     console.log("🗣️ Speaking text:", spokenText);
+    console.log("🔊 Voice ID:", selectedVoiceId);
 
     const voiceResponse = await axios({
       method: "POST",
@@ -142,7 +158,6 @@ app.post("/speakbase", async (req, res) => {
     res.status(500).json({ error: "Speakbase error" });
   }
 });
-
 
 // Start the server
 const PORT = process.env.PORT || 3000;
