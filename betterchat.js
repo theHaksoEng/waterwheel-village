@@ -86,7 +86,10 @@ app.post("/speakbase", async (req, res) => {
       nadia: process.env.VOICE_NADIA,
       mcarthur: process.env.VOICE_MCARTHUR
     };
-
+    const detected = Object.keys(characterVoices).find(name =>
+      new RegExp(`\\b${name}\\b`, "i").test(userText)
+    );
+    
     // ✅ Aliases to help with detection
     const aliasMap = {
       fatima: ["fatima", "teacher fatima"],
