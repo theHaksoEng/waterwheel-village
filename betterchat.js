@@ -66,14 +66,13 @@ app.post("/chat", async (req, res) => {
   }
 });
 
-// /speakbase route — Chatbase + ElevenLabs
 app.post("/speakbase", async (req, res) => {
   console.log("🎙️ /speakbase hit");
 
   try {
     const userText = req.body.text?.trim() || "";
 
-    // ✅ Character voice IDs from .env
+    // ✅ Voice map and alias mapping
     const characterVoices = {
       fatima: process.env.VOICE_FATIMA,
       ibrahim: process.env.VOICE_IBRAHIM,
@@ -86,45 +85,40 @@ app.post("/speakbase", async (req, res) => {
       nadia: process.env.VOICE_NADIA,
       mcarthur: process.env.VOICE_MCARTHUR
     };
-    const detected = Object.keys(characterVoices).find(name =>
-      new RegExp(`\\b${name}\\b`, "i").test(userText)
-    );
-    console.log("🎤 Voice Map:", characterVoices);
 
-    // ✅ Aliases to help with detection
-    const aliasMap = {
-      fatima: ["fatima", "teacher fatima"],
-      ibrahim: ["ibrahim", "blacksmith", "smith"],
-      anika: ["anika", "annika", "seamstress"],
-      kwame: ["kwame", "farmer kwame"],
-      sophia: ["sophia", "teacher sophia"],
-      liang: ["liang", "mr liang", "entrepreneur"],
-      johannes: ["johannes", "farmer johannes"],
-      aleksanderi: ["aleksanderi", "alexanderi", "alex", "priest"],
-      nadia: ["nadia", "architect"],
-      mcarthur: ["mcarthur", "elder", "aaron"]
+    const aliases = {
+      fatima: ["fatima"],
+      ibrahim: ["ibrahim"],
+      anika: ["anika"],
+      kwame: ["kwame"],
+      sophia: ["sophia"],
+      liang: ["liang"],
+      johannes: ["johannes"],
+      aleksanderi: ["aleksanderi", "alex", "alexanderi"],
+      nadia: ["nadia"],
+      mcarthur: ["mcarthur", "aaron", "elder"]
     };
 
-    // ✅ Character detection
-    let selectedVoiceId = process.env.ELEVEN_VOICE_ID;
+    // ✅ Detect character from aliases
     let detectedCharacter = null;
-
-    for (const [key, aliases] of Object.entries(aliasMap)) {
-      if (aliases.some(alias => userText.toLowerCase().includes(alias))) {
-        selectedVoiceId = characterVoices[key];
-        detectedCharacter = key;
+    for (const [character, names] of Object.entries(aliases)) {
+      if (names.some(name => userText.toLowerCase().includes(name))) {
+        detectedCharacter = character;
         break;
       }
     }
+
+    console.log("🎤 Voice Map:", characterVoices);
+    console.log("👀 Detected character:", detectedCharacter);
+
+    // ✅ Use detected voice or fallback
     const selectedVoiceId = characterVoices[detectedCharacter] || process.env.ELEVEN_VOICE_ID;
 
-    if (detectedCharacter) {
-      console.log(`🎩 Character detected: ${detectedCharacter}`);
-    } else {
+    if (!characterVoices[detectedCharacter]) {
       console.log("⚠️ No matching voice ID found — using fallback voice.");
     }
 
-    // ✅ Clean text
+    // ✅ Clean the spoken text (remove markdown)
     const spokenText = userText
       .replace(/\*\*(.*?)\*\*/g, "$1")
       .replace(/[*_~`]/g, "")
@@ -133,6 +127,7 @@ app.post("/speakbase", async (req, res) => {
     console.log("🗣️ Speaking text:", spokenText);
     console.log("🔊 Voice ID:", selectedVoiceId);
 
+    // ✅ Make ElevenLabs request
     const voiceResponse = await axios({
       method: "POST",
       url: `https://api.elevenlabs.io/v1/text-to-speech/${selectedVoiceId}`,
@@ -157,12 +152,12 @@ app.post("/speakbase", async (req, res) => {
     });
 
     res.send(voiceResponse.data);
-
   } catch (error) {
     console.error("❌ /speakbase error:", error?.response?.data || error.message);
     res.status(500).json({ error: "Speakbase error" });
   }
 });
+
 
 // Start the server
 const PORT = process.env.PORT || 3000;
