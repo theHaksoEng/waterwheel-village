@@ -116,6 +116,7 @@ app.post("/speakbase", async (req, res) => {
         break;
       }
     }
+    const selectedVoiceId = characterVoices[detectedCharacter] || process.env.ELEVEN_VOICE_ID;
 
     if (detectedCharacter) {
       console.log(`🎩 Character detected: ${detectedCharacter}`);
