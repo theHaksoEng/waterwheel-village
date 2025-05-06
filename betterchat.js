@@ -141,8 +141,9 @@ app.post("/speakbase", async (req, res) => {
         voice_settings: {
           stability: 0.4,
           similarity_boost: 0.8
-        }
-      },
+          style: 0.3,                // Add more expressiveness
+          use_speaker_boost: true   // Boost volume and clarity
+        }      },
       responseType: "arraybuffer"
     });
 
