@@ -113,7 +113,9 @@ app.post("/speakbase", async (req, res) => {
 
     // ✅ Use detected voice or fallback
     const selectedVoiceId = characterVoices[detectedCharacter] || process.env.ELEVEN_VOICE_ID;
-
+    console.log("🎩 Detected character:", detectedCharacter);
+    console.log("🔊 Selected voice ID:", selectedVoiceId);
+    
     if (!characterVoices[detectedCharacter]) {
       console.log("⚠️ No matching voice ID found — using fallback voice.");
     }
