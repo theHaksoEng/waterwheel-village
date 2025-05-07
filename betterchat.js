@@ -139,12 +139,10 @@ app.post("/speakbase", async (req, res) => {
         text: spokenText,
         model_id: "eleven_monolingual_v1",
         voice_settings: {
-          voice_settings: {
-            stability: 0.4,
-            similarity_boost: 0.8
-          }
-          use_speaker_boost: true   // Boost volume and clarity
-        }      },
+          stability: 0.4,
+          similarity_boost: 0.8
+        }
+        
       responseType: "arraybuffer"
     });
 
