@@ -1,5 +1,5 @@
 require("dotenv").config();
-
+const userMemory = new Map(); // 🧠 Store last detected character per session/user
 const express = require("express");
 const axios = require("axios");
 const cors = require("cors");
@@ -83,44 +83,51 @@ app.post("/speakbase", async (req, res) => {
 
   try {
     const userText = req.body.text?.trim() || "";
-// Step 1: Detect character from aliases
-let detectedCharacter = null;
+    const sessionId = req.ip; // 🔐 Unique per user session/IP (adjust if needed)
 
-const aliasesMap = {
-  fatima: ["fatima"],
-  ibrahim: ["ibrahim"],
-  anika: ["anika"],
-  kwame: ["kwame"],
-  sophia: ["sophia"],
-  liang: ["liang"],
-  johannes: ["johannes"],
-  aleksanderi: ["alex", "aleksanderi", "aleksanteri"],
-  nadia: ["nadia"],
-  mcarthur: ["mcarthur", "aaron", "elder"]
-};
+    // Voice detection logic
+    const voiceMap = {
+      fatima: process.env.VOICE_FATIMA,
+      ibrahim: process.env.VOICE_IBRAHIM,
+      anika: process.env.VOICE_ANIKA,
+      kwame: process.env.VOICE_KWAME,
+      sophia: process.env.VOICE_SOPHIA,
+      liang: process.env.VOICE_LIANG,
+      johannes: process.env.VOICE_JOHANNES,
+      aleksanderi: process.env.VOICE_ALEKSANDERI,
+      nadia: process.env.VOICE_NADIA,
+      mcarthur: process.env.VOICE_MCARTHUR
+    };
 
-for (const [character, aliases] of Object.entries(aliasesMap)) {
-  if (aliases.some(alias => new RegExp(`\\b${alias}\\b`, "i").test(userText))) {
-    detectedCharacter = character;
-    break;
-  }
-}
+    const aliases = {
+      alex: "aleksanderi",
+      aleks: "aleksanderi",
+      sophie: "sophia"
+    };
 
-// Step 2: If no name found in text, use last speaker
-if (!detectedCharacter && lastCharacter) {
-  detectedCharacter = lastCharacter;
-}
+    const allNames = Object.keys(voiceMap).concat(Object.keys(aliases));
+    let detectedCharacter = null;
 
-// Step 3: Save the speaker for next time
-if (detectedCharacter) {
-  lastCharacter = detectedCharacter;
-}
+    for (let name of allNames) {
+      const regex = new RegExp(`\\b${name}\\b`, "i");
+      if (regex.test(userText)) {
+        detectedCharacter = aliases[name] || name;
+        break;
+      }
+    }
 
-console.log("👀 Detected character:", detectedCharacter);
+    if (detectedCharacter) {
+      userMemory.set(sessionId, detectedCharacter);
+    } else {
+      detectedCharacter = userMemory.get(sessionId) || null;
+    }
 
-const selectedVoiceId = characterVoices[detectedCharacter] || process.env.ELEVEN_VOICE_ID;
-console.log("🔊 Selected voice ID:", selectedVoiceId);
+    const selectedVoiceId = voiceMap[detectedCharacter] || process.env.ELEVEN_VOICE_ID;
+    console.log("🎤 Voice Map:", voiceMap);
+    console.log("👀 Detected character:", detectedCharacter);
+    console.log("🔊 Selected voice ID:", selectedVoiceId);
 
+    // Strip markup for clean speech
     const spokenText = userText
       .replace(/\*\*(.*?)\*\*/g, "$1")
       .replace(/[*_~`]/g, "")
@@ -137,8 +144,8 @@ console.log("🔊 Selected voice ID:", selectedVoiceId);
         text: spokenText,
         model_id: "eleven_monolingual_v1",
         voice_settings: {
-          stability: 0.4,
-          similarity_boost: 0.75
+          stability: 0.5,
+          similarity_boost: 0.8
         }
       },
       responseType: "arraybuffer"
@@ -149,6 +156,7 @@ console.log("🔊 Selected voice ID:", selectedVoiceId);
       "Content-Length": voiceResponse.data.length
     });
     res.send(voiceResponse.data);
+
   } catch (error) {
     console.error("❌ /speakbase error:", error?.response?.data || error.message);
     res.status(500).json({ error: "Speakbase error" });
