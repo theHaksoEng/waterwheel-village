@@ -5,9 +5,6 @@ const axios = require("axios");
 const cors = require("cors");
 
 const app = express();
-// Memory to remember the last character used
-let lastCharacter = null;
-
 app.use(cors({ origin: "*" }));
 app.use(express.json());
 
@@ -36,13 +33,23 @@ const aliases = {
   ibrahim: ["ibrahim"],
   anika: ["anika"],
   kwame: ["kwame"],
-  sophia: ["sophia"],
+  sophia: ["sophia", "sophie"],
   liang: ["liang"],
   johannes: ["johannes"],
-  aleksanderi: ["aleksanderi", "alex", "alexanderi"],
+  aleksanderi: ["aleksanderi", "alex", "alexanderi", "aleks"],
   nadia: ["nadia"],
   mcarthur: ["mcarthur", "aaron", "mr mcarthur"]
 };
+
+function detectCharacter(text) {
+  for (const [key, names] of Object.entries(aliases)) {
+    for (const name of names) {
+      const regex = new RegExp(`\\b${name}\\b`, "i");
+      if (regex.test(text)) return key;
+    }
+  }
+  return null;
+}
 
 app.get("/", (req, res) => {
   res.send("🌍 Waterwheel Village - BetterChat is online!");
@@ -51,7 +58,6 @@ app.get("/", (req, res) => {
 app.post("/chat", async (req, res) => {
   try {
     const userText = req.body.text?.trim() || "";
-
     const chatbaseResponse = await axios.post(
       "https://www.chatbase.co/api/v1/chat",
       {
@@ -65,7 +71,6 @@ app.post("/chat", async (req, res) => {
         }
       }
     );
-
     const replyText =
       chatbaseResponse.data?.messages?.[0]?.content ||
       chatbaseResponse.data?.text ||
@@ -80,57 +85,26 @@ app.post("/chat", async (req, res) => {
 
 app.post("/speakbase", async (req, res) => {
   console.log("🎙️ /speakbase hit");
-
   try {
     const userText = req.body.text?.trim() || "";
-    const sessionId = req.ip; // 🔐 Unique per user session/IP (adjust if needed)
+    const sessionId = req.ip;
 
-    // Voice detection logic
-    const voiceMap = {
-      fatima: process.env.VOICE_FATIMA,
-      ibrahim: process.env.VOICE_IBRAHIM,
-      anika: process.env.VOICE_ANIKA,
-      kwame: process.env.VOICE_KWAME,
-      sophia: process.env.VOICE_SOPHIA,
-      liang: process.env.VOICE_LIANG,
-      johannes: process.env.VOICE_JOHANNES,
-      aleksanderi: process.env.VOICE_ALEKSANDERI,
-      nadia: process.env.VOICE_NADIA,
-      mcarthur: process.env.VOICE_MCARTHUR
-    };
-
-    const aliases = {
-      alex: "aleksanderi",
-      aleks: "aleksanderi",
-      sophie: "sophia"
-    };
-
-    const allNames = Object.keys(voiceMap).concat(Object.keys(aliases));
-    let detectedCharacter = null;
-
-    for (let name of allNames) {
-      const regex = new RegExp(`\\b${name}\\b`, "i");
-      if (regex.test(userText)) {
-        detectedCharacter = aliases[name] || name;
-        break;
-      }
-    }
-
+    let detectedCharacter = detectCharacter(userText);
     if (detectedCharacter) {
       userMemory.set(sessionId, detectedCharacter);
     } else {
-      detectedCharacter = userMemory.get(sessionId) || null;
+      detectedCharacter = userMemory.get(sessionId);
     }
 
-    const selectedVoiceId = voiceMap[detectedCharacter] || process.env.ELEVEN_VOICE_ID;
-    console.log("🎤 Voice Map:", voiceMap);
+    const selectedVoiceId = characterVoices[detectedCharacter] || process.env.ELEVEN_VOICE_ID;
+
+    console.log("🎤 Voice Map:", characterVoices);
     console.log("👀 Detected character:", detectedCharacter);
     console.log("🔊 Selected voice ID:", selectedVoiceId);
 
-    // Strip markup for clean speech
     const spokenText = userText
       .replace(/\*\*(.*?)\*\*/g, "$1")
-      .replace(/[*_~`]/g, "")
+      .replace(/[\*_~`]/g, "")
       .trim();
 
     const voiceResponse = await axios({
@@ -156,7 +130,6 @@ app.post("/speakbase", async (req, res) => {
       "Content-Length": voiceResponse.data.length
     });
     res.send(voiceResponse.data);
-
   } catch (error) {
     console.error("❌ /speakbase error:", error?.response?.data || error.message);
     res.status(500).json({ error: "Speakbase error" });
