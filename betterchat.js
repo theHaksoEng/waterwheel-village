@@ -140,11 +140,14 @@ app.post("/speakbase", async (req, res) => {
         model_id: "eleven_monolingual_v1",
         voice_settings: {
           stability: 0.4,
-          similarity_boost: 0.8
-        },
-        responseType: "arraybuffer"
-      }
-      
+          similarity_boost: 0.8,
+          style: 0.3,
+          use_speaker_boost: true
+        }
+      },
+      responseType: "arraybuffer"  // ✅ NOT inside data!
+    });
+    
     res.set({
       "Content-Type": "audio/mpeg",
       "Content-Length": voiceResponse.data.length
