@@ -5,6 +5,9 @@ const axios = require("axios");
 const cors = require("cors");
 
 const app = express();
+// Memory to remember the last character used
+let lastCharacter = null;
+
 app.use(cors({ origin: "*" }));
 app.use(express.json());
 
@@ -80,20 +83,43 @@ app.post("/speakbase", async (req, res) => {
 
   try {
     const userText = req.body.text?.trim() || "";
+// Step 1: Detect character from aliases
+let detectedCharacter = null;
 
-    let detectedCharacter = null;
-    const lowerText = userText.toLowerCase();
-    for (const [name, triggers] of Object.entries(aliases)) {
-      if (triggers.some(trigger => lowerText.includes(trigger))) {
-        detectedCharacter = name;
-        break;
-      }
-    }
+const aliasesMap = {
+  fatima: ["fatima"],
+  ibrahim: ["ibrahim"],
+  anika: ["anika"],
+  kwame: ["kwame"],
+  sophia: ["sophia"],
+  liang: ["liang"],
+  johannes: ["johannes"],
+  aleksanderi: ["alex", "aleksanderi", "aleksanteri"],
+  nadia: ["nadia"],
+  mcarthur: ["mcarthur", "aaron", "elder"]
+};
 
-    const selectedVoiceId = characterVoices[detectedCharacter] || process.env.ELEVEN_VOICE_ID;
-    console.log("🎤 Voice Map:", characterVoices);
-    console.log("👀 Detected character:", detectedCharacter);
-    console.log("🔊 Selected voice ID:", selectedVoiceId);
+for (const [character, aliases] of Object.entries(aliasesMap)) {
+  if (aliases.some(alias => new RegExp(`\\b${alias}\\b`, "i").test(userText))) {
+    detectedCharacter = character;
+    break;
+  }
+}
+
+// Step 2: If no name found in text, use last speaker
+if (!detectedCharacter && lastCharacter) {
+  detectedCharacter = lastCharacter;
+}
+
+// Step 3: Save the speaker for next time
+if (detectedCharacter) {
+  lastCharacter = detectedCharacter;
+}
+
+console.log("👀 Detected character:", detectedCharacter);
+
+const selectedVoiceId = characterVoices[detectedCharacter] || process.env.ELEVEN_VOICE_ID;
+console.log("🔊 Selected voice ID:", selectedVoiceId);
 
     const spokenText = userText
       .replace(/\*\*(.*?)\*\*/g, "$1")
