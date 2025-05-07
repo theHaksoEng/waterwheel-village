@@ -141,11 +141,10 @@ app.post("/speakbase", async (req, res) => {
         voice_settings: {
           stability: 0.4,
           similarity_boost: 0.8
-        }
-        
-      responseType: "arraybuffer"
-    });
-
+        },
+        responseType: "arraybuffer"
+      }
+      
     res.set({
       "Content-Type": "audio/mpeg",
       "Content-Length": voiceResponse.data.length
