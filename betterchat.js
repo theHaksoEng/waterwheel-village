@@ -1,5 +1,4 @@
 require("dotenv").config();
-const userMemory = new Map(); // 🧠 Store last detected character per session/user
 const express = require("express");
 const axios = require("axios");
 const cors = require("cors");
@@ -7,6 +6,9 @@ const cors = require("cors");
 const app = express();
 app.use(cors({ origin: "*" }));
 app.use(express.json());
+
+// 🧠 Memory map
+const userMemory = new Map();
 
 console.log("🧪 ENV DEBUG:", {
   CHATBASE_BOT_ID: process.env.CHATBASE_BOT_ID,
@@ -87,25 +89,37 @@ app.post("/speakbase", async (req, res) => {
   console.log("🎙️ /speakbase hit");
   try {
     const userText = req.body.text?.trim() || "";
-    const sessionId = req.ip;
+    const sessionId = req.body.sessionId || req.ip;
+    console.log("🔐 Session ID:", sessionId);
+
+    const spokenText = userText
+      .replace(/\*\*(.*?)\*\*/g, "$1")
+      .replace(/[\*_~`]/g, "")
+      .trim();
 
     let detectedCharacter = detectCharacter(userText);
     if (detectedCharacter) {
       userMemory.set(sessionId, detectedCharacter);
     } else {
       detectedCharacter = userMemory.get(sessionId);
+      if (!detectedCharacter) {
+        detectedCharacter = detectCharacter(spokenText);
+        if (detectedCharacter) {
+          userMemory.set(sessionId, detectedCharacter);
+          console.log("🔁 Detected from spokenText fallback:", detectedCharacter);
+        }
+      }
     }
 
     const selectedVoiceId = characterVoices[detectedCharacter] || process.env.ELEVEN_VOICE_ID;
 
+    if (!characterVoices[detectedCharacter]) {
+      console.warn(`⚠️ No voice ID found for: ${detectedCharacter}. Using fallback.`);
+    }
+
     console.log("🎤 Voice Map:", characterVoices);
     console.log("👀 Detected character:", detectedCharacter);
     console.log("🔊 Selected voice ID:", selectedVoiceId);
-
-    const spokenText = userText
-      .replace(/\*\*(.*?)\*\*/g, "$1")
-      .replace(/[\*_~`]/g, "")
-      .trim();
 
     const voiceResponse = await axios({
       method: "POST",
