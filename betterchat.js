@@ -25,7 +25,7 @@ const requiredEnvVars = [
   "VOICE_SOPHIA",
   "VOICE_LIANG",
   "VOICE_JOHANNES",
-  "VOICE_ALEKSANDERI",
+  "VOICE_ALEKSANDER",
   "VOICE_NADIA",
   "VOICE_MCARTHUR",
 ];
@@ -103,7 +103,7 @@ const characterVoices = {
   sophia: process.env.VOICE_SOPHIA,
   liang: process.env.VOICE_LIANG,
   johannes: process.env.VOICE_JOHANNES,
-  aleksanderi: process.env.VOICE_ALEKSANDERI,
+  aleksander: process.env.VOICE_ALEKSANDER,
   nadia: process.env.VOICE_NADIA,
   mcarthur: process.env.VOICE_MCARTHUR,
 };
@@ -117,7 +117,7 @@ const characterAliases = [
   { key: "sophia", names: ["sophia", "sophie"] },
   { key: "liang", names: ["liang"] },
   { key: "johannes", names: ["johannes"] },
-  { key: "aleksanderi", names: ["aleksanderi", "alex", "alexanderi", "aleks"] },
+  { key: "aleksander", names: ["aleksander", "alex", "aleks"] },
   { key: "nadia", names: ["nadia"] },
   { key: "mcarthur", names: ["mcarthur", "aaron", "mr mcarthur"] },
 ];
