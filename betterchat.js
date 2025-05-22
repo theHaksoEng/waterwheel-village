@@ -386,13 +386,7 @@ app.post("/speakbase", async (req, res) => {
     const assistantMessage = { role: "assistant", content: replyText };
     updateChatHistory(sessionId, { role: "user", content: chatbaseInput }, assistantMessage);
 
-    // Strip markdown before sending to Eleven Labs
-    const spokenText = replyText
-      .replace(/\*\*(.*?)\*\*/g, "$1") // bold
-      .replace(/\*(.*?)\*/g, "$1") // italic
-      .replace(/~~(.*?)~~/g, "$1") // strikethrough
-      .replace(/`(.*?)`/g, "$1") // inline code
-      .trim();
+   const spokenText = text; // 'text' comes directly from req.body, already stripped by frontend
 
     if (!spokenText) {
       logger.warn(`No spoken text generated for session ${sessionId}. Chatbase reply was: "${replyText}"`);
