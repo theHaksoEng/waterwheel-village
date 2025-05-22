@@ -1,1 +1,0 @@
-# betterchat-app
