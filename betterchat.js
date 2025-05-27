@@ -1,5 +1,3 @@
-// betterchat.js — Fully integrated character lock and memory-aware /speakbase
-
 require("dotenv").config();
 const express = require("express");
 const axios = require("axios");
@@ -8,93 +6,111 @@ const rateLimit = require("express-rate-limit");
 const Joi = require("joi");
 const redis = require("redis");
 const pino = require("pino");
+const sanitizeHtml = require("sanitize-html");
+const { v4: uuidv4 } = require("uuid");
+const axiosRetry = require("axios-retry");
+
 const logger = pino();
+const DEFAULT_CHARACTER = "mcarthur";
+const SESSION_TTL = parseInt(process.env.SESSION_TTL || 60 * 60, 10); // 1 hour
+const MAX_SESSIONS = parseInt(process.env.MAX_SESSIONS || 1000, 10);
 
-const DEFAULT_CHARACTER = "sophia";
+// Environment validation
+const envSchema = Joi.object({
+  CHATBASE_BOT_ID: Joi.string().required(),
+  CHATBASE_API_KEY: Joi.string().required(),
+  ELEVEN_API_KEY: Joi.string().required(),
+  ELEVEN_VOICE_ID: Joi.string().required(),
+  WORDPRESS_URL: Joi.string().uri().required(),
+  REDIS_URL: Joi.string().uri().optional(),
+  PORT: Joi.number().default(3000),
+  VOICE_FATIMA: Joi.string().required(),
+  VOICE_IBRAHIM: Joi.string().required(),
+  VOICE_ANIKA: Joi.string().required(),
+  VOICE_KWAME: Joi.string().required(),
+  VOICE_SOPHIA: Joi.string().required(),
+  VOICE_LIANG: Joi.string().required(),
+  VOICE_JOHANNES: Joi.string().required(),
+  VOICE_ALEKSANDERI: Joi.string().required(),
+  VOICE_NADIA: Joi.string().required(),
+  VOICE_MCARTHUR: Joi.string().required(),
+}).unknown(true);
 
-const requiredEnvVars = [
-  "CHATBASE_BOT_ID",
-  "CHATBASE_API_KEY",
-  "ELEVEN_API_KEY",
-  "ELEVEN_VOICE_ID",
-  "WORDPRESS_URL",
-  "VOICE_FATIMA",
-  "VOICE_IBRAHIM",
-  "VOICE_ANIKA",
-  "VOICE_KWAME",
-  "VOICE_SOPHIA",
-  "VOICE_LIANG",
-  "VOICE_JOHANNES",
-  "VOICE_ALEKSANDER",
-  "VOICE_NADIA",
-  "VOICE_MCARTHUR",
-];
-
-// Check for all required environment variables at startup
-for (const envVar of requiredEnvVars) {
-  if (!process.env[envVar]) {
-    logger.error(`Missing required env variable: ${envVar}`);
-    process.exit(1);
-  }
+const { error: envError } = envSchema.validate(process.env, { abortEarly: false });
+if (envError) {
+  logger.error(`Environment validation failed: ${envError.details.map(d => d.message).join(', ')}`);
+  process.exit(1);
 }
 
 const app = express();
-
 let redisClient;
-let useRedis = true;
+let useRedis = !!process.env.REDIS_URL;
+const userMemory = new Map();
+const chatMemory = new Map();
 
-// Initialize Redis client or fall back to in-memory
-(async () => {
-  if (process.env.REDIS_URL) {
-    redisClient = redis.createClient({ url: process.env.REDIS_URL });
-    redisClient.on("error", (err) => {
-      logger.error({ err }, "Redis error, falling back to memory for sessions.");
-      useRedis = false; // Disable Redis if an error occurs
-    });
+// Redis setup with retry
+if (useRedis) {
+  redisClient = redis.createClient({
+    url: process.env.REDIS_URL,
+    retry_strategy: (options) => {
+      if (options.attempt > 3) {
+        logger.error("Max Redis retries reached, falling back to memory");
+        useRedis = false;
+        return null;
+      }
+      return Math.min(options.attempt * 100, 3000);
+    },
+  });
+
+  redisClient.on("error", (err) => logger.error({ err }, "Redis connection error"));
+  (async () => {
     try {
       await redisClient.connect();
-      logger.info("Connected to Redis successfully.");
+      logger.info("Connected to Redis");
     } catch (err) {
-      logger.error({ err }, "Failed to connect to Redis, falling back to memory.");
-      useRedis = false; // Fallback if connection fails
+      logger.error({ err }, "Failed to connect to Redis, using in-memory Map");
+      useRedis = false;
     }
-  } else {
-    useRedis = false;
-    logger.warn("No REDIS_URL provided, using in-memory Map for sessions.");
+  })();
+} else {
+  logger.warn("No REDIS_URL provided, using in-memory Map");
+}
+
+// Axios retry configuration
+axiosRetry(axios, {
+  retries: 3,
+  retryDelay: (retryCount) => retryCount * 1000,
+  retryCondition: (error) => axiosRetry.isNetworkOrIdempotentRequestError(error) || error.response?.status >= 500,
+});
+
+// Middleware
+app.use(cors({ origin: process.env.WORDPRESS_URL }));
+app.use(express.json());
+app.use(rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  message: { error: "Rate limit exceeded, please try again later", code: "RATE_LIMIT_EXCEEDED" },
+}));
+app.use((req, res, next) => {
+  const origin = req.get('Origin');
+  if (origin !== process.env.WORDPRESS_URL) {
+    return res.status(403).json({ error: "Invalid origin", code: "INVALID_ORIGIN" });
   }
-})();
+  next();
+});
 
-// In-memory stores for sessions and chat history
-const userMemory = new Map(); // Stores character lock for sessions
-const chatMemory = new Map(); // Stores chat history for sessions
-const SESSION_TTL = 60 * 60; // Session TTL in seconds (1 hour)
-
-// Express Middleware
-app.use(cors({ origin: process.env.WORDPRESS_URL })); // Allow requests only from WordPress URL
-app.use(express.json()); // Parse JSON request bodies
-app.use(
-  rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100, // Limit each IP to 100 requests per window
-    message: { error: "Too many requests, please try again after 15 minutes." },
-    standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
-    legacyHeaders: false, // Disable the `X-RateLimit-*` headers
-  })
-);
-
-// Joi Schemas for request validation
+// Validation schemas
 const chatSchema = Joi.object({
-  text: Joi.string().trim().min(1).required(),
+  text: Joi.string().trim().min(1).max(1000).required(),
   sessionId: Joi.string().uuid().required(),
 });
-
 const speakbaseSchema = Joi.object({
-  text: Joi.string().trim().min(1).required(), // Text for chatbase response
-  userMessage: Joi.string().trim().allow(""), // User's actual input for character detection
+  text: Joi.string().trim().min(1).max(1000).required(),
+  userMessage: Joi.string().trim().min(1).max(1000).optional(),
   sessionId: Joi.string().uuid().required(),
 });
 
-// Mapping of character keys to Eleven Labs voice IDs
+// Character configuration
 const characterVoices = {
   fatima: process.env.VOICE_FATIMA,
   ibrahim: process.env.VOICE_IBRAHIM,
@@ -103,335 +119,307 @@ const characterVoices = {
   sophia: process.env.VOICE_SOPHIA,
   liang: process.env.VOICE_LIANG,
   johannes: process.env.VOICE_JOHANNES,
-  aleksander: process.env.VOICE_ALEKSANDER,
+  aleksanderi: process.env.VOICE_ALEKSANDERI,
   nadia: process.env.VOICE_NADIA,
   mcarthur: process.env.VOICE_MCARTHUR,
 };
 
-// Aliases for character names to improve detection
 const characterAliases = [
-  { key: "fatima", names: ["fatima"] },
-  { key: "ibrahim", names: ["ibrahim"] },
-  { key: "anika", names: ["anika"] },
-  { key: "kwame", names: ["kwame"] },
-  { key: "sophia", names: ["sophia", "sophie"] },
-  { key: "liang", names: ["liang"] },
-  { key: "johannes", names: ["johannes"] },
-  { key: "aleksander", names: ["aleksander", "alex", "aleks"] },
-  { key: "nadia", names: ["nadia"] },
-  { key: "mcarthur", names: ["mcarthur", "aaron", "mr mcarthur"] },
+  { key: 'fatima', names: ['fatima'] },
+  { key: 'ibrahim', names: ['ibrahim'] },
+  { key: 'anika', names: ['anika'] },
+  { key: 'kwame', names: ['kwame'] },
+  { key: 'sophia', names: ['sophia', 'sophie'] },
+  { key: 'liang', names: ['liang'] },
+  { key: 'johannes', names: ['johannes'] },
+  { key: 'aleksanderi', names: ['aleksanderi', 'alex', 'alexanderi', 'aleks'] },
+  { key: 'nadia', names: ['nadia'] },
+  { key: 'mcarthur', names: ['mcarthur', 'aaron', 'mr mcarthur'] },
 ];
 
-/**
- * Detects a character from the given text based on predefined aliases.
- * Prefers explicit addressing (e.g., "talk to X", "X,")
- * @param {string} text - The input text to search for character names.
- * @returns {string|null} The key of the detected character, or null if no unambiguous character is found.
- */
-function detectCharacter(text) {
-  if (!text || typeof text !== "string") return null;
-  const cleanedText = text.toLowerCase().trim();
-  const matches = new Set(); // Use a Set to store unique character keys
+const voiceSettings = {
+  mcarthur: { stability: 0.6, similarity_boost: 0.9 },
+  default: { stability: 0.5, similarity_boost: 0.8 },
+};
 
-  // Prioritize explicit addressing patterns
+// Character detection
+function detectCharacter(text) {
+  if (!text || typeof text !== 'string') return null;
+  const cleaned = text.toLowerCase().replace(/[^\w\s]/g, '');
+  const matches = [];
   for (const { key, names } of characterAliases) {
     for (const name of names) {
-      // Look for "talk to [name]", "[name]," or "[name]?" at the beginning or after punctuation
-      const explicitPattern = new RegExp(
-        `^(?:talk to\\s+|speak to\\s+|ask\\s+)?\\b${name}\\b(?:[,\\?.]|\\s|$)`,
-        "i"
-      );
-      if (explicitPattern.test(cleanedText)) {
-        logger.info(`Explicit character detection: ${key} via "${name}" in "${cleanedText}"`);
-        matches.add(key);
-        break; // Found an explicit match for this character, move to next character
+      if (cleaned.includes(name.toLowerCase())) {
+        matches.push(key);
+        break;
       }
     }
   }
-
-  // If exactly one explicit match, return it
-  if (matches.size === 1) {
-    return Array.from(matches)[0];
+  if (matches.length > 1) {
+    logger.warn(`Multiple characters detected: ${matches.join(', ')}`);
+    return null;
   }
-
-  // If no explicit match or multiple, try general keyword detection but with lower priority
-  if (matches.size === 0) {
-    for (const { key, names } of characterAliases) {
-      for (const name of names) {
-        // General word boundary match
-        const pattern = new RegExp(`\\b${name}\\b`, "i");
-        if (pattern.test(cleanedText)) {
-          matches.add(key);
-          break; // Found a general match for this character
-        }
-      }
-    }
-  }
-
-  // Only return a character if there's exactly one unique match
-  return matches.size === 1 ? Array.from(matches)[0] : null;
+  return matches[0] || null;
 }
 
-
-/**
- * Stores the active character for a given session.
- * @param {string} sessionId - The unique session identifier.
- * @param {string} character - The character key to set.
- */
-async function setSessionCharacter(sessionId, character) {
+// Session management
+async function setSession(sessionId, data) {
+  const sessionData = JSON.stringify(data);
   if (useRedis) {
-    await redisClient.setEx(sessionId, SESSION_TTL, character);
+    await redisClient.setEx(sessionId, SESSION_TTL, sessionData);
   } else {
-    userMemory.set(sessionId, character);
-    // Set a timeout to clear the in-memory session if Redis is not used
+    userMemory.set(sessionId, { ...data, timestamp: Date.now() });
     setTimeout(() => userMemory.delete(sessionId), SESSION_TTL * 1000);
   }
-  logger.info(`Session ${sessionId}: Character set to ${character}`);
+  logger.info(`Session ${sessionId}: Set data ${sessionData}`);
 }
 
-/**
- * Retrieves the active character for a given session.
- * @param {string} sessionId - The unique session identifier.
- * @returns {string|null} The character key, or null if not found.
- */
-async function getSessionCharacter(sessionId) {
-  const character = useRedis ? await redisClient.get(sessionId) : userMemory.get(sessionId);
-  if (character) {
-    logger.info(`Session ${sessionId}: Retrieved character ${character}`);
-  } else {
-    logger.info(`Session ${sessionId}: No character found in session.`);
+async function getSession(sessionId) {
+  let data = useRedis ? await redisClient.get(sessionId) : userMemory.get(sessionId);
+  if (useRedis && data) {
+    data = JSON.parse(data);
+  } else if (!useRedis && data) {
+    data = { character: data.character, studentName: data.studentName };
   }
-  return character || null;
+  logger.info(`Session ${sessionId}: Retrieved data ${JSON.stringify(data) || 'none'}`);
+  return data || null;
 }
 
-/**
- * Manages chat history for a session, keeping it limited to the last N messages.
- * @param {string} sessionId - The unique session identifier.
- * @param {object} userMessage - The user's message object {role: 'user', content: '...'}.
- * @param {object} assistantMessage - The assistant's message object {role: 'assistant', content: '...'}.
- */
-function updateChatHistory(sessionId, userMessage, assistantMessage) {
-  let history = chatMemory.get(sessionId) || [];
-  history = [...history, userMessage, assistantMessage];
-  // Keep only the last 12 messages (6 user-assistant pairs)
-  chatMemory.set(sessionId, history.slice(-12));
-  logger.debug(`Session ${sessionId}: Chat history updated. Current length: ${chatMemory.get(sessionId).length}`);
+function storeChatHistory(sessionId, messages) {
+  if (chatMemory.size >= MAX_SESSIONS && !chatMemory.has(sessionId)) {
+    const oldestSession = chatMemory.keys().next().value;
+    chatMemory.delete(oldestSession);
+    logger.warn(`Max sessions reached, evicted session ${oldestSession}`);
+  }
+  const sanitizedMessages = messages.map(msg => ({
+    role: msg.role,
+    content: sanitizeHtml(msg.content, { allowedTags: [], allowedAttributes: {} }).slice(0, 1000),
+  }));
+  chatMemory.set(sessionId, sanitizedMessages.length > 12 ? sanitizedMessages.slice(-12) : sanitizedMessages);
 }
 
-/**
- * Centralized function to call the Chatbase API.
- * @param {Array<object>} messages - Array of message objects for the API.
- * @param {string} chatbotId - The Chatbase chatbot ID.
- * @param {string} apiKey - The Chatbase API key.
- * @returns {Promise<string>} The content of the assistant's reply.
- * @throws {Error} If the Chatbase API call fails.
- */
-async function callChatbaseAPI(messages, chatbotId, apiKey) {
-  try {
-    const chatbaseResponse = await axios.post(
-      "https://www.chatbase.co/api/v1/chat",
-      { messages, chatbotId },
-      {
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        timeout: 10000, // 10 second timeout for Chatbase API
+// Periodic cleanup for in-memory sessions
+if (!useRedis) {
+  setInterval(() => {
+    const now = Date.now();
+    for (const [sessionId, data] of userMemory) {
+      if (now - data.timestamp > SESSION_TTL * 1000) {
+        userMemory.delete(sessionId);
+        chatMemory.delete(sessionId);
+        logger.info(`Session ${sessionId}: Expired and deleted`);
       }
-    );
-    const reply = chatbaseResponse.data?.messages?.[0]?.content || chatbaseResponse.data?.text;
-    if (!reply) {
-      throw new Error("Chatbase returned an empty or invalid response.");
     }
-    logger.info("Chatbase API call successful.");
-    return reply;
-  } catch (err) {
-    logger.error({ err_name: err.name, err_message: err.message, err_status: err.response?.status, err_data: err.response?.data }, "Error calling Chatbase API");
-    if (err.response?.status === 401) {
-        throw new Error("Authentication failed with Chatbase. Check API key.");
-    } else if (err.response?.status === 400) {
-        throw new Error("Chatbase request was malformed. Check message structure.");
-    } else if (err.code === 'ECONNABORTED') {
-        throw new Error("Chatbase API timed out. Please try again.");
-    }
-    throw new Error("Failed to get response from chat service. Please try again later.");
-  }
+  }, 60 * 1000);
 }
 
-/**
- * Centralized function to call the Eleven Labs API for text-to-speech.
- * @param {string} text - The text to convert to speech.
- * @param {string} voiceId - The Eleven Labs voice ID.
- * @param {string} apiKey - The Eleven Labs API key.
- * @returns {Promise<Buffer>} The audio data as a Buffer.
- * @throws {Error} If the Eleven Labs API call fails.
- */
-async function callElevenLabsAPI(text, voiceId, apiKey) {
-  try {
-    const voiceResponse = await axios({
-      method: "POST",
-      url: `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
-      headers: {
-        "xi-api-key": apiKey,
-        "Content-Type": "application/json",
-      },
-      data: {
-        text: text,
-        model_id: "eleven_monolingual_v1",
-        voice_settings: { stability: 0.5, similarity_boost: 0.8 },
-      },
-      responseType: "arraybuffer", // Crucial for receiving binary data
-      timeout: 15000, // 15 second timeout for Eleven Labs API
-    });
-    logger.info("Eleven Labs API call successful.");
-    return voiceResponse.data;
-  } catch (err) {
-    logger.error({ err_name: err.name, err_message: err.message, err_status: err.response?.status, err_data: err.response?.data }, "Error calling Eleven Labs API");
-    if (err.response?.status === 401) {
-        throw new Error("Authentication failed with Eleven Labs. Check API key or voice ID.");
-    } else if (err.response?.status === 400) {
-        throw new Error("Eleven Labs request was malformed. Check text content.");
-    } else if (err.code === 'ECONNABORTED') {
-        throw new Error("Eleven Labs API timed out. Please try again.");
-    }
-    throw new Error("Failed to generate speech. Please try again later.");
-  }
+// Error handling utility
+function streamlinedError(err, code) {
+  const error = new Error(err.message || 'An error occurred');
+  error.code = code;
+  error.status = err.response?.status || 500;
+  return error;
 }
 
-// --- Routes ---
-
+// Routes
 app.get("/", (req, res) => {
   res.send("🌍 Waterwheel Village - BetterChat is online!");
 });
 
-app.get("/health", (req, res) => {
-  res.json({ status: "ok", uptime: process.uptime() });
+app.get("/health", async (req, res) => {
+  const health = { status: "ok", uptime: process.uptime(), redis: useRedis ? "connected" : "in-memory" };
+  if (useRedis) {
+    try {
+      await redisClient.ping();
+      health.redis = "connected";
+    } catch (err) {
+      health.redis = "disconnected";
+    }
+  }
+  res.json(health);
 });
 
 app.post("/chat", async (req, res) => {
   try {
     const { error, value } = chatSchema.validate(req.body);
-    if (error) return res.status(400).json({ error: error.details[0].message });
+    if (error) return res.status(400).json({ error: error.details[0].message, code: "INVALID_INPUT" });
 
     const { text, sessionId } = value;
-    const userMessage = { role: "user", content: text };
+    const sanitizedText = sanitizeHtml(text, { allowedTags: [], allowedAttributes: {} });
+    const sessionData = await getSession(sessionId);
+    const previous = chatMemory.get(sessionId) || [];
+    let systemPrompt = null;
 
-    let currentCharacter = await getSessionCharacter(sessionId);
-    // If no character is set or detected, use the default
-    const effectiveCharacter = currentCharacter || DEFAULT_CHARACTER;
+    if (sessionData?.character) {
+      const prefix = sessionData.studentName && sessionData.character === 'mcarthur'
+        ? `You are Mr. McArthur, a teacher in Waterwheel Village. Address the student as ${sessionData.studentName}. Stay in character.`
+        : `You are ${sessionData.character}, a character in Waterwheel Village. Stay in character.`;
+      systemPrompt = { role: "system", content: prefix };
+    }
 
-    const systemPrompt = {
-      role: "system",
-      content: `You are ${effectiveCharacter}, a character in Waterwheel Village. Stay in this character. Do not switch roles unless explicitly asked.`,
-    };
+    const chatbaseResponse = await axios.post(
+      "https://www.chatbase.co/api/v1/chat",
+      {
+        messages: [
+          ...(systemPrompt ? [systemPrompt] : []),
+          ...previous,
+          { role: "user", content: sanitizedText },
+        ],
+        chatbotId: process.env.CHATBASE_BOT_ID,
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.CHATBASE_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+      }
+    ).catch((err) => {
+      throw streamlinedError(err, "CHATBASE_ERROR");
+    });
 
-    const previousMessages = chatMemory.get(sessionId) || [];
-    const messagesToSend = [systemPrompt, ...previousMessages, userMessage];
-
-    const replyText = await callChatbaseAPI(
-      messagesToSend,
-      process.env.CHATBASE_BOT_ID,
-      process.env.CHATBASE_API_KEY
-    );
-
-    const assistantMessage = { role: "assistant", content: replyText };
-    updateChatHistory(sessionId, userMessage, assistantMessage);
-
+    logger.info("Chatbase API call successful");
+    const replyText = chatbaseResponse.data?.messages?.[0]?.content || chatbaseResponse.data?.text || "Sorry, I had trouble understanding you.";
+    storeChatHistory(sessionId, [...previous, { role: "user", content: sanitizedText }, { role: "assistant", content: replyText }]);
     res.json({ text: replyText });
   } catch (error) {
-    logger.error({ route: "/chat", error_message: error.message, stack: error.stack });
-    res.status(500).json({ error: error.message || "Failed to process chat request." });
+    const status = error.status || 500;
+    const code = error.code || "INTERNAL_SERVER_ERROR";
+    logger.error({ error, code }, "Chat endpoint failed");
+    res.status(status).json({ error: error.message, code });
   }
 });
 
 app.post("/speakbase", async (req, res) => {
   try {
     const { error, value } = speakbaseSchema.validate(req.body);
-    if (error) return res.status(400).json({ error: error.details[0].message });
+    if (error) return res.status(400).json({ error: error.details[0].message, code: "INVALID_INPUT" });
 
-    const { text, userMessage, sessionId } = value; // `text` is for Eleven Labs, `userMessage` is for Chatbase + detection
-    const chatbaseInput = userMessage || text; // Use userMessage for Chatbase if available, else text
+    const { text, userMessage, sessionId } = value;
+    const sanitizedText = sanitizeHtml(text, { allowedTags: [], allowedAttributes: {} });
+    const sanitizedUserMessage = userMessage ? sanitizeHtml(userMessage, { allowedTags: [], allowedAttributes: {} }) : null;
 
-    let currentCharacter = await getSessionCharacter(sessionId);
-    let detectedCharacter = detectCharacter(chatbaseInput);
+    let sessionData = await getSession(sessionId);
+    let detectedCharacter = sanitizedUserMessage ? detectCharacter(sanitizedUserMessage) : null;
 
-    // If a new character is detected from the user's input, override the session character
-    if (detectedCharacter && detectedCharacter !== currentCharacter) {
-      await setSessionCharacter(sessionId, detectedCharacter);
-      logger.info(`Session ${sessionId}: Character switched from ${currentCharacter || 'none'} to ${detectedCharacter}.`);
-      currentCharacter = detectedCharacter; // Update currentCharacter for this request
-    } else if (!currentCharacter) {
-      // If no character is set in session AND no new one detected, set default
-      await setSessionCharacter(sessionId, DEFAULT_CHARACTER);
-      logger.info(`Session ${sessionId}: No character set, defaulting to ${DEFAULT_CHARACTER}.`);
-      currentCharacter = DEFAULT_CHARACTER;
+    if (detectedCharacter) {
+      sessionData = { character: detectedCharacter, studentName: sessionData?.studentName };
+      await setSession(sessionId, sessionData);
+      logger.info(`Session ${sessionId}: Character set to ${detectedCharacter}`);
+    } else if (sessionData?.character) {
+      detectedCharacter = sessionData.character;
+      logger.info(`Session ${sessionId}: Using existing character ${detectedCharacter}`);
+    } else {
+      detectedCharacter = DEFAULT_CHARACTER;
+      sessionData = { character: detectedCharacter, studentName: null };
+      await setSession(sessionId, sessionData);
+      logger.info(`Session ${sessionId}: No character found, defaulting to ${detectedCharacter}`);
     }
 
-    const effectiveCharacter = currentCharacter; // This is the character that will be used for the current interaction
+    const previous = chatMemory.get(sessionId) || [];
+    let systemPrompt = null;
+    let replyText;
 
-    const systemPrompt = {
-      role: "system",
-      content: `You are ${effectiveCharacter}, a character in Waterwheel Village. Stay in this character. Do not switch roles unless explicitly asked.`,
-    };
+    if (detectedCharacter === 'mcarthur' && previous.length === 0 && !sessionData.studentName) {
+      // New session with Mr. McArthur: Send welcome message
+      replyText = "Welcome to the lesson! I'm Mr. McArthur. May I have your name, please?";
+      storeChatHistory(sessionId, [{ role: "assistant", content: replyText }]);
+    } else {
+      // Existing session or name provided
+      if (detectedCharacter === 'mcarthur' && !sessionData.studentName && sanitizedUserMessage) {
+        // Assume userMessage contains the name
+        const name = sanitizedUserMessage.trim().slice(0, 50); // Limit name length
+        if (name) {
+          sessionData.studentName = name;
+          await setSession(sessionId, sessionData);
+          logger.info(`Session ${sessionId}: Student name set to ${name}`);
+          replyText = `Great to meet you, ${name}! Let's begin the lesson. ${sanitizedText}`;
+        } else {
+          replyText = "I'm sorry, I didn't catch your name. Could you please tell me your name?";
+          storeChatHistory(sessionId, [
+            ...previous,
+            { role: "user", content: sanitizedUserMessage || sanitizedText },
+            { role: "assistant", content: replyText },
+          ]);
+        }
+      } else {
+        // Normal conversation
+        const prefix = sessionData.studentName && detectedCharacter === 'mcarthur'
+          ? `You are Mr. McArthur, a teacher in Waterwheel Village. Address the student as ${sessionData.studentName}. Stay in character.`
+          : `You are ${detectedCharacter}, a character in Waterwheel Village. Stay in character.`;
+        systemPrompt = { role: "system", content: prefix };
 
-    const previousMessages = chatMemory.get(sessionId) || [];
-    const messagesToSend = [systemPrompt, ...previousMessages, { role: "user", content: chatbaseInput }];
+        const chatbaseResponse = await axios.post(
+          "https://www.chatbase.co/api/v1/chat",
+          {
+            messages: [
+              ...(systemPrompt ? [systemPrompt] : []),
+              ...previous,
+              { role: "user", content: sanitizedUserMessage || sanitizedText },
+            ],
+            chatbotId: process.env.CHATBASE_BOT_ID,
+          },
+          {
+            headers: {
+              Authorization: `Bearer ${process.env.CHATBASE_API_KEY}`,
+              "Content-Type": "application/json",
+            },
+          }
+        ).catch((err) => {
+          throw streamlinedError(err, "CHATBASE_ERROR");
+        });
 
-    const replyText = await callChatbaseAPI(
-      messagesToSend,
-      process.env.CHATBASE_BOT_ID,
-      process.env.CHATBASE_API_KEY
-    );
-
-    const assistantMessage = { role: "assistant", content: replyText };
-    updateChatHistory(sessionId, { role: "user", content: chatbaseInput }, assistantMessage);
-
-   const spokenText = text; // 'text' comes directly from req.body, already stripped by frontend
-
-    if (!spokenText) {
-      logger.warn(`No spoken text generated for session ${sessionId}. Chatbase reply was: "${replyText}"`);
-      return res.status(400).json({ error: "Chatbot provided an empty response to speak." });
+        logger.info("Chatbase API call successful");
+        replyText = chatbaseResponse.data?.messages?.[0]?.content || chatbaseResponse.data?.text || "Sorry, I had trouble understanding you.";
+        storeChatHistory(sessionId, [
+          ...previous,
+          { role: "user", content: sanitizedUserMessage || sanitizedText },
+          { role: "assistant", content: replyText },
+        ]);
+      }
     }
 
-    const selectedVoiceId =
-      characterVoices[effectiveCharacter] ||
-      characterVoices[DEFAULT_CHARACTER] ||
-      process.env.ELEVEN_VOICE_ID;
+    const spokenText = replyText.replace(/\*\*(.*?)\*\*/g, '$1').replace(/\*(.*?)\*/g, '$1').replace(/~~(.*?)~~/g, '$1').replace(/`(.*?)`/g, '$1').trim();
+    if (!spokenText) return res.status(400).json({ error: "No text provided for speech", code: "NO_SPEECH_TEXT" });
 
-    const audioBuffer = await callElevenLabsAPI(
-      spokenText,
-      selectedVoiceId,
-      process.env.ELEVEN_API_KEY
-    );
+    const selectedVoiceId = characterVoices[detectedCharacter] || characterVoices[DEFAULT_CHARACTER];
+    const settings = voiceSettings[detectedCharacter] || voiceSettings.default;
 
-    res.set({ "Content-Type": "audio/mpeg", "Content-Length": audioBuffer.length });
-    res.send(audioBuffer);
+    const voiceResponse = await axios({
+      method: "POST",
+      url: `https://api.elevenlabs.io/v1/text-to-speech/${selectedVoiceId}`,
+      headers: {
+        "xi-api-key": process.env.ELEVEN_API_KEY,
+        "Content-Type": "application/json",
+      },
+      data: {
+        text: spokenText,
+        model_id: "eleven_monolingual_v1",
+        voice_settings: settings,
+      },
+      responseType: "arraybuffer",
+    }).catch((err) => {
+      throw streamlinedError(err, "ELEVENLABS_ERROR");
+    });
+
+    if (!voiceResponse.headers['content-type'].includes('audio')) {
+      throw streamlinedError(new Error("Invalid audio response from ElevenLabs"), "INVALID_AUDIO_RESPONSE");
+    }
+
+    logger.info("Eleven Labs API call successful");
+    res.set({ "Content-Type": "audio/mpeg", "Content-Length": voiceResponse.data.length });
+    res.send(voiceResponse.data);
   } catch (error) {
-    logger.error({ route: "/speakbase", error_message: error.message, stack: error.stack });
-    // Use the error message from the helper functions, or a generic one
-    res.status(500).json({ error: error.message || "Failed to process speak request." });
+    const status = error.status || 500;
+    const code = error.code || "INTERNAL_SERVER_ERROR";
+    logger.error({ error, code }, "Speakbase endpoint failed");
+    res.status(status).json({ error: error.message, code });
   }
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => logger.info(`🚀 BetterChat running on port ${PORT}`));
 
-// Graceful shutdown
 process.on("SIGTERM", async () => {
   logger.info("Gracefully shutting down...");
-  if (redisClient && redisClient.isOpen) { // Check if client is open before quitting
-    await redisClient.quit();
-    logger.info("Redis client disconnected.");
-  }
+  if (redisClient) await redisClient.quit();
   process.exit(0);
-});
-
-process.on("unhandledRejection", (reason, promise) => {
-  logger.error({ promise, reason }, "Unhandled Rejection at:");
-  // Application specific logging, throwing an error, or other logic here
-});
-
-process.on("uncaughtException", (err) => {
-  logger.fatal({ err }, "Uncaught Exception:");
-  process.exit(1); // mandatory exit after uncaught exception
 });
