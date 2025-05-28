@@ -11,7 +11,7 @@ const pino = require("pino");
 const sanitizeHtml = require("sanitize-html");
 const { v4: uuidv4 } = require("uuid");
 const { characterVoices, characterAliases, voiceSettings } = require("./config");
-
+const axiosRetry = require("axios-retry").default;
 const logger = pino({
   level: "info",
   transport: {
@@ -60,7 +60,7 @@ let redisClient;
 let useRedis = !!process.env.REDIS_URL;
 const userMemory = new Map();
 const chatMemory = new Map();
-
+axiosRetry(axios, { retries: 3, retryDelay: axiosRetry.exponentialDelay });
 logger.info(
   `Dependencies loaded: express@${require("express/package.json").version}, axios@${require("axios/package.json").version}, redis@${require("redis/package.json").version}`,
 );
