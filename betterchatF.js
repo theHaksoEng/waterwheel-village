@@ -11,7 +11,6 @@ const pino = require("pino");
 const sanitizeHtml = require("sanitize-html");
 const { v4: uuidv4 } = require("uuid");
 const { characterVoices, characterAliases, voiceSettings } = require("./config");
-const axiosRetry = require("axios-retry").default;
 const logger = pino({
   level: "info",
   transport: {
