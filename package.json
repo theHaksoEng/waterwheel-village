@@ -1,25 +1,31 @@
 {
-  "name": "betterchat-new",
+  "name": "betterchat",
   "version": "1.0.0",
-  "description": "",
-  "main": "betterchat.js",
+  "description": "Waterwheel Village BetterChat server",
+  "main": "betterchatF.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node betterchatF.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "dependencies": {
-    "axios": "^1.9.0",
+    "axios": "^1.7.2",
     "axios-retry": "^4.5.0",
     "cors": "^2.8.5",
-    "dotenv": "^16.5.0",
-    "express": "^5.1.0",
-    "express-rate-limit": "^7.5.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-rate-limit": "^7.4.0",
     "joi": "^17.13.3",
-    "pino": "^9.7.0",
-    "redis": "^5.1.0",
-    "sanitize-html": "^2.17.0",
-    "uuid": "^11.1.0"
-  }
+    "pino": "^9.1.0",
+    "redis": "^4.7.0",
+    "sanitize-html": "^2.13.0",
+    "uuid": "^10.0.0"
+  },
+  "engines": {
+    "node": "20.11.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/theHaksoEng/waterwheel-village.git"
+  },
+  "author": "Aaron Hakso",
+  "license": "ISC"
 }
