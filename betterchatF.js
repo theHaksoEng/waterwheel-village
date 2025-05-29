@@ -407,24 +407,29 @@ app.post("/speakbase", async (req, res) => {
       logger.warn(`No valid text for speech in session ${sessionId}`);
       return res.status(400).json({ error: "No text for speech", code: "NO_SPEECH_TEXT" });
     }
+    logger.info(`Using voice: ${selectedVoiceId} for character: ${detectedCharacter}`);
 
     const selectedVoiceId = characterVoices[detectedCharacter] || characterVoices[DEFAULT_CHARACTER];
     const settings = voiceSettings[detectedCharacter] || voiceSettings.default;
-
-    const voiceResponse = await axios({
-      method: "POST",
-      url: `https://api.elevenlabs.io/v1/text-to-speech/${selectedVoiceId}`,
-      headers: {
-        "xi-api-key": process.env.ELEVEN_API_KEY,
-        "Content-Type": "application/json",
-      },
-      data: {
-        text: spokenText,
-        model_id: "eleven_monolingual_v1",
-        voice_settings: settings,
-      },
-      responseType: "arraybuffer",
-    });
+    
+    logger.info(`Speakbase: Using character "${detectedCharacter}" with voice ID: ${selectedVoiceId}`);
+    
+      logger.info(`Speakbase: Character for voice = ${detectedCharacter}`);
+      logger.info(`Speakbase: Voice ID used = ${characterVoices[detectedCharacter]}`);
+      const voiceResponse = await axios({
+        method: "POST",
+        url: `https://api.elevenlabs.io/v1/text-to-speech/${selectedVoiceId}`,
+        headers: {
+          "xi-api-key": process.env.ELEVEN_API_KEY,
+          "Content-Type": "application/json",
+        },
+        data: {
+          text: spokenText,
+          model_id: "eleven_monolingual_v1",
+          voice_settings: settings,
+        },
+        responseType: "arraybuffer",
+      });      
 
     if (!voiceResponse.headers["content-type"].includes("audio")) {
       logger.error({ code: "INVALID_AUDIO_RESPONSE", contentType: voiceResponse.headers["content-type"] }, "Invalid audio response");
