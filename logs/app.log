@@ -47,3 +47,33 @@
 {"level":30,"time":1748521492411,"pid":35398,"hostname":"MacBook-Pro.local","msg":"Chatbase API call successful for session 123e4567-e89b-12d3-a456-426614174000"}
 {"level":30,"time":1748521495173,"pid":35398,"hostname":"MacBook-Pro.local","msg":"ElevenLabs API call successful for session 123e4567-e89b-12d3-a456-426614174000"}
 {"level":50,"time":1748521495173,"pid":35398,"hostname":"MacBook-Pro.local","error":"TypeError: Cannot read properties of null (reading 'studentName')\n    at /Users/aaronhakso/betterchat-new/betterchatF.js:501:60\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)","code":"INTERNAL_SERVER_ERROR","msg":"Speakbase endpoint failed"}
+{"level":30,"time":1748530275904,"pid":35849,"hostname":"MacBook-Pro.local","msg":"Dependencies loaded: express@4.21.2, axios@1.9.0, redis@4.7.1"}
+{"level":40,"time":1748530275904,"pid":35849,"hostname":"MacBook-Pro.local","msg":"No REDIS_URL provided, using in-memory Map. Consider setting REDIS_URL for persistent session storage."}
+{"level":30,"time":1748530275907,"pid":35849,"hostname":"MacBook-Pro.local","msg":"🚖 BetterChat server running on port 3000"}
+{"level":30,"time":1748530354619,"pid":35876,"hostname":"MacBook-Pro.local","msg":"Dependencies loaded: express@4.21.2, axios@1.9.0, redis@4.7.1"}
+{"level":40,"time":1748530354619,"pid":35876,"hostname":"MacBook-Pro.local","msg":"No REDIS_URL provided, using in-memory Map. Consider setting REDIS_URL for persistent session storage."}
+{"level":30,"time":1748530354621,"pid":35876,"hostname":"MacBook-Pro.local","msg":"🚖 BetterChat server running on port 3000"}
+{"level":30,"time":1748530986940,"pid":36031,"hostname":"MacBook-Pro.local","msg":"Dependencies loaded: express@4.21.2, axios@1.9.0, redis@4.7.1"}
+{"level":40,"time":1748530986940,"pid":36031,"hostname":"MacBook-Pro.local","msg":"No REDIS_URL provided, using in-memory Map. Consider setting REDIS_URL for persistent session storage."}
+{"level":30,"time":1748530986943,"pid":36031,"hostname":"MacBook-Pro.local","msg":"🚖 BetterChat server running on port 3000"}
+{"level":30,"time":1748531169130,"pid":36110,"hostname":"MacBook-Pro.local","msg":"Dependencies loaded: express@4.21.2, axios@1.9.0, redis@4.7.1"}
+{"level":40,"time":1748531169131,"pid":36110,"hostname":"MacBook-Pro.local","msg":"No REDIS_URL provided, using in-memory Map. Consider setting REDIS_URL for persistent session storage."}
+{"level":30,"time":1748531169133,"pid":36110,"hostname":"MacBook-Pro.local","msg":"🚖 BetterChat server running on port 3000"}
+{"level":30,"time":1748531376088,"pid":36110,"hostname":"MacBook-Pro.local","msg":"Session 123e4567-e89b-12d3-a456-426614174000: Retrieved data none"}
+{"level":30,"time":1748531379461,"pid":36110,"hostname":"MacBook-Pro.local","msg":"Chatbase API call successful for session 123e4567-e89b-12d3-a456-426614174000"}
+{"level":30,"time":1748531832853,"pid":36110,"hostname":"MacBook-Pro.local","msg":"Root endpoint accessed"}
+{"level":30,"time":1748532187863,"pid":36348,"hostname":"MacBook-Pro.local","msg":"Dependencies loaded: express@4.21.2, axios@1.9.0, redis@4.7.1"}
+{"level":40,"time":1748532187863,"pid":36348,"hostname":"MacBook-Pro.local","msg":"No REDIS_URL provided, using in-memory Map. Consider setting REDIS_URL for persistent session storage."}
+{"level":30,"time":1748532296163,"pid":36786,"hostname":"MacBook-Pro.local","msg":"Dependencies loaded: express@4.21.2, axios@1.9.0, redis@4.7.1"}
+{"level":40,"time":1748532296164,"pid":36786,"hostname":"MacBook-Pro.local","msg":"No REDIS_URL provided, using in-memory Map. Consider setting REDIS_URL for persistent session storage."}
+{"level":30,"time":1748532296166,"pid":36786,"hostname":"MacBook-Pro.local","msg":"🚖 BetterChat server running on port 3000"}
+{"level":30,"time":1748532443527,"pid":36786,"hostname":"MacBook-Pro.local","msg":"Root endpoint accessed"}
+{"level":30,"time":1748532981002,"pid":36948,"hostname":"MacBook-Pro.local","msg":"Dependencies loaded: express@4.21.2, axios@1.9.0, redis@4.7.1"}
+{"level":40,"time":1748532981002,"pid":36948,"hostname":"MacBook-Pro.local","msg":"No REDIS_URL provided, using in-memory Map. Consider setting REDIS_URL for persistent session storage."}
+{"level":30,"time":1748532981004,"pid":36948,"hostname":"MacBook-Pro.local","msg":"🚖 BetterChat server running on port 3000"}
+{"level":30,"time":1748533002817,"pid":36948,"hostname":"MacBook-Pro.local","msg":"Speakbase request: {\"text\":\"Ibrahim, can you paint your iron works any color?\",\"userMessage\":\"talk to Ibrahim\",\"sessionId\":\"123e4567-e89b-12d3-a456-426614174000\"}"}
+{"level":30,"time":1748533002818,"pid":36948,"hostname":"MacBook-Pro.local","msg":"Session 123e4567-e89b-12d3-a456-426614174000: Retrieved data none"}
+{"level":30,"time":1748533002818,"pid":36948,"hostname":"MacBook-Pro.local","msg":"Session 123e4567-e89b-12d3-a456-426614174000: Successfully set data {\"character\":\"ibrahim\",\"studentName\":null}"}
+{"level":30,"time":1748533002818,"pid":36948,"hostname":"MacBook-Pro.local","msg":"Session 123e4567-e89b-12d3-a456-426614174000: Character switched to ibrahim"}
+{"level":30,"time":1748533005414,"pid":36948,"hostname":"MacBook-Pro.local","msg":"Chatbase API call successful for session 123e4567-e89b-12d3-a456-426614174000"}
+{"level":30,"time":1748533007908,"pid":36948,"hostname":"MacBook-Pro.local","msg":"ElevenLabs API call successful for session 123e4567-e89b-12d3-a456-426614174000"}

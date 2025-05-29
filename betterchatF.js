@@ -100,8 +100,7 @@ axiosRetry(axios, {
   retryCondition: (error) => axiosRetry.isNetworkOrIdempotentRequestError(error) || error.response?.status >= 500,
 });
 
-app.use(cors({ origin: process.env.WORDPRESS_URL }));
-
+app.use(cors());
 app.use(express.json());
 
 /*
@@ -329,10 +328,8 @@ app.post("/chat", async (req, res) => {
 
 app.post("/speakbase", async (req, res) => {
   try {
-    logger.debug(`Speakbase request received: ${JSON.stringify(req.body)}`);
-
+    logger.info(`Speakbase request: ${JSON.stringify(req.body)}`);
     const { error, value } = speakbaseSchema.validate(req.body);
-
     if (error) {
       logger.warn(`Invalid speakbase input: ${error.details[0].message}`);
       return res.status(400).json({ error: error.details[0].message, code: "INVALID_INPUT" });
@@ -345,150 +342,21 @@ app.post("/speakbase", async (req, res) => {
     let sessionData = await getSession(sessionId);
     let detectedCharacter = sessionData?.character || DEFAULT_CHARACTER;
 
-    // Only switch if user explicitly asks to change
     const requestedCharacter = sanitizedUserMessage ? detectCharacter(sanitizedUserMessage) : null;
     const askedToSwitch = sanitizedUserMessage?.toLowerCase().includes("talk to") || sanitizedUserMessage?.toLowerCase().includes("can i speak with");
-    
-  // Replace the problematic section in the /speakbase endpoint
-try {
-  logger.debug(`Speakbase request received: ${JSON.stringify(req.body)}`);
 
-  const { error, value } = speakbaseSchema.validate(req.body);
-
-  if (error) {
-    logger.warn(`Invalid speakbase input: ${error.details[0].message}`);
-    return res.status(400).json({ error: error.details[0].message, code: "INVALID_INPUT" });
-  }
-
-  const { text, userMessage, sessionId } = value;
-  const sanitizedText = sanitizeHtml(text, { allowedTags: [], allowedAttributes: {} });
-  const sanitizedUserMessage = userMessage ? sanitizeHtml(userMessage, { allowedTags: [], allowedAttributes: {} }) : null;
-
-  let sessionData = await getSession(sessionId);
-  let detectedCharacter = sessionData?.character || DEFAULT_CHARACTER;
-
-  // Only switch if user explicitly asks to change
-  const requestedCharacter = sanitizedUserMessage ? detectCharacter(sanitizedUserMessage) : null;
-  const askedToSwitch = sanitizedUserMessage?.toLowerCase().includes("talk to") || sanitizedUserMessage?.toLowerCase().includes("can i speak with");
-
-  if (requestedCharacter && requestedCharacter !== detectedCharacter && askedToSwitch) {
-    detectedCharacter = requestedCharacter;
-    sessionData = { character: detectedCharacter, studentName: sessionData?.studentName };
-    await setSession(sessionId, sessionData);
-    logger.info(`Session ${sessionId}: Character switched to ${detectedCharacter}`);
-  } else {
-    logger.debug(`Session ${sessionId}: Keeping character as ${detectedCharacter}`);
-  }
-
-  // Remove the extra closing brace and fix the logic
-  if (sessionData?.character) {
-    detectedCharacter = sessionData.character;
-    logger.debug(`Session ${sessionId}: Using existing character ${detectedCharacter}`);
-  } else {
-    detectedCharacter = DEFAULT_CHARACTER;
-    sessionData = { character: detectedCharacter, studentName: null };
-    await setSession(sessionId, sessionData);
-    logger.info(`Session ${sessionId}: Defaulted to character ${detectedCharacter}`);
-  }
-
-  const previous = chatMemory.get(sessionId) || [];
-  let replyText;
-
-  if (detectedCharacter === "mcarthur" && previous.length === 0 && !sessionData.studentName) {
-    replyText = "Welcome to the lesson! I'm Mr. McArthur. May I have your name, please?";
-    storeChatHistory(sessionId, [{ role: "assistant", content: replyText }]);
-    logger.info(`Session ${sessionId}: Initiated Mr. McArthur lesson, requesting student name`);
-  } else {
-    if (detectedCharacter === "mcarthur" && !sessionData.studentName && sanitizedUserMessage) {
-      const name = sanitizedUserMessage.match(/^[a-zA-Z\s]+$/) ? sanitizedUserMessage.trim().slice(0, 50) : null;
-
-      if (name) {
-        sessionData.studentName = name;
-        await setSession(sessionId, sessionData);
-        logger.info(`Session ${sessionId}: Set student name to ${name}`);
-        replyText = `Great to meet you, ${name}! Let's begin the lesson. ${sanitizedText}`;
-      } else {
-        replyText = "I'm sorry, I didn't catch a valid name. Could you please tell me your name using only letters?";
-        storeChatHistory(sessionId, [
-          ...previous,
-          { role: "user", content: sanitizedUserMessage || sanitizedText },
-          { role: "assistant", content: replyText },
-        ]);
-        logger.debug(`Session ${sessionId}: Invalid name provided, requesting again`);
-      }
+    if (requestedCharacter && requestedCharacter !== detectedCharacter && askedToSwitch) {
+      detectedCharacter = requestedCharacter;
+      sessionData = { character: detectedCharacter, studentName: sessionData?.studentName || null };
+      await setSession(sessionId, sessionData);
+      logger.info(`Session ${sessionId}: Character switched to ${detectedCharacter}`);
+    } else if (!sessionData) {
+      sessionData = { character: detectedCharacter, studentName: null };
+      await setSession(sessionId, sessionData);
+      logger.info(`Session ${sessionId}: Defaulted to character ${detectedCharacter}`);
     } else {
-      const prefix =
-        sessionData.studentName && sessionData.character === "mcarthur"
-          ? `You are Mr. McArthur, a teacher in Waterwheel Village. Address the student as ${sessionData.studentName}. Stay in character.`
-          : `You are ${detectedCharacter}, a character in Waterwheel Village. Stay in character.`;
-
-      const systemPrompt = { role: "system", content: prefix };
-
-      replyText = await callChatbase(
-        sessionId,
-        [...(systemPrompt ? [systemPrompt] : []), ...previous, { role: "user", content: sanitizedUserMessage || sanitizedText }],
-        process.env.CHATBASE_BOT_ID,
-        process.env.CHATBASE_API_KEY,
-      );
-
-      storeChatHistory(sessionId, [
-        ...previous,
-        { role: "user", content: sanitizedUserMessage || sanitizedText },
-        { role: "assistant", content: replyText },
-      ]);
+      logger.debug(`Session ${sessionId}: Keeping character as ${detectedCharacter}`);
     }
-  }
-
-  const spokenText = replyText
-    .replace(/\*\*(.*?)\*\*/g, "$1")
-    .replace(/\*(.*?)\*/g, "$1")
-    .replace(/~~(.*?)~~/g, "$1")
-    .replace(/`(.*?)`/g, "$1")
-    .trim();
-
-  if (!spokenText) {
-    logger.warn(`No valid text provided for speech synthesis in session ${sessionId}`);
-    return res.status(400).json({ error: "No text provided for speech", code: "NO_SPEECH_TEXT" });
-  }
-
-  const selectedVoiceId = characterVoices[detectedCharacter] || characterVoices[DEFAULT_CHARACTER];
-  const settings = voiceSettings[detectedCharacter] || voiceSettings.default;
-
-  const voiceResponse = await axios({
-    method: "POST",
-    url: `https://api.elevenlabs.io/v1/text-to-speech/${selectedVoiceId}`,
-    headers: {
-      "xi-api-key": process.env.ELEVEN_API_KEY,
-      "Content-Type": "application/json",
-    },
-    data: {
-      text: spokenText,
-      model_id: "eleven_monolingual_v1",
-      voice_settings: settings,
-    },
-    responseType: "arraybuffer",
-  }).catch((err) => {
-    logger.error({ error: err.stack, code: "ELEVENLABS_ERROR" }, "ElevenLabs API request failed");
-    throw streamlinedError(err, "ELEVENLABS_ERROR");
-  });
-
-  if (!voiceResponse.headers["content-type"].includes("audio")) {
-    logger.error(
-      { code: "INVALID_AUDIO_RESPONSE", contentType: voiceResponse.headers["content-type"] },
-      "Invalid audio response from ElevenLabs",
-    );
-    throw streamlinedError(new Error("Invalid audio response from ElevenLabs"), "INVALID_AUDIO_RESPONSE");
-  }
-
-  logger.info(`ElevenLabs API call successful for session ${sessionId}`);
-  res.set({ "Content-Type": "audio/mpeg", "Content-Length": voiceResponse.data.length });
-  res.send(voiceResponse.data);
-} catch (error) {
-  const status = error.status || 500;
-  const code = error.code || "INTERNAL_SERVER_ERROR";
-  logger.error({ error: error.stack, code }, "Speakbase endpoint failed");
-  res.status(status).json({ error: error.message, code });
-}
 
     const previous = chatMemory.get(sessionId) || [];
     let replyText;
@@ -500,7 +368,6 @@ try {
     } else {
       if (detectedCharacter === "mcarthur" && !sessionData.studentName && sanitizedUserMessage) {
         const name = sanitizedUserMessage.match(/^[a-zA-Z\s]+$/) ? sanitizedUserMessage.trim().slice(0, 50) : null;
-
         if (name) {
           sessionData.studentName = name;
           await setSession(sessionId, sessionData);
@@ -517,7 +384,7 @@ try {
         }
       } else {
         const prefix =
-          sessionData.studentName && sessionData.character === "mcarthur"
+          sessionData.studentName && detectedCharacter === "mcarthur"
             ? `You are Mr. McArthur, a teacher in Waterwheel Village. Address the student as ${sessionData.studentName}. Stay in character.`
             : `You are ${detectedCharacter}, a character in Waterwheel Village. Stay in character.`;
 
