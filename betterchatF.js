@@ -421,16 +421,18 @@ app.post("/speakbase", async (req, res) => {
         url: `https://api.elevenlabs.io/v1/text-to-speech/${selectedVoiceId}`,
         headers: {
           "xi-api-key": process.env.ELEVEN_API_KEY,
-          "Content-Type": "application/json",
-        },
-        data: {
-          text: spokenText,
-          model_id: "eleven_monolingual_v1",
-          voice_settings: settings,
+          "Content-Type": "application/json"
         },
         responseType: "arraybuffer",
+        data: {
+          text: text,
+          model_id: "eleven_monolingual_v1",
+          voice_settings: {
+            stability: 0.5,
+            similarity_boost: 0.75
+          }
+        }
       });      
-
     if (!voiceResponse.headers["content-type"].includes("audio")) {
       logger.error({ code: "INVALID_AUDIO_RESPONSE", contentType: voiceResponse.headers["content-type"] }, "Invalid audio response");
       throw new Error("Invalid audio response from ElevenLabs");
