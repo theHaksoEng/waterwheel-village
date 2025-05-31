@@ -48,7 +48,6 @@ console.log("Env validation result:", envError ? envError.details : "Success");
 console.log("Environment variables validated:", Object.keys(process.env).filter(k => k.startsWith("CHATBASE") || k.startsWith("ELEVEN") || k.startsWith("VOICE") || k.includes("URL") || k.includes("PORT")));
 console.log("About to check envError");
 if (envError) {
-
   logger.error(`Environment validation failed: ${envError.details.map(d => d.message).join(", ")}`);
   process.exit(1);
 }
@@ -68,7 +67,7 @@ if (useRedis) {
     url: process.env.REDIS_URL,
     retry_strategy: (options) => {
       if (options.attempt > 3) {
-        logger.error("Max Redis retries reached, falling back to in-memory storage");
+        logger.error(`Max Redis retries reached, falling back to in-memory storage`);
         useRedis = false;
         return null;
       }
@@ -77,20 +76,20 @@ if (useRedis) {
   });
 
   redisClient.on("error", (err) => {
-    logger.error({ err: err.stack, code: "REDIS_ERROR" }, "Redis connection error");
+    logger.error({ err: err.stack, code: "REDIS_ERROR" }, `Redis connection error`);
   });
 
   (async () => {
     try {
       await redisClient.connect();
-      logger.info("Successfully connected to Redis");
+      logger.info(`Successfully connected to Redis`);
     } catch (err) {
-      logger.error({ err: err.stack }, "Failed to connect to Redis, falling back to in-memory Map");
+      logger.error({ err: err.stack }, `Failed to connect to Redis, falling back to in-memory Map`);
       useRedis = false;
     }
   })();
 } else {
-  logger.warn("No REDIS_URL provided, using in-memory Map. Consider setting REDIS_URL for persistent session storage.");
+  logger.warn(`No REDIS_URL provided, using in-memory Map. Consider setting REDIS_URL for persistent session storage.`);
 }
 
 axiosRetry(axios, {
@@ -107,10 +106,10 @@ app.use(express.json());
 app.use((req, res, next) => {
   const origin = req.get("Origin");
   if (origin !== process.env.WORDPRESS_URL) {
-    logger.warn(Invalid origin request from ${origin});
+    logger.warn(`Invalid origin request from ${origin}`);
     return res.status(403).json({ error: "Invalid origin", code: "INVALID_ORIGIN" });
   }
-  logger.debug(Processing request for ${req.path}: ${JSON.stringify(req.body)});
+  logger.debug(`Processing request for ${req.path}: ${JSON.stringify(req.body)}`);
   next();
 });
 */
@@ -136,7 +135,7 @@ const speakbaseSchema = Joi.object({
 
 function detectCharacter(text) {
   if (!text || typeof text !== "string") {
-    logger.debug("No valid text provided for character detection");
+    logger.debug(`No valid text provided for character detection`);
     return null;
   }
 
@@ -192,7 +191,7 @@ async function getSession(sessionId) {
     logger.info(`Session ${sessionId}: Retrieved data ${JSON.stringify(data) || "none"}`);
     return data || null;
   } catch (error) {
-    logger.error({ error: error.stack, code: "SESSION_GET_ERROR" }, Failed to get session ${sessionId});
+    logger.error({ error: error.stack, code: "SESSION_GET_ERROR" }, `Failed to get session ${sessionId}`);
     return null;
   }
 }
@@ -202,7 +201,7 @@ function storeChatHistory(sessionId, messages) {
     if (chatMemory.size >= MAX_SESSIONS && !chatMemory.has(sessionId)) {
       const oldestSession = chatMemory.keys().next().value;
       chatMemory.delete(oldestSession);
-      logger.warn(Max sessions reached, evicted oldest session ${oldestSession});
+      logger.warn(`Max sessions reached, evicted oldest session ${oldestSession}`);
     }
 
     const sanitizedMessages = messages.map((msg) => ({
@@ -211,9 +210,9 @@ function storeChatHistory(sessionId, messages) {
     }));
 
     chatMemory.set(sessionId, sanitizedMessages.length > 12 ? sanitizedMessages.slice(-12) : sanitizedMessages);
-    logger.debug(Stored chat history for session ${sessionId}: ${JSON.stringify(sanitizedMessages)});
+    logger.debug(`Stored chat history for session ${sessionId}: ${JSON.stringify(sanitizedMessages)}`);
   } catch (error) {
-    logger.error({ error: error.stack, code: "CHAT_HISTORY_ERROR" }, Failed to store chat history for ${sessionId});
+    logger.error({ error: error.stack, code: "CHAT_HISTORY_ERROR" }, `Failed to store chat history for ${sessionId}`);
   }
 }
 
@@ -224,7 +223,7 @@ if (!useRedis) {
       if (now - data.timestamp > SESSION_TTL * 1000) {
         userMemory.delete(sessionId);
         chatMemory.delete(sessionId);
-        logger.info(Session ${sessionId}: Expired and deleted from in-memory storage);
+        logger.info(`Session ${sessionId}: Expired and deleted from in-memory storage`);
       }
     }
   }, 60 * 1000);
@@ -242,24 +241,24 @@ async function callChatbase(sessionId, messages, chatbotId, apiKey) {
     const response = await axios.post(
       "https://www.chatbase.co/api/v1/chat",
       { messages, chatbotId },
-      { headers: { Authorization: Bearer ${apiKey}, "Content-Type": "application/json" } },
+      { headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" } },
     );
 
-    logger.info(Chatbase API call successful for session ${sessionId});
+    logger.info(`Chatbase API call successful for session ${sessionId}`);
     return response.data?.messages?.[0]?.content || response.data?.text || "Sorry, I had trouble understanding you.";
   } catch (err) {
-    logger.error({ err: err.stack, code: "CHATBASE_REQUEST_ERROR" }, "Chatbase API request failed");
-    throw streamlinedError(err, "CHATBASE_ERROR");
+    logger.error({ err: err.stack, code: "CHATBASE_REQUEST_ERROR" }, `Chatbase API request failed`);
+    throw streamlinedError(err, "CHATBASE_REQUEST_ERROR");
   }
 }
 
 app.get("/", (req, res) => {
-  logger.info("Root endpoint accessed");
+  logger.info(`Root endpoint accessed`);
   res.send("🌍 Waterwheel Village - BetterChat is online!");
 });
 
 app.get("/health", async (req, res) => {
-  logger.info("Health check requested");
+  logger.info(`Health check requested`);
 
   const health = { status: "ok", uptime: process.uptime(), redis: useRedis ? "connected" : "in-memory" };
 
@@ -268,7 +267,7 @@ app.get("/health", async (req, res) => {
       await redisClient.ping();
       health.redis = "connected";
     } catch (err) {
-      logger.error({ err: err.stack, code: "REDIS_PING_ERROR" }, "Redis ping failed");
+      logger.error({ err: err.stack, code: "REDIS_PING_ERROR" }, `Redis ping failed`);
       health.redis = "disconnected";
     }
   }
@@ -278,12 +277,12 @@ app.get("/health", async (req, res) => {
 
 app.post("/chat", async (req, res) => {
   try {
-    logger.debug(Chat request received: ${JSON.stringify(req.body)});
+    logger.debug(`Chat request received: ${JSON.stringify(req.body)}`);
 
     const { error, value } = chatSchema.validate(req.body);
 
     if (error) {
-      logger.warn(Invalid chat input: ${error.details[0].message});
+      logger.warn(`Invalid chat input: ${error.details[0].message}`);
       return res.status(400).json({ error: error.details[0].message, code: "INVALID_INPUT" });
     }
 
@@ -297,11 +296,11 @@ app.post("/chat", async (req, res) => {
     if (sessionData?.character) {
       const prefix =
         sessionData.studentName && sessionData.character === "mcarthur"
-          ? You are Mr. McArthur, a teacher in Waterwheel Village. Address the student as ${sessionData.studentName}. Stay in character.
-          : You are ${sessionData.character}, a character in Waterwheel Village. Stay in character.;
+          ? `You are Mr. McArthur, a teacher in Waterwheel Village. Address the student as ${sessionData.studentName}. Stay in character.`
+          : `You are ${sessionData.character}, a character in Waterwheel Village. Stay in character.`;
 
       systemPrompt = { role: "system", content: prefix };
-      logger.debug(System prompt set for character: ${sessionData.character});
+      logger.debug(`System prompt set for character: ${sessionData.character}`);
     }
 
     const replyText = await callChatbase(
@@ -321,18 +320,18 @@ app.post("/chat", async (req, res) => {
   } catch (error) {
     const status = error.status || 500;
     const code = error.code || "INTERNAL_SERVER_ERROR";
-    logger.error({ error: error.stack, code }, "Chat endpoint failed");
+    logger.error({ error: error.stack, code }, `Chat endpoint failed`);
     res.status(status).json({ error: error.message, code });
   }
 });
 
 app.post("/speakbase", async (req, res) => {
   try {
-    logger.debug(Speakbase request received: ${JSON.stringify(req.body)});
+    logger.debug(`Speakbase request received: ${JSON.stringify(req.body)}`);
 
     const { error, value } = speakbaseSchema.validate(req.body);
     if (error) {
-      logger.warn(Invalid speakbase input: ${error.details[0].message});
+      logger.warn(`Invalid speakbase input: ${error.details[0].message}`);
       return res.status(400).json({ error: error.details[0].message, code: "INVALID_INPUT" });
     }
 
@@ -351,44 +350,44 @@ app.post("/speakbase", async (req, res) => {
       detectedCharacter = requestedCharacter;
       sessionData = { character: detectedCharacter, studentName: sessionData?.studentName || null };
       await setSession(sessionId, sessionData);
-      logger.info(Session ${sessionId}: Character switched to ${detectedCharacter});
+      logger.info(`Session ${sessionId}: Character switched to ${detectedCharacter}`);
     } else if (!sessionData) {
       sessionData = { character: detectedCharacter, studentName: null };
       await setSession(sessionId, sessionData);
-      logger.info(Session ${sessionId}: Defaulted to character ${detectedCharacter});
+      logger.info(`Session ${sessionId}: Defaulted to character ${detectedCharacter}`);
     } else {
-      logger.debug(Session ${sessionId}: Keeping character as ${detectedCharacter});
+      logger.debug(`Session ${sessionId}: Keeping character as ${detectedCharacter}`);
     }
 
     const previous = chatMemory.get(sessionId) || [];
     let replyText;
 
     if (detectedCharacter === "mcarthur" && previous.length === 0 && !sessionData.studentName) {
-      replyText = "Welcome to the lesson! I'm Mr. McArthur. May I have your name, please?";
+      replyText = `Welcome to the lesson! I'm Mr. McArthur. May I have your name, please?`;
       storeChatHistory(sessionId, [{ role: "assistant", content: replyText }]);
-      logger.info(Session ${sessionId}: Initiated Mr. McArthur lesson, requesting student name);
+      logger.info(`Session ${sessionId}: Initiated Mr. McArthur lesson, requesting student name`);
     } else {
       if (detectedCharacter === "mcarthur" && !sessionData.studentName && sanitizedUserMessage) {
         const name = sanitizedUserMessage.match(/^[a-zA-Z\s]+$/) ? sanitizedUserMessage.trim().slice(0, 50) : null;
         if (name) {
           sessionData.studentName = name;
           await setSession(sessionId, sessionData);
-          logger.info(Session ${sessionId}: Set student name to ${name});
-          replyText = Great to meet you, ${name}! Let's begin the lesson. ${sanitizedText};
+          logger.info(`Session ${sessionId}: Set student name to ${name}`);
+          replyText = `Great to meet you, ${name}! Let's begin the lesson. ${sanitizedText}`;
         } else {
-          replyText = "I'm sorry, I didn't catch a valid name. Could you please tell me your name using only letters?";
+          replyText = `I'm sorry, I didn't catch a valid name. Could you please tell me your name using only letters?`;
           storeChatHistory(sessionId, [
             ...previous,
             { role: "user", content: sanitizedUserMessage || sanitizedText },
             { role: "assistant", content: replyText },
           ]);
-          logger.debug(Session ${sessionId}: Invalid name provided, requesting again);
+          logger.debug(`Session ${sessionId}: Invalid name provided, requesting again`);
         }
       } else {
         const prefix =
           sessionData.studentName && detectedCharacter === "mcarthur"
-            ? You are Mr. McArthur, a teacher in Waterwheel Village. Address the student as ${sessionData.studentName}. Stay in character.
-            : You are ${detectedCharacter}, a character in Waterwheel Village. Stay in character.;
+            ? `You are Mr. McArthur, a teacher in Waterwheel Village. Address the student as ${sessionData.studentName}. Stay in character.`
+            : `You are ${detectedCharacter}, a character in Waterwheel Village. Stay in character.`;
 
         const systemPrompt = { role: "system", content: prefix };
 
@@ -415,7 +414,7 @@ app.post("/speakbase", async (req, res) => {
       .trim();
 
     if (!spokenText) {
-      logger.warn(No valid text provided for speech synthesis in session ${sessionId});
+      logger.warn(`No valid text provided for speech synthesis in session ${sessionId}`);
       return res.status(400).json({ error: "No text provided for speech", code: "NO_SPEECH_TEXT" });
     }
 
@@ -424,7 +423,7 @@ app.post("/speakbase", async (req, res) => {
 
     const voiceResponse = await axios({
       method: "POST",
-      url: https://api.elevenlabs.io/v1/text-to-speech/${selectedVoiceId},
+      url: `https://api.elevenlabs.io/v1/text-to-speech/${selectedVoiceId}`,
       headers: {
         "xi-api-key": process.env.ELEVEN_API_KEY,
         "Content-Type": "application/json",
@@ -436,40 +435,50 @@ app.post("/speakbase", async (req, res) => {
       },
       responseType: "arraybuffer",
     }).catch((err) => {
-      logger.error({ error: err.stack, code: "ELEVENLABS_ERROR" }, "ElevenLabs API request failed");
+      logger.error({ error: err.stack, code: "ELEVENLABS_ERROR" }, `ElevenLabs API request failed`);
       throw streamlinedError(err, "ELEVENLABS_ERROR");
     });
 
     if (!voiceResponse.headers["content-type"].includes("audio")) {
       logger.error(
         { code: "INVALID_AUDIO_RESPONSE", contentType: voiceResponse.headers["content-type"] },
-        "Invalid audio response from ElevenLabs",
+        `Invalid audio response from ElevenLabs`,
       );
       throw streamlinedError(new Error("Invalid audio response from ElevenLabs"), "INVALID_AUDIO_RESPONSE");
     }
 
-    logger.info(ElevenLabs API call successful for session ${sessionId});
+    logger.info(`ElevenLabs API call successful for session ${sessionId}`);
     res.set({ "Content-Type": "audio/mpeg", "Content-Length": voiceResponse.data.length });
     res.send(voiceResponse.data);
   } catch (error) {
     const status = error.status || 500;
     const code = error.code || "INTERNAL_SERVER_ERROR";
-    logger.error({ error: error.stack, code }, "Speakbase endpoint failed");
+    logger.error({ error: error.stack, code }, `Speakbase endpoint failed`);
     res.status(status).json({ error: error.message, code });
   }
 });
 
-console.log("Attempting to start server on port", PORT);
-app.listen(PORT, (err) => {
-  if (err) logger.error({ err: err.stack, code: "SERVER_STARTUP_ERROR" }, "Failed to start server");
-  logger.info(🚖 BetterChat server running on port ${PORT});
+console.log(`Attempting to start server on port ${PORT}`);
+console.log(`Attempting to start server on port ${PORT}`);
+const server = app.listen(PORT, (err) => {
+  if (err) {
+    console.error(`Server failed to start: ${err.message}`);
+    logger.error({ err: err.stack, code: "SERVER_STARTUP_ERROR" }, `Failed to start server on port ${PORT}`);
+    process.exit(1);
+  }
+  console.log(`Server successfully started on port ${PORT}`);
+  logger.info(`🚖 BetterChat server running on port ${PORT}`);
 });
-
+server.on('error', (err) => {
+  console.error(`Server error: ${err.message}`);
+  logger.error({ err: err.stack, code: "SERVER_ERROR" }, `Server error on port ${PORT}`);
+  process.exit(1);
+});
 process.on("SIGTERM", async () => {
-  logger.info("Received SIGTERM, gracefully shutting down...");
+  logger.info(`Received SIGTERM, gracefully shutting down...`);
   if (redisClient) {
     await redisClient.quit();
-    logger.info("Redis connection closed");
+    logger.info(`Redis connection closed`);
   }
   process.exit(0);
-});   
+});
