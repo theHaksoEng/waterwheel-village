@@ -1,6 +1,19 @@
 require("dotenv").config();
 console.log("Starting betterchatF.js");
 const express = require("express");
+// Simple sanitize function to clean user input
+function sanitize(input) {
+  if (typeof input !== "string") return "";
+  return input
+    .replace(/[<>&'"]/g, (char) => ({
+      "<": "&lt;",
+      ">": "&gt;",
+      "&": "&amp;",
+      "'": "&#39;",
+      '"': "&quot;",
+    })[char])
+    .trim();
+}
 const axios = require("axios");
 const axiosRetry = require("axios-retry").default;
 const cors = require("cors");
