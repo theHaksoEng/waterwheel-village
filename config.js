@@ -40,7 +40,8 @@ const characterVoices = {
   };
   
   module.exports = { characterVoices, characterAliases, voiceSettings };
-  "dependencies": {
-    "sanitize-html": "^2.13.0",
-    // other dependencies
-  }
+  const dependencies = {
+    express: "^4.18.2",
+    ...
+  };
+  
