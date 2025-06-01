@@ -325,7 +325,7 @@ app.post("/chat", async (req, res) => {
   }
 });
 
-app.post("/speakbase", rateLimit, async (req, res) => {
+app.post("/speakbase", async (req, res) => {
   const sessionId = req.body.sessionId || uuid.v4();
   const userMessage = req.body.message || "";
   const sanitizedUserMessage = sanitize(userMessage);
