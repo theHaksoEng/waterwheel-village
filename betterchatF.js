@@ -406,7 +406,7 @@ if (!selectedVoiceId) {
     logger.info(`ElevenLabs request: sessionId=${sessionId}, voiceId=${selectedVoiceId}, text="${sanitizedText}", settings=${JSON.stringify(settings)}, character=${detectedCharacter}`);
 
     // ✅ Debug log just before the API call
-console.log("🎙 Calling ElevenLabs with voice ID:", selectedVoiceId);
+    console.log(`🎯 Using ElevenLabs voice for "${detectedCharacter}": ${selectedVoiceId}`);
 
   // Call ElevenLabs API
 console.log("🔧 Preparing to call ElevenLabs API");
@@ -453,7 +453,6 @@ const voiceResponse = await axios({
   }
 });
 
-console.log(`Attempting to start server on port ${PORT}`);
 console.log(`Attempting to start server on port ${PORT}`);
 const server = app.listen(PORT, (err) => {
   if (err) {
