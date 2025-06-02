@@ -405,25 +405,30 @@ if (!selectedVoiceId) {
     // ✅ Debug log just before the API call
 console.log("🎙 Calling ElevenLabs with voice ID:", selectedVoiceId);
 
-    // Call ElevenLabs API
-    const voiceResponse = await axios({
-      method: "POST",
-      url: `https://api.elevenlabs.io/v1/text-to-speech/${selectedVoiceId}/stream`,
-      headers: {
-        "xi-api-key": process.env.ELEVEN_API_KEY,
-        "Content-Type": "application/json",
-        Accept: "audio/mpeg",
-      },
-      data: {
-        text: sanitizedText,
-        model_id: "eleven_multilingual_v2",
-        voice_settings: {
-          stability: settings.stability || 0.5,
-          similarity_boost: settings.similarity_boost || 0.5,
-        },
-      },
-      responseType: "arraybuffer",
-    });
+  // Call ElevenLabs API
+console.log("🔧 Preparing to call ElevenLabs API");
+console.log("Voice ID:", selectedVoiceId);
+console.log("Voice text:", spokenText);
+console.log("Voice settings:", settings);
+
+const voiceResponse = await axios({
+  method: "POST",
+  url: `https://api.elevenlabs.io/v1/text-to-speech/${selectedVoiceId}`,
+  headers: {
+    "xi-api-key": process.env.ELEVEN_API_KEY,
+    "Content-Type": "application/json",
+    "Accept": "audio/mpeg",
+  },
+  data: {
+    text: spokenText,
+    model_id: "eleven_multilingual_v2",
+    voice_settings: {
+      stability: settings.stability || 0.5,
+      similarity_boost: settings.similarity_boost || 0.5,
+    },
+  },
+  responseType: "arraybuffer",
+});
 
     if (!voiceResponse.headers["content-type"].includes("audio")) {
       logger.error(
