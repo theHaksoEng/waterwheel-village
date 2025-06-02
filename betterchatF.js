@@ -410,6 +410,8 @@ console.log("🔧 Preparing to call ElevenLabs API");
 console.log("Voice ID:", selectedVoiceId);
 console.log("Voice text:", spokenText);
 console.log("Voice settings:", settings);
+console.log("Using voice ID:", selectedVoiceId);
+
 
 const voiceResponse = await axios({
   method: "POST",
