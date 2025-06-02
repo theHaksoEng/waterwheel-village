@@ -379,23 +379,18 @@ app.post("/speakbase", async (req, res) => {
       .replace(/~~(.*?)~~/g, "$1")
       .trim();
 
-    // Select voice and settings
-    const selectedVoiceId = characterVoices[detectedCharacter] || characterVoices[DEFAULT_CHARACTER];
-    const settings = voiceSettings[detectedCharacter] || voiceSettings.default;
+   // Select voice and settings
+const selectedVoiceId = characterVoices[detectedCharacter] || characterVoices[DEFAULT_CHARACTER];
+const settings = voiceSettings[detectedCharacter] || voiceSettings.default;
 
-    // Validate inputs
-    if (!selectedVoiceId) {
-      logger.error({ code: "INVALID_VOICE_ID", character: detectedCharacter, sessionId }, `No voice ID found for character`);
-      return res.status(500).json({ error: "Invalid voice ID", code: "INVALID_VOICE_ID" });
-    }
-    if (!spokenText || spokenText.length === 0) {
-      logger.error({ code: "INVALID_TEXT", sessionId, text: spokenText, replyText }, `No valid text provided for speech synthesis`);
-      return res.status(400).json({ error: "No text provided for speech", code: "NO_SPEECH_TEXT" });
-    }
-    if (!process.env.ELEVEN_API_KEY) {
-      logger.error({ code: "MISSING_API_KEY", sessionId }, `ELEVEN_API_KEY is not set`);
-      return res.status(500).json({ error: "Server configuration error", code: "MISSING_API_KEY" });
-    }
+// 🔍 Add this line to see which voice is being used
+console.log("Voice ID being used:", selectedVoiceId);
+
+// Validate inputs
+if (!selectedVoiceId) {
+  logger.error({ code: "INVALID_VOICE_ID", character: detectedCharacter, sessionId }, `No voice ID found for character`);
+  return res.status(500).json({ error: "Invalid voice ID", code: "INVALID_VOICE_ID" });
+}
 
     // Sanitize text for ElevenLabs
     const sanitizedText = spokenText.replace(/[^\x20-\x7E\n\t]/g, "").trim();
