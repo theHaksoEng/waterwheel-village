@@ -402,10 +402,13 @@ if (!selectedVoiceId) {
     // Log ElevenLabs request details
     logger.info(`ElevenLabs request: sessionId=${sessionId}, voiceId=${selectedVoiceId}, text="${sanitizedText}", settings=${JSON.stringify(settings)}, character=${detectedCharacter}`);
 
+    // ✅ Debug log just before the API call
+console.log("🎙 Calling ElevenLabs with voice ID:", selectedVoiceId);
+
     // Call ElevenLabs API
     const voiceResponse = await axios({
       method: "POST",
-      url: `https://api.elevenlabs.io/v1/text-to-speech/${selectedVoiceId}`,
+      url: `https://api.elevenlabs.io/v1/text-to-speech/${selectedVoiceId}/stream`,
       headers: {
         "xi-api-key": process.env.ELEVEN_API_KEY,
         "Content-Type": "application/json",
