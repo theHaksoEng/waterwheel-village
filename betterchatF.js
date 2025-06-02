@@ -343,7 +343,7 @@ app.post("/chat", async (req, res) => {
 
 app.post("/speakbase", async (req, res) => {
   const sessionId = req.body.sessionId || uuid.v4();
-  const userMessage = req.body.message || "";
+  const userMessage = req.body.userMessage || "";
   const sanitizedUserMessage = sanitize(userMessage);
   logger.info(`Speakbase request: sessionId=${sessionId}, message="${sanitizedUserMessage}"`);
 

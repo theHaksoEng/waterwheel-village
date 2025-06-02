@@ -159,3 +159,6 @@
 {"level":30,"time":1748865224315,"pid":58265,"hostname":"MacBook-Pro.local","msg":"Dependencies loaded: express@4.21.2, axios@1.9.0, redis@4.7.1"}
 {"level":40,"time":1748865224316,"pid":58265,"hostname":"MacBook-Pro.local","msg":"No REDIS_URL provided, using in-memory Map. Consider setting REDIS_URL for persistent session storage."}
 {"level":30,"time":1748865224318,"pid":58265,"hostname":"MacBook-Pro.local","msg":"🚖 BetterChat server running on port 3000"}
+{"level":30,"time":1748879675076,"pid":59431,"hostname":"MacBook-Pro.local","msg":"Dependencies loaded: express@4.21.2, axios@1.9.0, redis@4.7.1"}
+{"level":40,"time":1748879675076,"pid":59431,"hostname":"MacBook-Pro.local","msg":"No REDIS_URL provided, using in-memory Map. Consider setting REDIS_URL for persistent session storage."}
+{"level":30,"time":1748879675078,"pid":59431,"hostname":"MacBook-Pro.local","msg":"🚖 BetterChat server running on port 3000"}
