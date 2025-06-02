@@ -342,6 +342,7 @@ app.post("/chat", async (req, res) => {
 });
 
 app.post("/speakbase", async (req, res) => {
+  console.log("🔉 /speakbase route hit");
   const sessionId = req.body.sessionId || uuid.v4();
   const userMessage = req.body.userMessage || "";
   const sanitizedUserMessage = sanitize(userMessage);
@@ -356,7 +357,8 @@ app.post("/speakbase", async (req, res) => {
     // Get Chatbase response
     const chatbaseResponse = await axios({
       method: "POST",
-      url: "https://api.chatbase.co/v1/chat",
+      url: "https://www.chatbase.co/api/v1/chat", // ✅ FIXED
+    
       headers: {
         Authorization: `Bearer ${process.env.CHATBASE_API_KEY}`,
         "Content-Type": "application/json",
@@ -408,13 +410,12 @@ if (!selectedVoiceId) {
     // ✅ Debug log just before the API call
     console.log(`🎯 Using ElevenLabs voice for "${detectedCharacter}": ${selectedVoiceId}`);
 
-  // Call ElevenLabs API
+// Call ElevenLabs API
 console.log("🔧 Preparing to call ElevenLabs API");
 console.log("Voice ID:", selectedVoiceId);
-console.log("Voice text:", spokenText);
+console.log("Voice text:", sanitizedText);  // Use sanitizedText if it's the cleaned version
 console.log("Voice settings:", settings);
 console.log("Using voice ID:", selectedVoiceId);
-
 
 const voiceResponse = await axios({
   method: "POST",
@@ -425,7 +426,7 @@ const voiceResponse = await axios({
     "Accept": "audio/mpeg",
   },
   data: {
-    text: spokenText,
+    text: sanitizedText,
     model_id: "eleven_multilingual_v2",
     voice_settings: {
       stability: settings.stability || 0.5,
@@ -434,6 +435,7 @@ const voiceResponse = await axios({
   },
   responseType: "arraybuffer",
 });
+
 
     if (!voiceResponse.headers["content-type"].includes("audio")) {
       logger.error(
