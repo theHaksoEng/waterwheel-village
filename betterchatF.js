@@ -1,6 +1,10 @@
 require("dotenv").config();
 console.log("Starting betterchatF.js");
 const express = require("express");
+const app = express();               // 👈 You initialize Express here
+
+app.set("trust proxy", 1);           // ✅ Add this line right after
+
 // Simple sanitize function to clean user input
 function sanitize(input) {
   if (typeof input !== "string") return "";
@@ -65,7 +69,6 @@ if (envError) {
   process.exit(1);
 }
 
-const app = express();
 console.log("Express app initialized");
 let redisClient;
 let useRedis = !!process.env.REDIS_URL;
