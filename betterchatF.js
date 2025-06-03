@@ -344,12 +344,19 @@ app.post("/chat", async (req, res) => {
 app.post("/speakbase", async (req, res) => {
   console.log("🔉 /speakbase route hit");
   const sessionId = req.body.sessionId || uuid.v4();
-  const userMessage = req.body.userMessage || "";
+  const userMessage = req.body.message || ""; // ✅ Changed from userMessage to message
+  logger.info(`Raw userMessage: "${userMessage}"`); // ✅ Log raw input
   const sanitizedUserMessage = sanitize(userMessage);
   logger.info(`Speakbase request: sessionId=${sessionId}, message="${sanitizedUserMessage}"`);
 
+  // Validate user message
+  if (!sanitizedUserMessage) {
+    logger.error({ code: "INVALID_MESSAGE", sessionId, userMessage }, `Empty or invalid message after sanitization`);
+    return res.status(400).json({ error: "Invalid message", code: "INVALID_MESSAGE" });
+  }
+
   // Detect character from user message
-  const requestedCharacter = sanitizedUserMessage ? detectCharacter(sanitizedUserMessage) : null;
+  const requestedCharacter = detectCharacter(sanitizedUserMessage);
   logger.info(`Character detection: userMessage="${sanitizedUserMessage}", requestedCharacter=${requestedCharacter}`);
   const detectedCharacter = requestedCharacter || DEFAULT_CHARACTER;
 
@@ -357,8 +364,7 @@ app.post("/speakbase", async (req, res) => {
     // Get Chatbase response
     const chatbaseResponse = await axios({
       method: "POST",
-      url: "https://www.chatbase.co/api/v1/chat", // ✅ FIXED
-    
+      url: "https://www.chatbase.co/api/v1/chat",
       headers: {
         Authorization: `Bearer ${process.env.CHATBASE_API_KEY}`,
         "Content-Type": "application/json",
@@ -368,6 +374,7 @@ app.post("/speakbase", async (req, res) => {
         message: sanitizedUserMessage,
         conversationId: sessionId,
       },
+      timeout: 10000,
     });
 
     if (!chatbaseResponse.data?.message?.content) {
@@ -384,58 +391,53 @@ app.post("/speakbase", async (req, res) => {
       .replace(/~~(.*?)~~/g, "$1")
       .trim();
 
-   // Select voice and settings
-const selectedVoiceId = characterVoices[detectedCharacter] || characterVoices[DEFAULT_CHARACTER];
-const settings = voiceSettings[detectedCharacter] || voiceSettings.default;
+    // Select voice and settings
+    const selectedVoiceId = characterVoices[detectedCharacter] || characterVoices[DEFAULT_CHARACTER];
+    const settings = voiceSettings[detectedCharacter] || voiceSettings.default;
 
-// 🔍 Add this line to see which voice is being used
-console.log("Voice ID being used:", selectedVoiceId);
+    // Log available voices for debugging
+    logger.debug(`Available voices: ${JSON.stringify(Object.keys(characterVoices))}`);
 
-// Validate inputs
-if (!selectedVoiceId) {
-  logger.error({ code: "INVALID_VOICE_ID", character: detectedCharacter, sessionId }, `No voice ID found for character`);
-  return res.status(500).json({ error: "Invalid voice ID", code: "INVALID_VOICE_ID" });
-}
+    // Validate inputs
+    if (!selectedVoiceId) {
+      logger.error({ code: "INVALID_VOICE_ID", character: detectedCharacter, sessionId }, `No voice ID found for character`);
+      return res.status(500).json({ error: "Invalid voice ID", code: "INVALID_VOICE_ID" });
+    }
+    if (!spokenText) {
+      logger.error({ code: "INVALID_TEXT", sessionId, replyText }, `No valid text provided for speech synthesis`);
+      return res.status(400).json({ error: "No text provided for speech", code: "NO_SPEECH_TEXT" });
+    }
 
     // Sanitize text for ElevenLabs
-    const sanitizedText = spokenText.replace(/[^\x20-\x7E\n\t]/g, "").trim();
-    if (sanitizedText.length === 0) {
-      logger.error({ code: "INVALID_TEXT_AFTER_SANITIZE", sessionId, originalText: spokenText }, `Text invalid after sanitization`);
-      return res.status(400).json({ error: "Invalid text after processing", code: "INVALID_TEXT_AFTER_SANITIZE" });
+    let sanitizedText = spokenText.replace(/[^\x20-\x7E\n\t]/g, "").trim();
+    if (!sanitizedText) {
+      sanitizedText = "Sorry, I couldn't generate a valid response."; // ✅ Fallback text
+      logger.warn({ code: "FALLBACK_TEXT_USED", sessionId, originalText: spokenText }, `Using fallback text for ElevenLabs`);
     }
 
     // Log ElevenLabs request details
-    logger.info(`ElevenLabs request: sessionId=${sessionId}, voiceId=${selectedVoiceId}, text="${sanitizedText}", settings=${JSON.stringify(settings)}, character=${detectedCharacter}`);
+    logger.debug(`ElevenLabs request: sessionId=${sessionId}, voiceId=${selectedVoiceId}, text="${sanitizedText}", settings=${JSON.stringify(settings)}, character=${detectedCharacter}`);
 
-    // ✅ Debug log just before the API call
-    console.log(`🎯 Using ElevenLabs voice for "${detectedCharacter}": ${selectedVoiceId}`);
-
-// Call ElevenLabs API
-console.log("🔧 Preparing to call ElevenLabs API");
-console.log("Voice ID:", selectedVoiceId);
-console.log("Voice text:", sanitizedText);  // Use sanitizedText if it's the cleaned version
-console.log("Voice settings:", settings);
-console.log("Using voice ID:", selectedVoiceId);
-
-const voiceResponse = await axios({
-  method: "POST",
-  url: `https://api.elevenlabs.io/v1/text-to-speech/${selectedVoiceId}`,
-  headers: {
-    "xi-api-key": process.env.ELEVEN_API_KEY,
-    "Content-Type": "application/json",
-    "Accept": "audio/mpeg",
-  },
-  data: {
-    text: sanitizedText,
-    model_id: "eleven_multilingual_v2",
-    voice_settings: {
-      stability: settings.stability || 0.5,
-      similarity_boost: settings.similarity_boost || 0.5,
-    },
-  },
-  responseType: "arraybuffer",
-});
-
+    // Call ElevenLabs API
+    const voiceResponse = await axios({
+      method: "POST",
+      url: `https://api.elevenlabs.io/v1/text-to-speech/${selectedVoiceId}`,
+      headers: {
+        "xi-api-key": process.env.ELEVEN_API_KEY,
+        "Content-Type": "application/json",
+        Accept: "audio/mpeg",
+      },
+      data: {
+        text: sanitizedText,
+        model_id: "eleven_multilingual_v2",
+        voice_settings: {
+          stability: settings.stability || 0.5,
+          similarity_boost: settings.similarity_boost || 0.5,
+        },
+      },
+      responseType: "arraybuffer",
+      timeout: 10000, // ✅ Added timeout
+    });
 
     if (!voiceResponse.headers["content-type"].includes("audio")) {
       logger.error(
