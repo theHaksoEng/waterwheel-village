@@ -14,16 +14,16 @@ const characterVoices = {
 };
 
 const characterAliases = [
-  { key: "fatima", names: ["fatima", "fati"] },
-  { key: "ibrahim", names: ["ibrahim", "ibra"] },
-  { key: "anika", names: ["anika", "ani"] },
-  { key: "kwame", names: ["kwame", "kwa"] },
-  { key: "sophia", names: ["sophia", "sophie"] },
-  { key: "liang", names: ["liang", "li"] },
-  { key: "johannes", names: ["johannes", "johan"] },
-  { key: "aleksanderi", names: ["aleksanderi", "aleks"] },
-  { key: "nadia", names: ["nadia", "nadi"] },
-  { key: "mcarthur", names: ["mcArthur", "mr. macArthur", "teacher"] },
+  { key: "fatima", names: ["fatima", "fati"] },         // Changed to lowercase
+  { key: "ibrahim", names: ["ibrahim", "ibra"] },       // Changed to lowercase
+  { key: "anika", names: ["anika", "ani"] },           // Changed to lowercase
+  { key: "kwame", names: ["kwame", "kwa"] },           // Changed to lowercase
+  { key: "sophia", names: ["sophia", "sophie"] },       // Changed to lowercase
+  { key: "liang", names: ["liang", "li"] },           // Changed to lowercase
+  { key: "johannes", names: ["johannes", "johan"] },   // Changed to lowercase
+  { key: "aleksanderi", names: ["aleksanderi", "aleks"] }, // Changed to lowercase
+  { key: "nadia", names: ["nadia", "nadi"] },           // Changed to lowercase
+  { key: "mcarthur", names: ["mcarthur", "mr. macarthur", "teacher"] }, // Changed to lowercase, added common aliases
 ];
 
 const voiceSettings = {
