@@ -14,16 +14,16 @@ const characterVoices = {
 };
 
 const characterAliases = [
-  { key: "fatima", names: ["Fatima", "Fati"] },
-  { key: "ibrahim", names: ["Ibrahim", "Ibra"] },
-  { key: "anika", names: ["Anika", "Ani"] },
-  { key: "kwame", names: ["Kwame", "Kwa"] },
-  { key: "sophia", names: ["Sophia", "Sophie"] },
-  { key: "liang", names: ["Liang", "Li"] },
-  { key: "johannes", names: ["Johannes", "Johan"] },
-  { key: "aleksanderi", names: ["Aleksanderi", "Aleks"] },
-  { key: "nadia", names: ["Nadia", "Nadi"] },
-  { key: "mcarthur", names: ["McArthur", "Mr. MacArthur", "Teacher"] },
+  { key: "fatima", names: ["fatima", "fati"] },
+  { key: "ibrahim", names: ["ibrahim", "ibra"] },
+  { key: "anika", names: ["anika", "ani"] },
+  { key: "kwame", names: ["kwame", "kwa"] },
+  { key: "sophia", names: ["sophia", "sophie"] },
+  { key: "liang", names: ["liang", "li"] },
+  { key: "johannes", names: ["johannes", "johan"] },
+  { key: "aleksanderi", names: ["aleksanderi", "aleks"] },
+  { key: "nadia", names: ["nadia", "nadi"] },
+  { key: "mcarthur", names: ["mcArthur", "mr. macArthur", "teacher"] },
 ];
 
 const voiceSettings = {
