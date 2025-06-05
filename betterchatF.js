@@ -148,31 +148,28 @@ const speakbaseSchema = Joi.object({
   sessionId: Joi.string().uuid().required(),
 });
 
+// In betterchatF.js
+
 function detectCharacter(text) {
   if (!text || typeof text !== "string") {
-    logger.debug(`No valid text provided for character detection`);
+    logger.debug(`No valid text provided for character detection.`);
     return null;
   }
 
-  const cleaned = text.toLowerCase().replace(/[^\w\s]/g, "");
-  const matches = [];
-
+  const cleanedText = text.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ""); // Use \p{L}\p{N} for full Unicode support if needed
+                                                                         // Otherwise, simple [^a-z0-9\s] will work for basic Latin
   for (const { key, names } of characterAliases) {
     for (const name of names) {
-      if (cleaned.includes(name.toLowerCase())) {
-        matches.push(key);
-        break;
+      // Ensure name is also lowercase for comparison, though you set them in config.js
+      if (cleanedText.includes(name.toLowerCase())) {
+        logger.debug(`Character detected: "${key}" from text: "${text}"`);
+        return key; // Return the first matching character key found
       }
     }
   }
 
-  if (matches.length > 1) {
-    logger.warn(`Multiple characters detected in text: ${matches.join(", ")}`);
-    return null;
-  }
-
-  logger.debug(`Detected character: ${matches[0] || "none"}`);
-  return matches[0] || null;
+  logger.debug(`No specific character detected in text: "${text}". Falling back to default.`);
+  return null; // No character found
 }
 
 async function setSession(sessionId, data) {
@@ -356,166 +353,85 @@ app.post("/chat", async (req, res) => {
   }
 });
 
+// In your betterchatF.js file, find your /speakbase route:
 app.post("/speakbase", async (req, res) => {
-  logger.debug("🔉 /speakbase route hit");
+  const { text, userMessage, sessionId, character } = req.body; // <-- Extract 'character' here
+  const botReplyForSpeech = text; // The chunk of text to speak
 
-  // Get data from frontend request body
-  // 'userMessage' is the original message from the user (typed or spoken).
-  // 'text' is the bot's reply text that needs to be converted to speech (this comes from the frontend's 'displayedAndSpokenText').
-  const sessionId = req.body.sessionId || uuid.v4();
-  const userMessage = req.body.userMessage || ""; // CORRECTED: Use req.body.userMessage from frontend
-  const botReplyForSpeech = req.body.text || "";   // CORRECTED: Use req.body.text from frontend (which is the bot's reply)
-
-  logger.debug(`Speakbase received: sessionId=${sessionId}, userMessage="${userMessage}", botReplyText="${botReplyForSpeech}"`);
-
-  // --- Initial Validation for Speech Text ---
-  if (!botReplyForSpeech.trim()) { // Use .trim() to catch messages that are just whitespace
-    logger.error({ code: "NO_BOT_REPLY_FOR_SPEECH", sessionId, userMessage }, `No bot reply text provided for speech generation.`);
-    return res.status(400).json({ error: "No text provided for speech generation", code: "NO_SPEECH_TEXT_INPUT" });
+  if (!botReplyForSpeech) {
+    return res.status(400).json({ error: "Text is required for speech generation." });
   }
 
-  // Detect character based on the bot's reply (as it should contain the character name for voice selection)
-  const requestedCharacter = detectCharacter(botReplyForSpeech);
-  const detectedCharacter = requestedCharacter || DEFAULT_CHARACTER;
-  logger.info(`Character detection for speech: requestedCharacter=${requestedCharacter}, detectedCharacter=${detectedCharacter}`);
+  logger.info(`🔉 /speakbase route hit for session ${sessionId}. Text: "${botReplyForSpeech.substring(0, 50)}..."`);
+  logger.info(`Requested Character (from frontend): "${character}"`); // Log the character received from frontend
+
+  let finalCharacterKey = character; // Start with the character provided by the frontend
+
+  // If the frontend didn't specify a character, try to detect it from the text
+  if (!finalCharacterKey) {
+    const detectedCharacterFromText = detectCharacter(botReplyForSpeech);
+    finalCharacterKey = detectedCharacterFromText || DEFAULT_CHARACTER;
+    logger.info(`Frontend did not provide character. Detected character from text: "${detectedCharacterFromText || 'None'}", Final character: "${finalCharacterKey}"`);
+  } else {
+    // Ensure the provided character is one of the valid keys
+    if (!Object.keys(characterVoices).includes(finalCharacterKey)) {
+        logger.warn(`Frontend requested character "${finalCharacterKey}" not found in characterVoices. Falling back to default.`);
+        finalCharacterKey = DEFAULT_CHARACTER;
+    }
+    logger.info(`Using character provided by frontend: "${finalCharacterKey}"`);
+  }
+
+  const voiceId = characterVoices[finalCharacterKey];
+  const voiceSettingsForCharacter = voiceSettings[finalCharacterKey] || voiceSettings.default;
+
+  if (!voiceId) {
+    logger.error(`No voice ID found for character: ${finalCharacterKey}. Using default.`);
+    // Fallback to McArthur's voice ID if the character is not found in characterVoices
+    const mcarthurVoiceId = characterVoices['mcarthur'] || process.env.VOICE_MCARTHUR;
+    if (mcarthurVoiceId) {
+      voiceId = mcarthurVoiceId;
+    } else {
+      return res.status(500).json({ error: `No valid voice ID found for any character, including default.` });
+    }
+  }
 
   try {
-    // --- IMPORTANT: Removed the Chatbase API call from here ---
-    // The frontend's handleFullChatFlow already makes the Chatbase call and
-    // sends the resulting bot's text reply (`displayedAndSpokenText`) as `req.body.text` to this endpoint.
-    // Making another Chatbase call here would be redundant and incorrect.
-
-    // Process text for ElevenLabs. The frontend already strips markdown,
-    // but this ensures it's clean for ElevenLabs in case of any issues.
-    const spokenTextForElevenLabs = botReplyForSpeech
-      .replace(/\*\*(.*?)\*\*/g, "$1") // Remove bold markdown
-      .replace(/\*(.*?)\*/g, "$1")     // Remove italic markdown
-      .replace(/~~(.*?)~~/g, "$1")     // Remove strikethrough markdown
-      .replace(/`(.*?)`/g, "$1")       // Remove inline code markdown
-      .trim();
-
-    if (!spokenTextForElevenLabs) {
-        logger.error({ code: "EMPTY_TEXT_AFTER_PROCESSING", sessionId, botReplyForSpeech }, `No valid text for speech after markdown processing.`);
-        // Return a 400 if the text is empty after processing, as ElevenLabs requires text
-        return res.status(400).json({ error: "No valid text for speech generation after processing", code: "NO_VALID_SPEECH_TEXT" });
-    }
-
-    // Select voice and settings based on the detected character
-    const selectedVoiceId = characterVoices[detectedCharacter]; // Ensure characterVoices maps correctly
-    const settings = voiceSettings[detectedCharacter] || voiceSettings.default; // Fallback to default settings
-
-    // --- Validate ElevenLabs API Inputs ---
-    if (!selectedVoiceId) {
-      logger.error({ code: "INVALID_VOICE_ID", character: detectedCharacter, sessionId }, `No ElevenLabs voice ID found for character "${detectedCharacter}". Check characterVoices mapping.`);
-      return res.status(500).json({ error: `Invalid voice ID for character: ${detectedCharacter}`, code: "INVALID_VOICE_ID" });
-    }
-    if (!process.env.ELEVEN_API_KEY) {
-      logger.error({ code: "MISSING_ELEVEN_API_KEY", sessionId }, `ELEVEN_API_KEY environment variable is not set.`);
-      return res.status(500).json({ error: "Server configuration error: ElevenLabs API key missing", code: "MISSING_API_KEY" });
-    }
-
-    // Final sanitization for ElevenLabs text: remove non-ASCII characters that might cause issues.
-    // ElevenLabs generally handles Unicode well, but this is a defensive measure.
-    let sanitizedTextForElevenLabs = spokenTextForElevenLabs.replace(/[^\x20-\x7E\n\t]/g, "").trim();
-    if (!sanitizedTextForElevenLabs) {
-      sanitizedTextForElevenLabs = "I apologize, I cannot generate a spoken response for that."; // Polite fallback if text becomes empty after sanitization
-      logger.warn({ code: "FALLBACK_TEXT_USED_ELEVENLABS", sessionId, originalText: spokenTextForElevenLabs }, "Using fallback text for ElevenLabs due to empty text after sanitization.");
-    }
-
-    logger.debug(`ElevenLabs request payload: sessionId=${sessionId}, voiceId=${selectedVoiceId}, text="${sanitizedTextForElevenLabs}", settings=${JSON.stringify(settings)}`);
-
-    // --- Call ElevenLabs API ---
-    const voiceResponse = await axios({
-      method: "POST",
-      url: `https://api.elevenlabs.io/v1/text-to-speech/${selectedVoiceId}`,
-      headers: {
-        "xi-api-key": process.env.ELEVEN_API_KEY,
-        "Content-Type": "application/json",
-        "Accept": "audio/mpeg", // Requesting MP3 audio format
-      },
-      data: {
-        text: sanitizedTextForElevenLabs, // Use the sanitized text derived from bot's reply
-        model_id: "eleven_multilingual_v2", // Ensure this model ID is correct/desired for your setup
-        voice_settings: {
-          stability: settings.stability || 0.5,
-          similarity_boost: settings.similarity_boost || 0.5,
-        },
-      },
-      responseType: "arraybuffer", // Crucial for receiving binary audio data
-      timeout: 10000, // Increased timeout to 10 seconds for potential latency
-    });
-
-    // --- Validate ElevenLabs Response ---
-    if (!voiceResponse.headers["content-type"]?.includes("audio")) {
-      logger.error(
-        { code: "INVALID_AUDIO_RESPONSE_ELEVENLABS", contentType: voiceResponse.headers["content-type"], responseSample: voiceResponse.data?.toString().substring(0, 200) }, // Log content-type and a sample of response
-        `Invalid audio response from ElevenLabs. Expected audio, got: ${voiceResponse.headers["content-type"]}`
-      );
-      return res.status(500).json({ error: "Invalid audio response received from ElevenLabs", code: "INVALID_RESPONSE_FROM_ELEVENLABS" });
-    }
-
-    logger.info(`ElevenLabs API call successful for session ${sessionId}. Audio length: ${voiceResponse.data.length} bytes.`);
-    // Set response headers for the frontend
-    res.set({
-        "Content-Type": "audio/mpeg", // Inform browser it's an MP3 audio file
-        "Content-Length": voiceResponse.data.length, // Indicate the size of the audio data
-        "Cache-Control": "no-cache, no-store, must-revalidate", // Prevent caching if desired
-        "Pragma": "no-cache",
-        "Expires": "0"
-    });
-    res.send(voiceResponse.data); // Send the raw audio buffer back to the frontend
-
-  } catch (err) {
-    // --- Enhanced Error Handling for Backend Issues and ElevenLabs Specific Errors ---
-    const status = err.response?.status || 500; // Get HTTP status from axios error if available
-    const elevenLabsErrorMessage = err.response?.data ? err.response.data.toString() : err.message; // Detailed error from ElevenLabs
-
-    logger.error(
+    const elevenlabsRes = await fetch(
+      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
       {
-        error: err.stack,
-        code: "SPEAKBASE_API_CALL_FAILED",
-        elevenLabsResponse: elevenLabsErrorMessage, // Log the raw error response from ElevenLabs
-        httpStatus: status,
-        sessionId,
-        character: detectedCharacter,
-        requestBody: req.body // Log the full request body that caused the error
-      },
-      `Speakbase request failed for session ${sessionId}: ${err.message}`
+        method: "POST",
+        headers: {
+          "Accept": "audio/mpeg",
+          "xi-api-key": process.env.ELEVENLABS_API_KEY,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          text: botReplyForSpeech,
+          model_id: "eleven_multilingual_v2",
+          voice_settings: {
+            stability: voiceSettingsForCharacter.stability,
+            similarity_boost: voiceSettingsForCharacter.similarity_boost,
+          },
+        }),
+      }
     );
 
-    // Provide a more user-friendly error message to the frontend based on the HTTP status
-    let clientErrorMessage = "An unexpected server error occurred.";
-    if (status === 401) {
-        clientErrorMessage = "Authentication error with ElevenLabs. Please check your API key on the backend.";
-    } else if (status === 400 && elevenLabsErrorMessage.includes("character limit")) {
-        clientErrorMessage = "The response was too long to convert to speech.";
-    } else if (status === 429) {
-        clientErrorMessage = "ElevenLabs service is busy. Please try again later.";
-    } else if (status >= 400 && status < 500) {
-        // For other 4xx errors, provide a generic message or log details
-        clientErrorMessage = `ElevenLabs API error: ${elevenLabsErrorMessage.substring(0, 150)}...`; // Truncate long messages
+    if (!elevenlabsRes.ok) {
+      const errorText = await elevenlabsRes.text();
+      logger.error(`ElevenLabs API error: ${elevenlabsRes.status} - ${errorText}`);
+      return res.status(elevenlabsRes.status).json({
+        error: "Failed to generate speech from ElevenLabs.",
+        details: errorText,
+      });
     }
-    // For 5xx errors (server-side, not ElevenLabs), "An unexpected server error occurred." is fine.
 
-    return res.status(status).json({ error: clientErrorMessage, code: "SPEAKBASE_ERROR_SERVER" }); // Use a distinct error code
+    const audioBuffer = await elevenlabsRes.arrayBuffer();
+    res.set("Content-Type", "audio/mpeg");
+    res.send(Buffer.from(audioBuffer));
+  } catch (error) {
+    logger.error({ error: error.stack, code: "ELEVENLABS_ERROR" }, "Error during ElevenLabs API call.");
+    res.status(500).json({ error: "Internal server error during speech generation." });
   }
-});
-// ... (rest of your server startup and process handling code remains the same) ...
-
-console.log(`Attempting to start server on port ${PORT}`);
-const server = app.listen(PORT, (err) => {
-  if (err) {
-    console.error(`Server failed to start: ${err.message}`);
-    logger.error({ err: err.stack, code: "SERVER_STARTUP_ERROR" }, `Failed to start server on port ${PORT}`);
-    process.exit(1);
-  }
-  console.log(`Server successfully started on port ${PORT}`);
-  logger.info(`🚖 BetterChat server running on port ${PORT}`);
-});
-server.on('error', (err) => {
-  console.error(`Server error: ${err.message}`);
-  logger.error({ err: err.stack, code: "SERVER_ERROR" }, `Server error on port ${PORT}`);
-  process.exit(1);
 });
 process.on("SIGTERM", async () => {
   logger.info(`Received SIGTERM, gracefully shutting down...`);
