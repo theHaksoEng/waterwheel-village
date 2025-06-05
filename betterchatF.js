@@ -289,7 +289,23 @@ app.get("/health", async (req, res) => {
 
   res.json(health);
 });
-
+// Add this endpoint somewhere after your other app.get() routes
+app.get("/session/:sessionId", async (req, res) => {
+  const sessionId = req.params.sessionId;
+  try {
+    const sessionData = await getSession(sessionId);
+    if (sessionData) {
+      logger.info(`Session data requested for ${sessionId}: ${JSON.stringify(sessionData)}`);
+      res.json(sessionData);
+    } else {
+      logger.warn(`Session data not found for ${sessionId}`);
+      res.status(404).json({ error: "Session not found", code: "SESSION_NOT_FOUND" });
+    }
+  } catch (error) {
+    logger.error({ error: error.stack, code: "GET_SESSION_ENDPOINT_ERROR" }, `Failed to retrieve session data for ${sessionId}`);
+    res.status(500).json({ error: "Internal server error", code: "SERVER_ERROR" });
+  }
+});
 app.post("/chat", async (req, res) => {
   try {
     logger.debug(`Chat request received: ${JSON.stringify(req.body)}`);
