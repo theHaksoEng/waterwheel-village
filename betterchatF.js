@@ -28,10 +28,15 @@ const sanitizeHtml = require("sanitize-html");
 const { v4: uuidv4 } = require("uuid");
 const { characterVoices, characterAliases, voiceSettings } = require("./config");
 const logger = pino({
-  level: "info", // Set to 'debug' for more verbose logging during development
-  transport: {
+  level: process.env.NODE_ENV === 'production' ? 'info' : 'debug', // Set to 'debug' for more verbose logging during development
+  transport: process.env.NODE_ENV === 'production' ? {
     target: "pino/file",
     options: { destination: "./logs/app.log", mkdir: true },
+  } : {
+    target: 'pino-pretty', // Use pino-pretty for console output in development
+    options: {
+      colorize: true,
+    },
   },
 });
 
@@ -60,15 +65,15 @@ const envSchema = Joi.object({
 }).unknown(true);
 const PORT = process.env.PORT || 3000;
 const { error: envError } = envSchema.validate(process.env, { abortEarly: false });
-console.log("Env validation result:", envError ? envError.details : "Success");
-console.log("Environment variables validated:", Object.keys(process.env).filter(k => k.startsWith("CHATBASE") || k.startsWith("ELEVEN") || k.startsWith("VOICE") || k.includes("URL") || k.includes("PORT")));
-console.log("About to check envError");
+logger.info("Env validation result:", envError ? envError.details : "Success");
+logger.info("Environment variables validated:", Object.keys(process.env).filter(k => k.startsWith("CHATBASE") || k.startsWith("ELEVEN") || k.startsWith("VOICE") || k.includes("URL") || k.includes("PORT")));
+logger.info("About to check envError");
 if (envError) {
   logger.error(`Environment validation failed: ${envError.details.map(d => d.message).join(", ")}`);
   process.exit(1);
 }
 
-console.log("Express app initialized");
+logger.info("Express app initialized");
 let redisClient;
 let useRedis = !!process.env.REDIS_URL;
 const userMemory = new Map();
@@ -117,18 +122,6 @@ app.use(cors({ origin: process.env.WORDPRESS_URL }));
 
 app.use(express.json());
 
-/*
-app.use((req, res, next) => {
-  const origin = req.get("Origin");
-  if (origin !== process.env.WORDPRESS_URL) {
-    logger.warn(`Invalid origin request from ${origin}`);
-    return res.status(403).json({ error: "Invalid origin", code: "INVALID_ORIGIN" });
-  }
-  logger.debug(`Processing request for ${req.path}: ${JSON.stringify(req.body)}`);
-  next();
-});
-*/
-
 app.use(
   rateLimit({
     windowMs: 15 * 60 * 1000,
@@ -138,18 +131,16 @@ app.use(
 );
 
 const chatSchema = Joi.object({
-  text: Joi.string().trim().min(1).max(1000).required(),
+  text: Joi.string().trim().allow("").min(0).max(1000).required(), // Allow empty string for initial load
   sessionId: Joi.string().uuid().required(),
 });
 
 const speakbaseSchema = Joi.object({
   text: Joi.string().trim().min(1).max(1000).required(),
-  userMessage: Joi.string().trim().min(1).max(1000).optional(),
+  userMessage: Joi.string().trim().min(0).max(1000).optional(),
   sessionId: Joi.string().uuid().required(),
-  character: Joi.string().optional(), // Added character validation
+  character: Joi.string().optional(),
 });
-
-// In betterchatF.js
 
 function detectCharacter(text) {
   if (!text || typeof text !== "string") {
@@ -157,34 +148,62 @@ function detectCharacter(text) {
     return null;
   }
 
-  // Use \p{L}\p{N} for full Unicode support if needed
-  // Otherwise, simple [^a-z0-9\s] will work for basic Latin
   const cleanedText = text.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, "");
 
   for (const { key, names } of characterAliases) {
     for (const name of names) {
-      // Ensure name is also lowercase for comparison, though you set them in config.js
       if (cleanedText.includes(name.toLowerCase())) {
         logger.debug(`Character detected: "${key}" from text: "${text}"`);
-        return key; // Return the first matching character key found
+        return key;
       }
     }
   }
 
   logger.debug(`No specific character detected in text: "${text}". Falling back to default.`);
-  return null; // No character found
+  return null;
+}
+
+/**
+ * Extracts a student name from the given text using common patterns.
+ * @param {string} text - The user's input text.
+ * @returns {string|null} The extracted name, or null if not found.
+ */
+function extractStudentName(text) {
+    const lowerText = text.toLowerCase();
+    let name = null;
+
+    // Common phrases for introducing a name
+    const patterns = [
+        /(?:my name is|i'm|i am)\s+([\w\s\p{L}\p{N}\-']{2,})/u, // e.g., "my name is John Doe", "i'm Jane", "i am Mary-Ann"
+    ];
+
+    for (const pattern of patterns) {
+        const match = lowerText.match(pattern);
+        if (match && match[1]) {
+            // Capitalize first letter of each word in the name
+            name = match[1].trim().split(/\s+/)
+                       .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                       .join(' ');
+            // Basic validation for name length and to avoid single letters or numbers
+            if (name.length > 1 && !/^\d+$/.test(name)) {
+                logger.debug(`Student name extracted: "${name}" from text: "${text}"`);
+                return name;
+            }
+        }
+    }
+    logger.debug(`No student name detected in text: "${text}"`);
+    return null;
 }
 
 async function setSession(sessionId, data) {
   try {
-    // Ensure data is not null or undefined, and includes character
-    const sessionDataToStore = { ...data, timestamp: Date.now() }; // Add timestamp for in-memory expiry
+    const sessionDataToStore = { ...data, timestamp: Date.now() };
 
     if (useRedis) {
       await redisClient.setEx(sessionId, SESSION_TTL, JSON.stringify(sessionDataToStore));
     } else {
       userMemory.set(sessionId, sessionDataToStore);
-      setTimeout(() => userMemory.delete(sessionId), SESSION_TTL * 1000); // Set timeout for expiry
+      setTimeout(() => userMemory.delete(sessionId), SESSION_TTL * 1000);
     }
 
     logger.info(`Session ${sessionId}: Successfully set data ${JSON.stringify(sessionDataToStore)}`);
@@ -201,11 +220,10 @@ async function getSession(sessionId) {
       const redisData = await redisClient.get(sessionId);
       data = redisData ? JSON.parse(redisData) : null;
     } else {
-      // For in-memory, retrieve and check timestamp for expiry
       const storedData = userMemory.get(sessionId);
       if (storedData && (Date.now() - storedData.timestamp <= SESSION_TTL * 1000)) {
           data = { character: storedData.character, studentName: storedData.studentName };
-      } else if (storedData) { // If it expired, remove it
+      } else if (storedData) {
           userMemory.delete(sessionId);
           chatMemory.delete(sessionId);
           logger.info(`Session ${sessionId}: Expired and deleted from in-memory storage during getSession.`);
@@ -242,10 +260,6 @@ function storeChatHistory(sessionId, messages) {
     logger.error({ error: error.stack, code: "CHAT_HISTORY_ERROR" }, `Failed to store chat history for ${sessionId}`);
   }
 }
-
-// Removed the separate setInterval as expiry check is now in getSession for in-memory.
-// If you solely rely on in-memory, you might want a cleanup setInterval for sessions that are never accessed.
-// For now, getSession's check is sufficient for active sessions.
 
 function streamlinedError(err, code) {
   const error = new Error(err.message || "OK");
@@ -292,7 +306,7 @@ app.get("/health", async (req, res) => {
 
   res.json(health);
 });
-// Add this endpoint somewhere after your other app.get() routes
+
 app.get("/session/:sessionId", async (req, res) => {
   const sessionId = req.params.sessionId;
   try {
@@ -309,12 +323,12 @@ app.get("/session/:sessionId", async (req, res) => {
     res.status(500).json({ error: "Internal server error", code: "SERVER_ERROR" });
   }
 });
+
 app.post("/chat", async (req, res) => {
   try {
     logger.debug(`Chat request received: ${JSON.stringify(req.body)}`);
 
     const { error, value } = chatSchema.validate(req.body);
-
     if (error) {
       logger.warn(`Invalid chat input: ${error.details[0].message}`);
       return res.status(400).json({ error: error.details[0].message, code: "INVALID_INPUT" });
@@ -324,63 +338,104 @@ app.post("/chat", async (req, res) => {
     const sanitizedText = sanitizeHtml(text, { allowedTags: [], allowedAttributes: {} });
 
     // Retrieve existing session data
-    const sessionData = await getSession(sessionId) || {}; // Initialize if null
+    const sessionData = await getSession(sessionId) || {};
 
-    // --- FIX START ---
-    // Detect character from the user's initial message
-    const detectedCharacter = detectCharacter(sanitizedText);
+    let botReplyText = "";
+    let isWelcomeMessage = false;
 
-    // If a character is detected AND it's different from the one currently in session, update it
-    // This handles initial character selection and potential character switching within the chat
-    if (detectedCharacter && detectedCharacter !== sessionData.character) {
-      sessionData.character = detectedCharacter;
-      // IMPORTANT: Save the updated session data!
+    // Handle frontend initial load (empty string)
+    if (!sessionData.character && !sessionData.studentName && text === "") {
+      logger.info(`New session ${sessionId}: Sending welcome message from Mr. McArthur.`);
+      sessionData.character = DEFAULT_CHARACTER;
       await setSession(sessionId, sessionData);
-      logger.info(`Session ${sessionId}: Character updated to "${detectedCharacter}" from user input.`);
-    } else if (!sessionData.character && DEFAULT_CHARACTER) {
-        // If no character was detected and no character is set in session, set a default
-        // This ensures a character is always set if not explicitly chosen by user
+      botReplyText = `Welcome to Waterwheel Village, students! I'm Mr. McArthur, your teacher. What's your name, if you'd like to share it?`;
+      isWelcomeMessage = true;
+    }
+    // Handle typed greetings like "hello", "hi", etc.
+    else if (!sessionData.studentName && /^(hello|hi|hey)$/i.test(sanitizedText)) {
+      sessionData.character = DEFAULT_CHARACTER;
+      await setSession(sessionId, sessionData);
+      botReplyText = `Ah, hello there, friend! Welcome to Waterwheel Village. I'm Mr. McArthur. What is your name?`;
+
+      storeChatHistory(sessionId, [
+        ...(chatMemory.get(sessionId) || []),
+        { role: "user", content: sanitizedText },
+        { role: "assistant", content: botReplyText },
+      ]);
+
+      return res.json({ text: botReplyText });
+    }
+    // Handle student name capture
+    else if (sessionData.character === DEFAULT_CHARACTER && !sessionData.studentName) {
+      const studentName = extractStudentName(sanitizedText);
+      if (studentName) {
+        sessionData.studentName = studentName;
+        await setSession(sessionId, sessionData);
+        logger.info(`Session ${sessionId}: Student name "${studentName}" captured.`);
+        botReplyText = `It's nice to meet you, ${studentName}! How can I help you today?`;
+
+        storeChatHistory(sessionId, [
+          ...(chatMemory.get(sessionId) || []),
+          { role: "user", content: sanitizedText },
+          { role: "assistant", content: botReplyText },
+        ]);
+
+        return res.json({ text: botReplyText });
+      }
+    }
+
+    // Detect character if not already set or if user input changes it
+    if (!isWelcomeMessage) {
+      const detectedCharacter = detectCharacter(sanitizedText);
+      if (detectedCharacter && detectedCharacter !== sessionData.character) {
+        sessionData.character = detectedCharacter;
+        await setSession(sessionId, sessionData);
+        logger.info(`Session ${sessionId}: Character updated to "${detectedCharacter}" from user input.`);
+      } else if (!sessionData.character) {
         sessionData.character = DEFAULT_CHARACTER;
         await setSession(sessionId, sessionData);
-        logger.info(`Session ${sessionId}: Default character "${DEFAULT_CHARACTER}" set as no character detected and no character in session.`);
-    }
-    // --- FIX END ---
-
-    const previous = chatMemory.get(sessionId) || [];
-    let systemPrompt = null;
-
-    if (sessionData.character) { // Now, this condition will correctly use the saved character
-      const prefix =
-        sessionData.studentName && sessionData.character === "mcarthur"
-          ? `You are Mr. McArthur, a teacher in Waterwheel Village. Address the student as ${sessionData.studentName}. Stay in character.`
-          : `You are ${sessionData.character}, a character in Waterwheel Village. Stay in character.`;
-
-      systemPrompt = { role: "system", content: prefix };
-      logger.debug(`System prompt set for character: ${sessionData.character}`);
-    } else {
-      // Fallback for cases where no character is found/set even after initial detection
-      // This should ideally not be hit with the fix above, but good for robustness
-      logger.warn(`No character found in session for ${sessionId}. Using generic system prompt.`);
-      systemPrompt = { role: "system", content: "You are a helpful assistant in Waterwheel Village. Stay in character." };
+        logger.info(`Session ${sessionId}: Default character "${DEFAULT_CHARACTER}" set.`);
+      }
     }
 
-    const replyMessages = [...(systemPrompt ? [systemPrompt] : []), ...previous, { role: "user", content: sanitizedText }];
-    logger.debug(`Calling Chatbase with messages: ${JSON.stringify(replyMessages)}`);
+    // If no custom reply was generated, call Chatbase
+    if (!isWelcomeMessage && !botReplyText) {
+      const previous = chatMemory.get(sessionId) || [];
+      let systemPrompt = null;
 
-    const replyText = await callChatbase(
-      sessionId,
-      replyMessages,
-      process.env.CHATBASE_BOT_ID,
-      process.env.CHATBASE_API_KEY,
-    );
+      if (sessionData.character) {
+        let prefix = "";
+        if (sessionData.character === DEFAULT_CHARACTER && sessionData.studentName) {
+          prefix = `You are Mr. McArthur, a teacher in Waterwheel Village. Address the student as ${sessionData.studentName}. Stay in character.`;
+        } else if (sessionData.character === DEFAULT_CHARACTER && !sessionData.studentName) {
+          prefix = `You are Mr. McArthur, a teacher in Waterwheel Village. Ask their name if not yet known. Stay in character.`;
+        } else {
+          prefix = `You are ${sessionData.character}, a character in Waterwheel Village. Stay in character.`;
+        }
+        systemPrompt = { role: "system", content: prefix };
+        logger.debug(`System prompt set for character: ${sessionData.character}`);
+      } else {
+        systemPrompt = { role: "system", content: "You are a helpful assistant in Waterwheel Village. Stay in character." };
+      }
+
+      const replyMessages = [...(systemPrompt ? [systemPrompt] : []), ...previous, { role: "user", content: sanitizedText }];
+      logger.debug(`Calling Chatbase with messages: ${JSON.stringify(replyMessages)}`);
+
+      botReplyText = await callChatbase(
+        sessionId,
+        replyMessages,
+        process.env.CHATBASE_BOT_ID,
+        process.env.CHATBASE_API_KEY
+      );
+    }
 
     storeChatHistory(sessionId, [
-      ...previous,
+      ...(chatMemory.get(sessionId) || []),
       { role: "user", content: sanitizedText },
-      { role: "assistant", content: replyText },
+      { role: "assistant", content: botReplyText },
     ]);
 
-    res.json({ text: replyText });
+    res.json({ text: botReplyText });
   } catch (error) {
     const status = error.status || 500;
     const code = error.code || "INTERNAL_SERVER_ERROR";
@@ -389,27 +444,24 @@ app.post("/chat", async (req, res) => {
   }
 });
 
-// In your betterchatF.js file, find your /speakbase route:
 app.post("/speakbase", async (req, res) => {
-  const { text, sessionId, character: frontendCharacter } = req.body; // Renamed to frontendCharacter for clarity
-  const botReplyForSpeech = text; // The chunk of text to speak
+  const { text, sessionId, character: frontendCharacter } = req.body;
+  const botReplyForSpeech = text;
 
   if (!botReplyForSpeech) {
     return res.status(400).json({ error: "Text is required for speech generation." });
   }
 
   logger.info(`🔉 /speakbase route hit for session ${sessionId}. Text: "${botReplyForSpeech.substring(0, 50)}..."`);
-  logger.info(`Requested Character (from frontend): "${frontendCharacter}"`); // Log the character received from frontend
+  logger.info(`Requested Character (from frontend): "${frontendCharacter}"`);
 
-  let finalCharacterKey = frontendCharacter; // Start with the character provided by the frontend
+  let finalCharacterKey = frontendCharacter;
 
-  // If the frontend didn't specify a character, try to detect it from the text (this is a fallback now)
   if (!finalCharacterKey) {
     const detectedCharacterFromText = detectCharacter(botReplyForSpeech);
     finalCharacterKey = detectedCharacterFromText || DEFAULT_CHARACTER;
     logger.info(`Frontend did not provide character. Detected character from text: "${detectedCharacterFromText || 'None'}", Final character: "${finalCharacterKey}"`);
   } else {
-    // Ensure the provided character is one of the valid keys in characterVoices
     if (!Object.keys(characterVoices).includes(finalCharacterKey)) {
         logger.warn(`Frontend requested character "${finalCharacterKey}" not found in characterVoices. Falling back to default.`);
         finalCharacterKey = DEFAULT_CHARACTER;
@@ -417,15 +469,14 @@ app.post("/speakbase", async (req, res) => {
     logger.info(`Using character provided by frontend: "${finalCharacterKey}" for speech.`);
   }
 
-  const voiceId = characterVoices[finalCharacterKey];
+  let voiceId = characterVoices[finalCharacterKey];
   const voiceSettingsForCharacter = voiceSettings[finalCharacterKey] || voiceSettings.default;
 
   if (!voiceId) {
     logger.error(`No voice ID found for character: ${finalCharacterKey}. Falling back to ${DEFAULT_CHARACTER}.`);
-    // Fallback to DEFAULT_CHARACTER's voice ID if the selected character is not found in characterVoices
     const defaultVoiceId = characterVoices[DEFAULT_CHARACTER] || process.env.VOICE_MCARTHUR;
     if (defaultVoiceId) {
-      finalCharacterKey = DEFAULT_CHARACTER; // Ensure final character key is updated to default
+      finalCharacterKey = DEFAULT_CHARACTER;
       voiceId = defaultVoiceId;
     } else {
       return res.status(500).json({ error: `No valid voice ID found for any character, including default.` });
@@ -439,12 +490,12 @@ app.post("/speakbase", async (req, res) => {
         method: "POST",
         headers: {
           "Accept": "audio/mpeg",
-          "xi-api-key": process.env.ELEVEN_API_KEY, // Corrected to ELEVEN_API_KEY from ELEVENLABS_API_KEY
+          "xi-api-key": process.env.ELEVEN_API_KEY,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
           text: botReplyForSpeech,
-          model_id: "eleven_multilingual_v2", // Or use process.env.ELEVEN_MODEL_ID if you want to configure
+          model_id: "eleven_multilingual_v2",
           voice_settings: {
             stability: voiceSettingsForCharacter.stability,
             similarity_boost: voiceSettingsForCharacter.similarity_boost,
@@ -471,7 +522,6 @@ app.post("/speakbase", async (req, res) => {
   }
 });
 
-// Adding app.listen to ensure the server starts and logs a message
 app.listen(PORT, () => {
   logger.info(`Server is running and listening on port ${PORT}`);
 });
