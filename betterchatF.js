@@ -1,9 +1,9 @@
 require("dotenv").config();
 console.log("Starting betterchatF.js");
 const express = require("express");
-const app = express(); // 👈 You initialize Express here
+const app = express();
 
-app.set("trust proxy", 1); // ✅ Add this line right after
+app.set("trust proxy", 1);
 
 // Simple sanitize function to clean user input
 function sanitize(input) {
@@ -28,12 +28,12 @@ const sanitizeHtml = require("sanitize-html");
 const { v4: uuidv4 } = require("uuid");
 const { characterVoices, characterAliases, voiceSettings } = require("./config");
 const logger = pino({
-  level: process.env.NODE_ENV === 'production' ? 'info' : 'debug', // Set to 'debug' for more verbose logging during development
+  level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
   transport: process.env.NODE_ENV === 'production' ? {
     target: "pino/file",
     options: { destination: "./logs/app.log", mkdir: true },
   } : {
-    target: 'pino-pretty', // Use pino-pretty for console output in development
+    target: 'pino-pretty',
     options: {
       colorize: true,
     },
@@ -195,6 +195,22 @@ function extractStudentName(text) {
     return null;
 }
 
+// === NEW FUNCTION: extractStudentLevel ===
+/**
+ * Extracts a student level (beginner, intermediate, expert) from the given text.
+ * @param {string} text - The user's input text.
+ * @returns {string|null} The extracted level, or null if not found.
+ */
+function extractStudentLevel(text) {
+    const lowerText = text.toLowerCase();
+    if (lowerText.includes("beginner")) return "beginner";
+    if (lowerText.includes("intermediate")) return "intermediate";
+    if (lowerText.includes("expert")) return "expert";
+    logger.debug(`No student level detected in text: "${text}"`);
+    return null;
+}
+// === END NEW FUNCTION ===
+
 async function setSession(sessionId, data) {
   try {
     const sessionDataToStore = { ...data, timestamp: Date.now() };
@@ -222,7 +238,12 @@ async function getSession(sessionId) {
     } else {
       const storedData = userMemory.get(sessionId);
       if (storedData && (Date.now() - storedData.timestamp <= SESSION_TTL * 1000)) {
-          data = { character: storedData.character, studentName: storedData.studentName };
+          // Retrieve character, studentName, and studentLevel from in-memory session
+          data = { 
+              character: storedData.character, 
+              studentName: storedData.studentName,
+              studentLevel: storedData.studentLevel // <-- Include studentLevel here
+          };
       } else if (storedData) {
           userMemory.delete(sessionId);
           chatMemory.delete(sessionId);
@@ -343,49 +364,50 @@ app.post("/chat", async (req, res) => {
     let botReplyText = "";
     let isWelcomeMessage = false;
 
-    // Handle frontend initial load (empty string)
-    if (!sessionData.character && !sessionData.studentName && text === "") {
-      logger.info(`New session ${sessionId}: Sending welcome message from Mr. McArthur.`);
-      sessionData.character = DEFAULT_CHARACTER;
-      await setSession(sessionId, sessionData);
-      botReplyText = `Welcome to Waterwheel Village, students! I'm Mr. McArthur, your teacher. What's your name, if you'd like to share it?`;
-      isWelcomeMessage = true;
-    }
-    // Handle typed greetings like "hello", "hi", etc.
-    else if (!sessionData.studentName && /^(hello|hi|hey)$/i.test(sanitizedText)) {
-      sessionData.character = DEFAULT_CHARACTER;
-      await setSession(sessionId, sessionData);
-      botReplyText = `Ah, hello there, friend! Welcome to Waterwheel Village. I'm Mr. McArthur. What is your name?`;
-
-      storeChatHistory(sessionId, [
-        ...(chatMemory.get(sessionId) || []),
-        { role: "user", content: sanitizedText },
-        { role: "assistant", content: botReplyText },
-      ]);
-
-      return res.json({ text: botReplyText });
-    }
-    // Handle student name capture
-    else if (sessionData.character === DEFAULT_CHARACTER && !sessionData.studentName) {
-      const studentName = extractStudentName(sanitizedText);
-      if (studentName) {
-        sessionData.studentName = studentName;
+    // 1. Initial Welcome message from Mr. McArthur when frontend sends empty string on new session.
+    if (!sessionData.character && !sessionData.studentName && !sessionData.studentLevel && text === "") {
+        logger.info(`New session ${sessionId}: Sending initial welcome message from Mr. McArthur.`);
+        sessionData.character = DEFAULT_CHARACTER;
         await setSession(sessionId, sessionData);
-        logger.info(`Session ${sessionId}: Student name "${studentName}" captured.`);
-        botReplyText = `It's nice to meet you, ${studentName}! How can I help you today?`;
+        botReplyText = `Welcome to Waterwheel Village, students! I'm Mr. McArthur, your teacher. What's your name, if you'd like to share it? And are you a beginner, intermediate, or expert student?`;
+        isWelcomeMessage = true;
+    }
+    // 2. Handle the user's first reply where they introduce themselves and their level.
+    else if (sessionData.character === DEFAULT_CHARACTER && !sessionData.studentName && text !== "") {
+        const studentName = extractStudentName(sanitizedText);
+        const studentLevel = extractStudentLevel(sanitizedText); // Use the new function
 
-        storeChatHistory(sessionId, [
-          ...(chatMemory.get(sessionId) || []),
-          { role: "user", content: sanitizedText },
-          { role: "assistant", content: botReplyText },
-        ]);
+        if (studentName) {
+            sessionData.studentName = studentName;
+            logger.info(`Session ${sessionId}: Student name "${studentName}" captured.`);
+        }
+        if (studentLevel) {
+            sessionData.studentLevel = studentLevel;
+            logger.info(`Session ${sessionId}: Student level "${studentLevel}" captured.`);
+        }
 
-        return res.json({ text: botReplyText });
-      }
+        // Construct a dynamic reply based on what was captured
+        if (studentName || studentLevel) {
+            let namePart = studentName ? `It's lovely to meet you, ${studentName}!` : "Alright!";
+            let levelPart = studentLevel ? ` You're an ${studentLevel} student.` : "";
+            botReplyText = `${namePart}${levelPart} How can I help you today?`;
+            
+            await setSession(sessionId, sessionData); // Save the updated session with name and level
+
+            // Store this auto-generated reply immediately to prevent Chatbase from overriding
+            storeChatHistory(sessionId, [
+                ...(chatMemory.get(sessionId) || []),
+                { role: "user", content: sanitizedText },
+                { role: "assistant", content: botReplyText }
+            ]);
+            return res.json({ text: botReplyText }); // Send this response immediately
+        }
+        // If no name or level was detected in this specific phase, fall through to Chatbase.
+        // This handles cases where user might just say "hi" again or something else not fitting the pattern.
     }
 
-    // Detect character if not already set or if user input changes it
-    if (!isWelcomeMessage) {
+    // 3. Detect character if not already set or if user input changes it (for subsequent turns).
+    if (!isWelcomeMessage && !botReplyText) { // Only do this if a custom reply wasn't generated above
       const detectedCharacter = detectCharacter(sanitizedText);
       if (detectedCharacter && detectedCharacter !== sessionData.character) {
         sessionData.character = detectedCharacter;
@@ -398,23 +420,28 @@ app.post("/chat", async (req, res) => {
       }
     }
 
-    // If no custom reply was generated, call Chatbase
+    // 4. Call Chatbase if no specific welcome/name/level reply was generated.
     if (!isWelcomeMessage && !botReplyText) {
       const previous = chatMemory.get(sessionId) || [];
       let systemPrompt = null;
 
       if (sessionData.character) {
         let prefix = "";
-        if (sessionData.character === DEFAULT_CHARACTER && sessionData.studentName) {
-          prefix = `You are Mr. McArthur, a teacher in Waterwheel Village. Address the student as ${sessionData.studentName}. Stay in character.`;
-        } else if (sessionData.character === DEFAULT_CHARACTER && !sessionData.studentName) {
-          prefix = `You are Mr. McArthur, a teacher in Waterwheel Village. Ask their name if not yet known. Stay in character.`;
+        // Modify system prompt to include student's name and level if available
+        if (sessionData.studentName && sessionData.studentLevel) {
+            prefix = `You are ${sessionData.character}. Address the student as ${sessionData.studentName}. They are an ${sessionData.studentLevel} student. Stay in character.`;
+        } else if (sessionData.studentName) {
+            prefix = `You are ${sessionData.character}. Address the student as ${sessionData.studentName}. Stay in character.`;
+        } else if (sessionData.studentLevel) {
+            prefix = `You are ${sessionData.character}. The student is an ${sessionData.studentLevel} student. Stay in character.`;
         } else {
-          prefix = `You are ${sessionData.character}, a character in Waterwheel Village. Stay in character.`;
+            // Default if neither name nor level is known
+            prefix = `You are ${sessionData.character}, a character in Waterwheel Village. Stay in character.`;
         }
         systemPrompt = { role: "system", content: prefix };
         logger.debug(`System prompt set for character: ${sessionData.character}`);
       } else {
+        // Fallback if no character is set (should ideally not happen after welcome)
         systemPrompt = { role: "system", content: "You are a helpful assistant in Waterwheel Village. Stay in character." };
       }
 
@@ -429,6 +456,7 @@ app.post("/chat", async (req, res) => {
       );
     }
 
+    // Always store the history of the current interaction
     storeChatHistory(sessionId, [
       ...(chatMemory.get(sessionId) || []),
       { role: "user", content: sanitizedText },
@@ -457,17 +485,25 @@ app.post("/speakbase", async (req, res) => {
 
   let finalCharacterKey = frontendCharacter;
 
-  if (!finalCharacterKey) {
+  // IMPORTANT: Backend should primarily determine character from session, not just frontend hint.
+  // We'll fetch session data here to ensure character is consistent.
+  const sessionData = await getSession(sessionId);
+  if (sessionData && sessionData.character) {
+      finalCharacterKey = sessionData.character; // Use character from session if available
+      logger.info(`Using character from session for speech: "${finalCharacterKey}"`);
+  } else if (!finalCharacterKey) {
     const detectedCharacterFromText = detectCharacter(botReplyForSpeech);
     finalCharacterKey = detectedCharacterFromText || DEFAULT_CHARACTER;
-    logger.info(`Frontend did not provide character. Detected character from text: "${detectedCharacterFromText || 'None'}", Final character: "${finalCharacterKey}"`);
+    logger.info(`No session character, and frontend did not provide. Detected from text: "${detectedCharacterFromText || 'None'}", Final character for speech: "${finalCharacterKey}"`);
   } else {
+    // Frontend provided a character, but no session character. Validate it.
     if (!Object.keys(characterVoices).includes(finalCharacterKey)) {
         logger.warn(`Frontend requested character "${finalCharacterKey}" not found in characterVoices. Falling back to default.`);
         finalCharacterKey = DEFAULT_CHARACTER;
     }
-    logger.info(`Using character provided by frontend: "${finalCharacterKey}" for speech.`);
+    logger.info(`Using frontend-provided character: "${finalCharacterKey}" for speech (no session character).`);
   }
+
 
   let voiceId = characterVoices[finalCharacterKey];
   const voiceSettingsForCharacter = voiceSettings[finalCharacterKey] || voiceSettings.default;
@@ -515,6 +551,16 @@ app.post("/speakbase", async (req, res) => {
 
     const audioBuffer = await elevenlabsRes.arrayBuffer();
     res.set("Content-Type", "audio/mpeg");
+    // This `if (!elevenlabsRes.ok)` block is a duplicate and can be removed.
+    // The previous one correctly handles the error before sending the buffer.
+    // if (!elevenlabsRes.ok) {
+    //   const errorText = await elevenlabsRes.text();
+    //   logger.error(`🧨 ElevenLabs API Error ${elevenlabsRes.status}: ${errorText}`);
+    //   return res.status(elevenlabsRes.status).json({
+    //     error: `Speak API error ${elevenlabsRes.status}: ${errorText}`,
+    //   });
+    // }
+    
     res.send(Buffer.from(audioBuffer));
   } catch (error) {
     logger.error({ error: error.stack, code: "ELEVENLABS_ERROR" }, "Error during ElevenLabs API call.");
