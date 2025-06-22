@@ -405,11 +405,17 @@ app.post("/chat", async (req, res) => {
         if (replyNeeded) {
             // Construct a dynamic reply based on the *current* state of sessionData
             if (sessionData.studentName && sessionData.studentLevel) {
-                 botReplyText = `It's lovely to meet you, ${sessionData.studentName}! As an ${sessionData.studentLevel} student, how can I help you today?`;
+                // --- GRAMMAR FIX: 'a' vs 'an' for student level ---
+                const article = (sessionData.studentLevel === 'beginner' || sessionData.studentLevel === 'intermediate' || sessionData.studentLevel === 'expert') ?
+                                (['intermediate', 'expert'].includes(sessionData.studentLevel) ? 'an' : 'a') : 'a'; // More robust article selection
+                // --- END GRAMMAR FIX ---
+                botReplyText = `It's lovely to meet you, ${sessionData.studentName}! As ${article} ${sessionData.studentLevel} student, how can I help you today?`;
             } else if (sessionData.studentName && !sessionData.studentLevel) {
                 botReplyText = `It's lovely to meet you, ${sessionData.studentName}! What kind of student are you? A beginner, intermediate, or expert?`;
             } else if (!sessionData.studentName && sessionData.studentLevel) {
-                botReplyText = `Oh, so you're an ${sessionData.studentLevel} student! And what name should I call you?`;
+                const article = (sessionData.studentLevel === 'beginner' || sessionData.studentLevel === 'intermediate' || sessionData.studentLevel === 'expert') ?
+                                (['intermediate', 'expert'].includes(sessionData.studentLevel) ? 'an' : 'a') : 'a';
+                botReplyText = `Oh, so you're ${article} ${sessionData.studentLevel} student! And what name should I call you?`;
             }
             // If neither name nor level were present/detected, fall through.
             else {
@@ -454,18 +460,22 @@ app.post("/chat", async (req, res) => {
 
       let prefix = "";
       if (sessionData.character) {
+          // More robust article selection for system prompt
+          const studentArticle = (sessionData.studentLevel === 'beginner' || sessionData.studentLevel === 'intermediate' || sessionData.studentLevel === 'expert') ?
+                                  (['intermediate', 'expert'].includes(sessionData.studentLevel) ? 'an' : 'a') : 'a';
+
           if (sessionData.character === DEFAULT_CHARACTER && sessionData.studentName && sessionData.studentLevel) {
-              prefix = `You are Mr. McArthur, a teacher in Waterwheel Village. Address the student as ${sessionData.studentName}. They are an ${sessionData.studentLevel} student. Stay in character.`;
+              prefix = `You are Mr. McArthur, a teacher in Waterwheel Village. Address the student as ${sessionData.studentName}. They are ${studentArticle} ${sessionData.studentLevel} student. Stay in character.`;
           } else if (sessionData.character === DEFAULT_CHARACTER && sessionData.studentName) {
               prefix = `You are Mr. McArthur, a teacher in Waterwheel Village. Address the student as ${sessionData.studentName}. Stay in character.`;
           } else if (sessionData.character === DEFAULT_CHARACTER && sessionData.studentLevel) {
-              prefix = `You are Mr. McArthur, a teacher in Waterwheel Village. The student is an ${sessionData.studentLevel} student. Stay in character.`;
+              prefix = `You are Mr. McArthur, a teacher in Waterwheel Village. The student is ${studentArticle} ${sessionData.studentLevel} student. Stay in character.`;
           } else if (sessionData.studentName && sessionData.studentLevel) {
-              prefix = `You are ${sessionData.character}, a character in Waterwheel Village. Address the student as ${sessionData.studentName}. They are an ${sessionData.studentLevel} student. Stay in character.`;
+              prefix = `You are ${sessionData.character}, a character in Waterwheel Village. Address the student as ${sessionData.studentName}. They are ${studentArticle} ${sessionData.studentLevel} student. Stay in character.`;
           } else if (sessionData.studentName) {
               prefix = `You are ${sessionData.character}, a character in Waterwheel Village. Address the student as ${sessionData.studentName}. Stay in character.`;
           } else if (sessionData.studentLevel) {
-              prefix = `You are ${sessionData.character}, a character in Waterwheel Village. The student is an ${sessionData.studentLevel} student. Stay in character.`;
+              prefix = `You are ${sessionData.character}, a character in Waterwheel Village. The student is ${studentArticle} ${sessionData.studentLevel} student. Stay in character.`;
           } else {
               prefix = `You are ${sessionData.character}, a character in Waterwheel Village. Stay in character.`;
           }
@@ -546,12 +556,13 @@ app.post("/speakbase", async (req, res) => {
   const voiceSettingsForCharacter = voiceSettings[finalCharacterKey] || voiceSettings.default;
 
   if (!voiceId) {
-    logger.error(`No voice ID found for character: ${finalCharacterKey}. Falling back to ${DEFAULT_CHARACTER}.`);
+    logger.error({ character: finalCharacterKey }, `No voice ID found for character. Falling back to ${DEFAULT_CHARACTER}.`);
     const defaultVoiceId = characterVoices[DEFAULT_CHARACTER] || process.env.VOICE_MCARTHUR;
     if (defaultVoiceId) {
       finalCharacterKey = DEFAULT_CHARACTER;
       voiceId = defaultVoiceId;
     } else {
+      logger.error(`No valid voice ID found for any character, including default.`);
       return res.status(500).json({ error: `No valid voice ID found for any character, including default.` });
     }
   }
@@ -579,7 +590,9 @@ app.post("/speakbase", async (req, res) => {
 
     if (!elevenlabsRes.ok) {
       const errorText = await elevenlabsRes.text();
-      logger.error(`ElevenLabs API error for character ${finalCharacterKey}: ${elevenlabsRes.status} - ${errorText}`);
+      // --- Improved ElevenLabs error logging ---
+      logger.error({ status: elevenlabsRes.status, details: errorText, character: finalCharacterKey, voiceId: voiceId }, `ElevenLabs API returned non-OK status.`);
+      // --- End Improved ElevenLabs error logging ---
       return res.status(elevenlabsRes.status).json({
         error: "Failed to generate speech from ElevenLabs.",
         details: errorText,
@@ -590,7 +603,7 @@ app.post("/speakbase", async (req, res) => {
     res.set("Content-Type", "audio/mpeg");
     res.send(Buffer.from(audioBuffer));
   } catch (error) {
-    logger.error({ error: error.stack, code: "ELEVENLABS_ERROR" }, "Error during ElevenLabs API call.");
+    logger.error({ error: error.stack, code: "ELEVENLABS_ERROR" }, "Error during ElevenLabs API call (network or unexpected).");
     res.status(500).json({ error: "Internal server error during speech generation." });
   }
 });
