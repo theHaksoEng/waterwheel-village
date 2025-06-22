@@ -353,6 +353,8 @@ app.get("/session/:sessionId", async (req, res) => {
   }
 });
 
+// ... (rest of your code remains the same) ...
+
 app.post("/chat", async (req, res) => {
   try {
     logger.debug(`Chat request received: ${JSON.stringify(req.body)}`);
@@ -373,7 +375,6 @@ app.post("/chat", async (req, res) => {
     let isWelcomeMessage = false;
 
     // 1. Initial Welcome message from Mr. McArthur when frontend sends empty string on new session.
-    // This now correctly checks if ALL initial session data is missing.
     if (!sessionData.character && !sessionData.studentName && !sessionData.studentLevel && text === "") {
         logger.info(`New session ${sessionId}: Sending initial welcome message from Mr. McArthur.`);
         sessionData.character = DEFAULT_CHARACTER;
@@ -384,42 +385,37 @@ app.post("/chat", async (req, res) => {
     // 2. Handle the user's first reply where they introduce themselves and their level.
     // This block is for when Mr. McArthur is the character and we still need name/level.
     else if (sessionData.character === DEFAULT_CHARACTER && (!sessionData.studentName || !sessionData.studentLevel) && text !== "") {
-        const studentName = extractStudentName(sanitizedText);
-        const studentLevel = extractStudentLevel(sanitizedText);
+        const detectedName = extractStudentName(sanitizedText);
+        const detectedLevel = extractStudentLevel(sanitizedText);
 
-        let nameCaptured = false;
-        let levelCaptured = false;
+        let replyNeeded = false; // Flag to indicate if a specific reply is needed for name/level capture
 
-        if (studentName && !sessionData.studentName) {
-            sessionData.studentName = studentName;
-            nameCaptured = true;
-            logger.info(`Session ${sessionId}: Student name "${studentName}" captured.`);
+        if (detectedName && !sessionData.studentName) {
+            sessionData.studentName = detectedName;
+            logger.info(`Session ${sessionId}: Student name "${detectedName}" captured.`);
+            replyNeeded = true;
         }
-        if (studentLevel && !sessionData.studentLevel) {
-            sessionData.studentLevel = studentLevel;
-            levelCaptured = true;
-            logger.info(`Session ${sessionId}: Student level "${studentLevel}" captured.`);
+        if (detectedLevel && !sessionData.studentLevel) {
+            sessionData.studentLevel = detectedLevel;
+            logger.info(`Session ${sessionId}: Student level "${detectedLevel}" captured.`);
+            replyNeeded = true;
         }
 
-        // Construct a dynamic reply based on what was just captured
-        if (nameCaptured || levelCaptured) {
-            let namePart = sessionData.studentName ? `It's lovely to meet you, ${sessionData.studentName}!` : "Alright!";
-            let levelPart = sessionData.studentLevel ? ` You're an ${sessionData.studentLevel} student.` : "";
-            botReplyText = `${namePart}${levelPart} How can I help you today?`;
-
-            // If only name was captured, and level is still needed, prompt for level
-            if (sessionData.studentName && !sessionData.studentLevel && !levelCaptured) {
+        if (replyNeeded) {
+            // Construct a dynamic reply based on the *current* state of sessionData
+            if (sessionData.studentName && sessionData.studentLevel) {
+                 botReplyText = `It's lovely to meet you, ${sessionData.studentName}! As an ${sessionData.studentLevel} student, how can I help you today?`;
+            } else if (sessionData.studentName && !sessionData.studentLevel) {
                 botReplyText = `It's lovely to meet you, ${sessionData.studentName}! What kind of student are you? A beginner, intermediate, or expert?`;
-            }
-            // If only level was captured, and name is still needed, prompt for name
-            else if (!sessionData.studentName && sessionData.studentLevel && !nameCaptured) {
+            } else if (!sessionData.studentName && sessionData.studentLevel) {
                 botReplyText = `Oh, so you're an ${sessionData.studentLevel} student! And what name should I call you?`;
             }
-            // If both were just captured or already present
-            else if (sessionData.studentName && sessionData.studentLevel) {
-                 botReplyText = `It's lovely to meet you, ${sessionData.studentName}! As an ${sessionData.studentLevel} student, how can I help you today?`;
+            // If neither name nor level were present/detected, fall through.
+            // This 'else' case should ideally not be hit if replyNeeded is true,
+            // as at least one of name/level would have been detected.
+            else {
+                botReplyText = "I received your message, but I'm still waiting to hear your name and level. Can you tell me?";
             }
-
 
             await setSession(sessionId, sessionData); // Save the updated session with name and level
 
@@ -431,20 +427,19 @@ app.post("/chat", async (req, res) => {
             ]);
             return res.json({ text: botReplyText }); // Send this response immediately
         }
-        // If neither name nor level were detected in this specific phase,
-        // it means the user's input wasn't about intro. Fall through to Chatbase.
+        // If `replyNeeded` is false, it means no new name or level was captured/needed,
+        // so the input should go to Chatbase. Fall through.
     }
 
     // 3. Detect character for subsequent turns or if character wasn't set.
     // This happens IF a custom reply wasn't generated above (i.e., not a welcome or name/level intro)
-    if (!isWelcomeMessage && !botReplyText) {
+    if (!isWelcomeMessage && !botReplyText) { // Check if botReplyText was NOT set by the above blocks
       const detectedCharacter = detectCharacter(sanitizedText);
       if (detectedCharacter && detectedCharacter !== sessionData.character) {
         sessionData.character = detectedCharacter;
         await setSession(sessionId, sessionData);
         logger.info(`Session ${sessionId}: Character updated to "${detectedCharacter}" from user input.`);
       } else if (!sessionData.character) {
-        // Fallback to default if no character was detected and none is in session
         sessionData.character = DEFAULT_CHARACTER;
         await setSession(sessionId, sessionData);
         logger.info(`Session ${sessionId}: Default character "${DEFAULT_CHARACTER}" set as no character detected and no character in session.`);
@@ -452,11 +447,10 @@ app.post("/chat", async (req, res) => {
     }
 
     // 4. Call Chatbase if no specific welcome/name/level reply was generated.
-    if (!isWelcomeMessage && !botReplyText) {
+    if (!isWelcomeMessage && !botReplyText) { // This condition ensures Chatbase is only called if no prior auto-reply was sent
       const previous = chatMemory.get(sessionId) || [];
       let systemPrompt = null;
 
-      // Construct system prompt based on session data (character, name, level)
       let prefix = "";
       if (sessionData.character) {
           if (sessionData.character === DEFAULT_CHARACTER && sessionData.studentName && sessionData.studentLevel) {
@@ -475,8 +469,6 @@ app.post("/chat", async (req, res) => {
               prefix = `You are ${sessionData.character}, a character in Waterwheel Village. Stay in character.`;
           }
       } else {
-          // This else block should ideally not be hit with the improved character detection above,
-          // but serves as a final fallback.
           prefix = "You are a helpful assistant in Waterwheel Village. Stay in character.";
       }
       systemPrompt = { role: "system", content: prefix };
