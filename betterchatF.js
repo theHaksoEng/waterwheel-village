@@ -1,5 +1,5 @@
 require("dotenv").config();
-console.log("Starting betterchatF.js"); // Keep this initial console.log for quick startup check
+console.log("Starting betterchatF.js");
 const express = require("express");
 const app = express();
 
@@ -211,7 +211,7 @@ function extractStudentName(text) {
  */
 function extractStudentLevel(text) {
     const lowerText = text.toLowerCase();
-    if (lowerText.includes("beginner")) return "beginner";
+    if (lowerText.includes("beginner") || lowerText.includes("beginning")) return "beginner"; // Added 'beginning'
     if (lowerText.includes("intermediate")) return "intermediate";
     if (lowerText.includes("expert")) return "expert";
     logger.debug(`No student level detected in text: "${text}"`);
@@ -250,7 +250,7 @@ async function getSession(sessionId) {
           data = {
               character: storedData.character,
               studentName: storedData.studentName,
-              studentLevel: storedData.studentLevel // <-- Include studentLevel here
+              studentLevel: storedData.studentLevel
           };
       } else if (storedData) {
           userMemory.delete(sessionId);
@@ -283,8 +283,11 @@ function storeChatHistory(sessionId, messages) {
       content: sanitizeHtml(msg.content, { allowedTags: [], allowedAttributes: {} }).slice(0, 1000),
     }));
 
-    chatMemory.set(sessionId, sanitizedMessages.length > 12 ? sanitizedMessages.slice(-12) : sanitizedMessages);
-    logger.debug(`Stored chat history for session ${sessionId}: ${JSON.stringify(sanitizedMessages)}`);
+    // Only store messages with content to avoid Chatbase errors
+    const filteredMessages = sanitizedMessages.filter(msg => msg.content && msg.content.length > 0);
+
+    chatMemory.set(sessionId, filteredMessages.length > 12 ? filteredMessages.slice(-12) : filteredMessages);
+    logger.debug(`Stored chat history for session ${sessionId}: ${JSON.stringify(filteredMessages)}`);
   } catch (error) {
     logger.error({ error: error.stack, code: "CHAT_HISTORY_ERROR" }, `Failed to store chat history for ${sessionId}`);
   }
@@ -353,8 +356,6 @@ app.get("/session/:sessionId", async (req, res) => {
   }
 });
 
-// ... (rest of your code remains the same) ...
-
 app.post("/chat", async (req, res) => {
   try {
     logger.debug(`Chat request received: ${JSON.stringify(req.body)}`);
@@ -411,8 +412,6 @@ app.post("/chat", async (req, res) => {
                 botReplyText = `Oh, so you're an ${sessionData.studentLevel} student! And what name should I call you?`;
             }
             // If neither name nor level were present/detected, fall through.
-            // This 'else' case should ideally not be hit if replyNeeded is true,
-            // as at least one of name/level would have been detected.
             else {
                 botReplyText = "I received your message, but I'm still waiting to hear your name and level. Can you tell me?";
             }
@@ -420,20 +419,20 @@ app.post("/chat", async (req, res) => {
             await setSession(sessionId, sessionData); // Save the updated session with name and level
 
             // Store this auto-generated reply immediately to prevent Chatbase from overriding
-            storeChatHistory(sessionId, [
-                ...(chatMemory.get(sessionId) || []),
-                { role: "user", content: sanitizedText },
-                { role: "assistant", content: botReplyText }
-            ]);
+            // Ensure empty user message is not stored here if 'text' was effectively empty or just spaces
+            const historyForNameLevel = chatMemory.get(sessionId) || [];
+            if (text !== "") { // Check original text content for initial message
+                historyForNameLevel.push({ role: "user", content: sanitizedText });
+            }
+            historyForNameLevel.push({ role: "assistant", content: botReplyText });
+            storeChatHistory(sessionId, historyForNameLevel);
+
             return res.json({ text: botReplyText }); // Send this response immediately
         }
-        // If `replyNeeded` is false, it means no new name or level was captured/needed,
-        // so the input should go to Chatbase. Fall through.
     }
 
     // 3. Detect character for subsequent turns or if character wasn't set.
-    // This happens IF a custom reply wasn't generated above (i.e., not a welcome or name/level intro)
-    if (!isWelcomeMessage && !botReplyText) { // Check if botReplyText was NOT set by the above blocks
+    if (!isWelcomeMessage && !botReplyText) {
       const detectedCharacter = detectCharacter(sanitizedText);
       if (detectedCharacter && detectedCharacter !== sessionData.character) {
         sessionData.character = detectedCharacter;
@@ -447,8 +446,10 @@ app.post("/chat", async (req, res) => {
     }
 
     // 4. Call Chatbase if no specific welcome/name/level reply was generated.
-    if (!isWelcomeMessage && !botReplyText) { // This condition ensures Chatbase is only called if no prior auto-reply was sent
-      const previous = chatMemory.get(sessionId) || [];
+    if (!isWelcomeMessage && !botReplyText) {
+      const previousRaw = chatMemory.get(sessionId) || [];
+      // Filter out any messages with empty content from previous history before sending to Chatbase
+      const previous = previousRaw.filter(msg => msg.content && msg.content.length > 0);
       let systemPrompt = null;
 
       let prefix = "";
@@ -487,11 +488,18 @@ app.post("/chat", async (req, res) => {
     }
 
     // Always store the history of the current interaction
-    storeChatHistory(sessionId, [
-      ...(chatMemory.get(sessionId) || []),
-      { role: "user", content: sanitizedText },
-      { role: "assistant", content: botReplyText },
-    ]);
+    // Ensure the initial empty user message (that triggers the welcome)
+    // is NOT stored in chat history sent to Chatbase, as Chatbase rejects empty messages.
+    const finalHistoryMessages = chatMemory.get(sessionId) || [];
+
+    // Add current user message if it's not the initial empty trigger
+    if (text !== "") { // Use original 'text' here, as 'sanitizedText' might be empty after sanitizing if input was just spaces
+        finalHistoryMessages.push({ role: "user", content: sanitizedText });
+    }
+
+    finalHistoryMessages.push({ role: "assistant", content: botReplyText });
+
+    storeChatHistory(sessionId, finalHistoryMessages);
 
     res.json({ text: botReplyText });
   } catch (error) {
