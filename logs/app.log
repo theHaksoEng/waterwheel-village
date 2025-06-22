@@ -216,3 +216,6 @@
 {"level":30,"time":1749640445126,"pid":4371,"hostname":"MacBook-Pro.local","msg":"Using character provided by frontend: \"mcarthur\" for speech."}
 {"level":50,"time":1749640445506,"pid":4371,"hostname":"MacBook-Pro.local","msg":"ElevenLabs API error for character mcarthur: 401 - {\"detail\":{\"status\":\"quota_exceeded\",\"message\":\"This request exceeds your quota of 184781. You have 18 credits remaining, while 32 credits are required for this request.\"}}"}
 {"level":30,"time":1749712581093,"pid":4371,"hostname":"MacBook-Pro.local","msg":"Root endpoint accessed"}
+{"level":30,"time":1750617742301,"pid":43024,"hostname":"MacBook-Pro.local","msg":"Dependencies loaded: express@4.21.2, axios@1.9.0, redis@4.7.1"}
+{"level":40,"time":1750617742302,"pid":43024,"hostname":"MacBook-Pro.local","msg":"No REDIS_URL provided, using in-memory Map. Consider setting REDIS_URL for persistent session storage."}
+{"level":30,"time":1750617742304,"pid":43024,"hostname":"MacBook-Pro.local","msg":"Server is running and listening on port 3000"}
