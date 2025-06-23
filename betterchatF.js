@@ -485,7 +485,6 @@ app.post("/chat", async (req, res) => {
       systemPrompt = { role: "system", content: prefix };
       logger.debug(`System prompt set for character: ${sessionData.character}`);
 
-
       const replyMessages = [...(systemPrompt ? [systemPrompt] : []), ...previous, { role: "user", content: sanitizedText }];
       logger.debug(`Calling Chatbase with messages: ${JSON.stringify(replyMessages)}`);
 
