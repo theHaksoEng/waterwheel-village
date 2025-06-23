@@ -1,5 +1,5 @@
 require("dotenv").config();
-console.log("Starting betterchatF.js");
+console.log("Starting betterchatF.js"); // Consider replacing with logger.info
 const express = require("express");
 const app = express();
 
@@ -26,7 +26,13 @@ const redis = require("redis");
 const pino = require("pino");
 const sanitizeHtml = require("sanitize-html");
 const { v4: uuidv4 } = require("uuid");
+// Make sure these paths are correct, they would be relative to betterchatF.js
 const { characterVoices, characterAliases, voiceSettings } = require("./config");
+// Import node-fetch for AbortController if not already available in your Node.js version
+// Node.js 14.x needs node-fetch, 16.x and higher typically have fetch built-in
+// If you are on Node.js < 18, you will need to `npm install node-fetch@2` or `@latest`
+// and `const fetch = require('node-fetch');`
+// If you are on Node.js 18+, `fetch` is global. I will assume it's available or polyfilled.
 
 // --- Logger Configuration Update ---
 const logger = pino({
@@ -51,10 +57,14 @@ const envSchema = Joi.object({
   CHATBASE_BOT_ID: Joi.string().required(),
   CHATBASE_API_KEY: Joi.string().required(),
   ELEVEN_API_KEY: Joi.string().required(),
-  ELEVEN_VOICE_ID: Joi.string().required(),
+  // ELEVEN_VOICE_ID is redundant if you're using characterVoices from config.js
+  // Make sure your config.js maps character keys to voice IDs from env or hardcoded.
+  // For safety, I'll keep it here, but it might not be used directly in the code.
+  ELEVEN_VOICE_ID: Joi.string().optional(), // Made optional
   WORDPRESS_URL: Joi.string().uri().required(),
   REDIS_URL: Joi.string().uri().optional(),
   PORT: Joi.number().default(3000),
+  // Ensuring all specific voice ENV vars are included for schema validation
   VOICE_FATIMA: Joi.string().required(),
   VOICE_IBRAHIM: Joi.string().required(),
   VOICE_ANIKA: Joi.string().required(),
@@ -86,23 +96,29 @@ const userMemory = new Map();
 const chatMemory = new Map();
 axiosRetry(axios, { retries: 3, retryDelay: axiosRetry.exponentialDelay });
 
-logger.info(`Dependencies loaded: express@${require("express/package.json").version}, axios@${require("axios/package.json").version}, redis@${require("redis/package.json").version}`);
+logger.info(`Dependencies loaded: express@${require("express/package.json").version}, axios@${require("axios/package.json").version}`);
+// Check if redis is installed before attempting to log its version
+try {
+  logger.info(`redis@${require("redis/package.json").version}`);
+} catch (e) {
+  logger.warn(`Redis package not found, but REDIS_URL is set. Continuing without Redis version check.`);
+}
+
 
 if (useRedis) {
   redisClient = redis.createClient({
     url: process.env.REDIS_URL,
-    retry_strategy: (options) => {
-      if (options.attempt > 3) {
-        logger.error(`Max Redis retries reached, falling back to in-memory storage`);
-        useRedis = false;
-        return null;
-      }
-      return Math.min(options.attempt * 100, 3000);
-    },
+    // Add command_timeout for Redis commands
+    socket: {
+        connectTimeout: 10000, // 10 seconds to connect
+        // Other socket options if needed
+    }
   });
 
   redisClient.on("error", (err) => {
-    logger.error({ err: err.stack, code: "REDIS_ERROR" }, `Redis connection error`);
+    logger.error({ err: err.stack, code: "REDIS_CONNECTION_ERROR" }, `Redis connection error`);
+    // Consider setting useRedis to false here to fall back to in-memory if a persistent error
+    // For now, retry strategy handles transient issues.
   });
 
   (async () => {
@@ -110,8 +126,8 @@ if (useRedis) {
       await redisClient.connect();
       logger.info(`Successfully connected to Redis`);
     } catch (err) {
-      logger.error({ err: err.stack }, `Failed to connect to Redis, falling back to in-memory Map`);
-      useRedis = false;
+      logger.error({ err: err.stack, code: "REDIS_CONNECT_FAILED" }, `Failed to connect to Redis, falling back to in-memory Map`);
+      useRedis = false; // Fallback immediately if initial connection fails
     }
   })();
 } else {
@@ -227,7 +243,14 @@ async function setSession(sessionId, data) {
       await redisClient.setEx(sessionId, SESSION_TTL, JSON.stringify(sessionDataToStore));
     } else {
       userMemory.set(sessionId, sessionDataToStore);
-      setTimeout(() => userMemory.delete(sessionId), SESSION_TTL * 1000);
+      // Remove expired sessions to prevent memory leak
+      setTimeout(() => {
+        if (userMemory.has(sessionId) && (Date.now() - userMemory.get(sessionId).timestamp > SESSION_TTL * 1000)) {
+          userMemory.delete(sessionId);
+          chatMemory.delete(sessionId); // Also clear associated chat history
+          logger.info(`Session ${sessionId}: Expired and deleted from in-memory storage via set timeout.`);
+        }
+      }, SESSION_TTL * 1000 + 1000); // A bit after the TTL
     }
 
     logger.info(`Session ${sessionId}: Successfully set data ${JSON.stringify(sessionDataToStore)}`);
@@ -246,15 +269,10 @@ async function getSession(sessionId) {
     } else {
       const storedData = userMemory.get(sessionId);
       if (storedData && (Date.now() - storedData.timestamp <= SESSION_TTL * 1000)) {
-          // Retrieve character, studentName, and studentLevel from in-memory session
-          data = {
-              character: storedData.character,
-              studentName: storedData.studentName,
-              studentLevel: storedData.studentLevel
-          };
+          data = storedData; // Return full storedData
       } else if (storedData) {
           userMemory.delete(sessionId);
-          chatMemory.delete(sessionId);
+          chatMemory.delete(sessionId); // Also clear associated chat history
           logger.info(`Session ${sessionId}: Expired and deleted from in-memory storage during getSession.`);
           data = null;
       } else {
@@ -273,9 +291,10 @@ async function getSession(sessionId) {
 function storeChatHistory(sessionId, messages) {
   try {
     if (chatMemory.size >= MAX_SESSIONS && !chatMemory.has(sessionId)) {
-      const oldestSession = chatMemory.keys().next().value;
-      chatMemory.delete(oldestSession);
-      logger.warn(`Max sessions reached, evicted oldest session ${oldestSession}`);
+      // Find and evict the oldest session
+      const oldestSessionId = Array.from(chatMemory.keys())[0];
+      chatMemory.delete(oldestSessionId);
+      logger.warn(`Max sessions reached (${MAX_SESSIONS}), evicted oldest session ${oldestSessionId}`);
     }
 
     const sanitizedMessages = messages.map((msg) => ({
@@ -294,7 +313,7 @@ function storeChatHistory(sessionId, messages) {
 }
 
 function streamlinedError(err, code) {
-  const error = new Error(err.message || "OK");
+  const error = new Error(err.message || "Unknown Error");
   error.code = code;
   error.status = err.response?.status || 500;
   return error;
@@ -376,15 +395,18 @@ app.post("/chat", async (req, res) => {
     let isWelcomeMessage = false;
 
     // 1. Initial Welcome message from Mr. McArthur when frontend sends empty string on new session.
-    if (!sessionData.character && !sessionData.studentName && !sessionData.studentLevel && text === "") {
-        logger.info(`New session ${sessionId}: Sending initial welcome message from Mr. McArthur.`);
+    // Also, if session is new or character somehow got unset AND frontend sends empty text
+    if ((!sessionData.character || !sessionData.studentName || !sessionData.studentLevel) && text === "") {
+        logger.info(`New/Reset session ${sessionId}: Sending initial welcome message from Mr. McArthur due to empty text and missing session info.`);
         sessionData.character = DEFAULT_CHARACTER;
+        sessionData.studentName = null; // Ensure these are reset on "new" session condition
+        sessionData.studentLevel = null;
         await setSession(sessionId, sessionData); // Save character for the session
         botReplyText = `Welcome to Waterwheel Village, students! I'm Mr. McArthur, your teacher. What's your name, if you'd like to share it? And are you a beginner, intermediate, or expert student?`;
         isWelcomeMessage = true;
     }
     // 2. Handle the user's first reply where they introduce themselves and their level.
-    // This block is for when Mr. McArthur is the character and we still need name/level.
+    // This block is for when Mr. McArthur is the character and we still need name/level, and actual text is provided.
     else if (sessionData.character === DEFAULT_CHARACTER && (!sessionData.studentName || !sessionData.studentLevel) && text !== "") {
         const detectedName = extractStudentName(sanitizedText);
         const detectedLevel = extractStudentLevel(sanitizedText);
@@ -406,38 +428,39 @@ app.post("/chat", async (req, res) => {
             // Construct a dynamic reply based on the *current* state of sessionData
             if (sessionData.studentName && sessionData.studentLevel) {
                 // --- GRAMMAR FIX: 'a' vs 'an' for student level ---
-                const article = (sessionData.studentLevel === 'beginner' || sessionData.studentLevel === 'intermediate' || sessionData.studentLevel === 'expert') ?
-                                (['intermediate', 'expert'].includes(sessionData.studentLevel) ? 'an' : 'a') : 'a'; // More robust article selection
+                const article = (sessionData.studentLevel === 'intermediate' || sessionData.studentLevel === 'expert') ? 'an' : 'a';
                 // --- END GRAMMAR FIX ---
                 botReplyText = `It's lovely to meet you, ${sessionData.studentName}! As ${article} ${sessionData.studentLevel} student, how can I help you today?`;
             } else if (sessionData.studentName && !sessionData.studentLevel) {
                 botReplyText = `It's lovely to meet you, ${sessionData.studentName}! What kind of student are you? A beginner, intermediate, or expert?`;
             } else if (!sessionData.studentName && sessionData.studentLevel) {
-                const article = (sessionData.studentLevel === 'beginner' || sessionData.studentLevel === 'intermediate' || sessionData.studentLevel === 'expert') ?
-                                (['intermediate', 'expert'].includes(sessionData.studentLevel) ? 'an' : 'a') : 'a';
+                const article = (sessionData.studentLevel === 'intermediate' || sessionData.studentLevel === 'expert') ? 'an' : 'a';
                 botReplyText = `Oh, so you're ${article} ${sessionData.studentLevel} student! And what name should I call you?`;
             }
-            // If neither name nor level were present/detected, fall through.
+            // If neither name nor level were present/detected, or if it's the specific edge case of just "Fred"
+            // we will let Chatbase handle it by not setting botReplyText here.
             else {
-                botReplyText = "I received your message, but I'm still waiting to hear your name and level. Can you tell me?";
+                 // Fall through to Chatbase if no specific info was detected to update session
+                 botReplyText = ""; // Clear for Chatbase processing
             }
 
-            await setSession(sessionId, sessionData); // Save the updated session with name and level
+            if (botReplyText) { // Only set session and return if a specific reply was generated
+                await setSession(sessionId, sessionData); // Save the updated session with name and level
 
-            // Store this auto-generated reply immediately to prevent Chatbase from overriding
-            // Ensure empty user message is not stored here if 'text' was effectively empty or just spaces
-            const historyForNameLevel = chatMemory.get(sessionId) || [];
-            if (text !== "") { // Check original text content for initial message
-                historyForNameLevel.push({ role: "user", content: sanitizedText });
+                const historyForNameLevel = chatMemory.get(sessionId) || [];
+                if (text !== "") {
+                    historyForNameLevel.push({ role: "user", content: sanitizedText });
+                }
+                historyForNameLevel.push({ role: "assistant", content: botReplyText });
+                storeChatHistory(sessionId, historyForNameLevel);
+
+                return res.json({ text: botReplyText });
             }
-            historyForNameLevel.push({ role: "assistant", content: botReplyText });
-            storeChatHistory(sessionId, historyForNameLevel);
-
-            return res.json({ text: botReplyText }); // Send this response immediately
         }
     }
 
-    // 3. Detect character for subsequent turns or if character wasn't set.
+    // 3. Detect character for subsequent turns or if character wasn't set after welcome/name capture.
+    // This runs if no specific botReplyText was generated above.
     if (!isWelcomeMessage && !botReplyText) {
       const detectedCharacter = detectCharacter(sanitizedText);
       if (detectedCharacter && detectedCharacter !== sessionData.character) {
@@ -445,6 +468,7 @@ app.post("/chat", async (req, res) => {
         await setSession(sessionId, sessionData);
         logger.info(`Session ${sessionId}: Character updated to "${detectedCharacter}" from user input.`);
       } else if (!sessionData.character) {
+        // If no character in session and no character detected, set to default.
         sessionData.character = DEFAULT_CHARACTER;
         await setSession(sessionId, sessionData);
         logger.info(`Session ${sessionId}: Default character "${DEFAULT_CHARACTER}" set as no character detected and no character in session.`);
@@ -452,7 +476,7 @@ app.post("/chat", async (req, res) => {
     }
 
     // 4. Call Chatbase if no specific welcome/name/level reply was generated.
-    if (!isWelcomeMessage && !botReplyText) {
+    if (!isWelcomeMessage && !botReplyText) { // Ensure botReplyText is still empty
       const previousRaw = chatMemory.get(sessionId) || [];
       // Filter out any messages with empty content from previous history before sending to Chatbase
       const previous = previousRaw.filter(msg => msg.content && msg.content.length > 0);
@@ -461,8 +485,7 @@ app.post("/chat", async (req, res) => {
       let prefix = "";
       if (sessionData.character) {
           // More robust article selection for system prompt
-          const studentArticle = (sessionData.studentLevel === 'beginner' || sessionData.studentLevel === 'intermediate' || sessionData.studentLevel === 'expert') ?
-                                  (['intermediate', 'expert'].includes(sessionData.studentLevel) ? 'an' : 'a') : 'a';
+          const studentArticle = (sessionData.studentLevel === 'intermediate' || sessionData.studentLevel === 'expert') ? 'an' : 'a';
 
           if (sessionData.character === DEFAULT_CHARACTER && sessionData.studentName && sessionData.studentLevel) {
               prefix = `You are Mr. McArthur, a teacher in Waterwheel Village. Address the student as ${sessionData.studentName}. They are ${studentArticle} ${sessionData.studentLevel} student. Stay in character.`;
@@ -477,9 +500,10 @@ app.post("/chat", async (req, res) => {
           } else if (sessionData.studentLevel) {
               prefix = `You are ${sessionData.character}, a character in Waterwheel Village. The student is ${studentArticle} ${sessionData.studentLevel} student. Stay in character.`;
           } else {
-              prefix = `You are ${sessionData.character}, a character in Waterwheel Village. Stay in character.`;
+              prefix = `You are ${characterAliases.find(c => c.key === sessionData.character)?.names[0] || sessionData.character}, a character in Waterwheel Village. Stay in character.`;
           }
       } else {
+          // This case should ideally not be hit after the initial character setting logic.
           prefix = "You are a helpful assistant in Waterwheel Village. Stay in character.";
       }
       systemPrompt = { role: "system", content: prefix };
@@ -497,8 +521,6 @@ app.post("/chat", async (req, res) => {
     }
 
     // Always store the history of the current interaction
-    // Ensure the initial empty user message (that triggers the welcome)
-    // is NOT stored in chat history sent to Chatbase, as Chatbase rejects empty messages.
     const finalHistoryMessages = chatMemory.get(sessionId) || [];
 
     // Add current user message if it's not the initial empty trigger
@@ -519,54 +541,77 @@ app.post("/chat", async (req, res) => {
   }
 });
 
-app.post("/speakbase", async (req, res) => {
-  const { text, sessionId, character: frontendCharacter } = req.body;
-  const botReplyForSpeech = text;
 
-  if (!botReplyForSpeech) {
-    return res.status(400).json({ error: "Text is required for speech generation." });
+// === MODIFIED app.post("/speakbase") ===
+app.post("/speakbase", async (req, res) => {
+  // Validate incoming request body with Joi schema
+  const { error: validationError, value } = speakbaseSchema.validate(req.body);
+  if (validationError) {
+    logger.warn(`Invalid speakbase input: ${validationError.details[0].message}`);
+    return res.status(400).json({ error: validationError.details[0].message, code: "INVALID_INPUT" });
   }
 
-  logger.info(`🔉 /speakbase route hit for session ${sessionId}. Text: "${botReplyForSpeech.substring(0, 50)}..."`);
-  logger.info(`Requested Character (from frontend): "${frontendCharacter}"`);
+  const { text, sessionId, character: frontendCharacter } = value;
+  const botReplyForSpeech = text;
+
+  // No need for this check if Joi schema ensures min(1)
+  // if (!botReplyForSpeech) {
+  //   return res.status(400).json({ error: "Text is required for speech generation." });
+  // }
+
+  logger.info(`🔉 /speakbase route hit for session ${sessionId}. Text: "${botReplyForSpeech.substring(0, Math.min(botReplyForSpeech.length, 50))}..."`);
+  logger.debug(`Requested Character (from frontend): "${frontendCharacter}"`);
 
   let finalCharacterKey = frontendCharacter;
 
-  // IMPORTANT: Backend should primarily determine character from session, not just frontend hint.
-  // We'll fetch session data here to ensure character is consistent.
+  // IMPORTANT: Backend should primarily determine character from session for consistency.
   const sessionData = await getSession(sessionId); // Fetch session data here
   if (sessionData && sessionData.character) {
       finalCharacterKey = sessionData.character; // Use character from session if available
-      logger.info(`Using character from session for speech: "${finalCharacterKey}"`);
+      logger.debug(`Using character from session for speech: "${finalCharacterKey}"`);
   } else if (!finalCharacterKey) {
+    // If no character from session and no character from frontend, try to detect from text
     const detectedCharacterFromText = detectCharacter(botReplyForSpeech);
     finalCharacterKey = detectedCharacterFromText || DEFAULT_CHARACTER;
-    logger.info(`No session character, and frontend did not provide. Detected from text: "${detectedCharacterFromText || 'None'}", Final character for speech: "${finalCharacterKey}"`);
+    logger.info(`No session or frontend character. Detected from text: "${detectedCharacterFromText || 'None'}", Final character for speech: "${finalCharacterKey}"`);
   } else {
-    // Frontend provided a character, but no session character. Validate it.
+    // Frontend provided a character, but no session character. Validate it against known characters.
     if (!Object.keys(characterVoices).includes(finalCharacterKey)) {
         logger.warn(`Frontend requested character "${finalCharacterKey}" not found in characterVoices. Falling back to default.`);
         finalCharacterKey = DEFAULT_CHARACTER;
     }
-    logger.info(`Using frontend-provided character: "${finalCharacterKey}" for speech (no session character).`);
+    logger.debug(`Using frontend-provided character: "${finalCharacterKey}" for speech (no session character).`);
   }
 
+  // Get voiceId from the characterVoices object (from config.js)
   let voiceId = characterVoices[finalCharacterKey];
   const voiceSettingsForCharacter = voiceSettings[finalCharacterKey] || voiceSettings.default;
 
   if (!voiceId) {
-    logger.error({ character: finalCharacterKey }, `No voice ID found for character. Falling back to ${DEFAULT_CHARACTER}.`);
-    const defaultVoiceId = characterVoices[DEFAULT_CHARACTER] || process.env.VOICE_MCARTHUR;
-    if (defaultVoiceId) {
-      finalCharacterKey = DEFAULT_CHARACTER;
-      voiceId = defaultVoiceId;
-    } else {
-      logger.error(`No valid voice ID found for any character, including default.`);
-      return res.status(500).json({ error: `No valid voice ID found for any character, including default.` });
+    logger.error({ character: finalCharacterKey }, `No voice ID found in config for character "${finalCharacterKey}". Falling back to ${DEFAULT_CHARACTER}.`);
+    // Fallback to default character's voice if the specific one is not found
+    voiceId = characterVoices[DEFAULT_CHARACTER] || process.env.VOICE_MCARTHUR;
+    if (!voiceId) { // If even default is not found (shouldn't happen with validation)
+      logger.error(`FATAL: No valid voice ID found for any character, including default "${DEFAULT_CHARACTER}".`);
+      return res.status(500).json({ error: `No valid voice ID found for any character.` });
     }
+    finalCharacterKey = DEFAULT_CHARACTER; // Update character key to match the voice used
+  }
+
+  if (!process.env.ELEVEN_API_KEY) {
+    logger.error("ELEVEN_API_KEY environment variable is not set.");
+    return res.status(500).json({ error: "ElevenLabs API key is not configured." });
   }
 
   try {
+    const controller = new AbortController();
+    // Set a timeout for the ElevenLabs API call (e.g., 20 seconds)
+    const timeout = 20 * 1000;
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+      logger.warn(`ElevenLabs fetch timed out after ${timeout / 1000} seconds for session ${sessionId}.`);
+    }, timeout);
+
     const elevenlabsRes = await fetch(
       `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
       {
@@ -578,19 +623,29 @@ app.post("/speakbase", async (req, res) => {
         },
         body: JSON.stringify({
           text: botReplyForSpeech,
-          model_id: "eleven_multilingual_v2",
+          model_id: "eleven_multilingual_v2", // Assuming this is the correct model
           voice_settings: {
             stability: voiceSettingsForCharacter.stability,
             similarity_boost: voiceSettingsForCharacter.similarity_boost,
           },
         }),
+        signal: controller.signal // Apply the abort signal
       }
     );
+
+    clearTimeout(timeoutId); // Clear the timeout if the fetch completes within the time
 
     if (!elevenlabsRes.ok) {
       const errorText = await elevenlabsRes.text();
       // --- Improved ElevenLabs error logging ---
-      logger.error({ status: elevenlabsRes.status, details: errorText, character: finalCharacterKey, voiceId: voiceId }, `ElevenLabs API returned non-OK status.`);
+      logger.error({
+        status: elevenlabsRes.status,
+        details: errorText,
+        character: finalCharacterKey,
+        voiceId: voiceId,
+        textSample: botReplyForSpeech.substring(0, Math.min(botReplyForSpeech.length, 100)), // Log first 100 chars
+        code: "ELEVENLABS_NON_OK_RESPONSE"
+      }, `ElevenLabs API returned non-OK status for session ${sessionId}.`);
       // --- End Improved ElevenLabs error logging ---
       return res.status(elevenlabsRes.status).json({
         error: "Failed to generate speech from ElevenLabs.",
@@ -601,11 +656,26 @@ app.post("/speakbase", async (req, res) => {
     const audioBuffer = await elevenlabsRes.arrayBuffer();
     res.set("Content-Type", "audio/mpeg");
     res.send(Buffer.from(audioBuffer));
+    logger.info(`🔊 Speech generated successfully for session ${sessionId}.`);
+
   } catch (error) {
-    logger.error({ error: error.stack, code: "ELEVENLABS_ERROR" }, "Error during ElevenLabs API call (network or unexpected).");
-    res.status(500).json({ error: "Internal server error during speech generation." });
+    // Log specific error if timeout or network issue occurs
+    if (error.name === 'AbortError') {
+      logger.error(
+        { error: error.message, code: "ELEVENLABS_TIMEOUT", character: finalCharacterKey, voiceId: voiceId, textSample: botReplyForSpeech.substring(0, Math.min(botReplyForSpeech.length, 100)) },
+        `ElevenLabs API call timed out for session ${sessionId}.`
+      );
+      res.status(504).json({ error: "Speech generation timed out." }); // 504 Gateway Timeout
+    } else {
+      logger.error(
+        { error: error.stack, code: "ELEVENLABS_API_CALL_ERROR", character: finalCharacterKey, voiceId: voiceId, textSample: botReplyForSpeech.substring(0, Math.min(botReplyForSpeech.length, 100)) },
+        `Error during ElevenLabs API call (network or unexpected) for session ${sessionId}.`
+      );
+      res.status(500).json({ error: "Internal server error during speech generation." });
+    }
   }
 });
+// === END MODIFIED app.post("/speakbase") ===
 
 app.listen(PORT, () => {
   logger.info(`Server is running and listening on port ${PORT}`);
@@ -614,8 +684,12 @@ app.listen(PORT, () => {
 process.on("SIGTERM", async () => {
   logger.info(`Received SIGTERM, gracefully shutting down...`);
   if (redisClient) {
-    await redisClient.quit();
-    logger.info(`Redis connection closed`);
+    try {
+      await redisClient.quit();
+      logger.info(`Redis connection closed`);
+    } catch (err) {
+      logger.error({ err: err.stack, code: "REDIS_QUIT_ERROR" }, `Error closing Redis connection on SIGTERM`);
+    }
   }
   process.exit(0);
 });
