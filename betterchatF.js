@@ -91,8 +91,11 @@ const envSchema = Joi.object({
   VOICE_NADIA: Joi.string().required(), // Assuming Nadia is still a voice to be used
   VOICE_MCARTHUR: Joi.string().required(),
   // --- New Environment Variables for Exercise Feature ---
-  OPENAI_API_KEY: Joi.string().required(), // New line
-  EXERCISE_TTL: Joi.number().default(5 * 60), // New line
+  const envSchema = Joi.object({
+    // ... existing variables
+    OPENAI_API_KEY: Joi.string().optional(), // Changed to optional()
+    EXERCISE_TTL: Joi.number().default(5 * 60),
+  }).unknown(true);  EXERCISE_TTL: Joi.number().default(5 * 60), // New line
   // --- End New Environment Variables ---
 }).unknown(true);
 
