@@ -1,14 +1,10 @@
 require("dotenv").config();
-// console.log("Starting betterchatF.js"); // Replace with logger.info
 const express = require("express");
 const app = express();
 
 app.set("trust proxy", 1);
 
-// Simple sanitize function to clean user input - This is a custom one.
-// You are also using sanitize-html, which is more robust for general HTML sanitization.
-// For simple text input, sanitize-html without allowedTags/Attributes is fine.
-// I'll keep your custom sanitize but note that sanitizeHtml is also used.
+// Simple sanitize function to clean user input
 function sanitize(input) {
   if (typeof input !== "string") return "";
   return input
@@ -16,8 +12,8 @@ function sanitize(input) {
       "&": "&",
       "<": "<",
       ">": ">",
-      '"': "", // This removes double quotes entirely, which might be undesirable for some text
-      "'": "", // This removes single quotes entirely
+      "\"": "", // This removes double quotes entirely
+      "'": "",  // This removes single quotes entirely
     })[char])
     .trim();
 }
@@ -29,16 +25,9 @@ const Joi = require("joi");
 const redis = require("redis");
 const pino = require("pino");
 const sanitizeHtml = require("sanitize-html");
-const { v4: uuidv4 } = require("uuid"); // Ensure uuid is installed: npm install uuid
-// Import node-fetch for AbortController if not already available in your Node.js version
-// Node.js 14.x needs node-fetch, 16.x and higher typically have fetch built-in
-// If you are on Node.js < 18, you will need to `npm install node-fetch@2` or `@latest`
-// and `const fetch = require('node-fetch');`
-// If you are on Node.js 18+, `fetch` is global. I will assume it's available or polyfilled.
+const { v4: uuidv4 } = require("uuid");
 
-// --- OpenAI Import ---
 const { OpenAI } = require("openai"); // Add this line
-// --- End OpenAI Import ---
 
 // Make sure these paths are correct, they would be relative to betterchatF.js
 const { characterVoices, characterAliases, voiceSettings } = require("./config");
@@ -62,41 +51,30 @@ const DEFAULT_CHARACTER = "mcarthur";
 const SESSION_TTL = parseInt(process.env.SESSION_TTL || 60 * 60, 10);
 const MAX_SESSIONS = parseInt(process.env.MAX_SESSIONS || 1000, 10);
 
-// --- New Exercise TTL and Memory Map ---
 const EXERCISE_TTL = parseInt(process.env.EXERCISE_TTL || 5 * 60, 10); // e.g., 5 minutes for exercises
 const exerciseMemory = new Map(); // To store exercises for checking
-// --- End New Exercise TTL and Memory Map ---
 
 
 const envSchema = Joi.object({
   CHATBASE_BOT_ID: Joi.string().required(),
   CHATBASE_API_KEY: Joi.string().required(),
   ELEVEN_API_KEY: Joi.string().required(),
-  // ELEVEN_VOICE_ID is redundant if you're using characterVoices from config.js
-  // Make sure your config.js maps character keys to voice IDs from env or hardcoded.
-  // For safety, I'll keep it here, but it might not be used directly in the code.
-  ELEVEN_VOICE_ID: Joi.string().optional(), // Made optional
+  ELEVEN_VOICE_ID: Joi.string().optional(),
   WORDPRESS_URL: Joi.string().uri().required(),
   REDIS_URL: Joi.string().uri().optional(),
   PORT: Joi.number().default(3000),
-  // Ensuring all specific voice ENV vars are included for schema validation
   VOICE_FATIMA: Joi.string().required(),
-  VOICE_IBRAHIM: Joi.string().required(),
+  VOICE_IBRAHIM: Joi.string().required(), // Corrected 'm' to 'M' here
   VOICE_ANIKA: Joi.string().required(),
   VOICE_KWAME: Joi.string().required(),
   VOICE_SOPHIA: Joi.string().required(),
   VOICE_LIANG: Joi.string().required(),
   VOICE_JOHANNES: Joi.string().required(),
   VOICE_ALEKSANDERI: Joi.string().required(),
-  VOICE_NADIA: Joi.string().required(), // Assuming Nadia is still a voice to be used
+  VOICE_NADIA: Joi.string().required(),
   VOICE_MCARTHUR: Joi.string().required(),
-  // --- New Environment Variables for Exercise Feature ---
-  const envSchema = Joi.object({
-    // ... existing variables
-    OPENAI_API_KEY: Joi.string().optional(), // Changed to optional()
-    EXERCISE_TTL: Joi.number().default(5 * 60),
-  }).unknown(true);  EXERCISE_TTL: Joi.number().default(5 * 60), // New line
-  // --- End New Environment Variables ---
+  OPENAI_API_KEY: Joi.string().optional(), // Made optional for now
+  EXERCISE_TTL: Joi.number().default(5 * 60),
 }).unknown(true);
 
 const PORT = process.env.PORT || 3000;
@@ -104,7 +82,7 @@ const { error: envError } = envSchema.validate(process.env, { abortEarly: false 
 
 // --- Use logger instead of console.log for consistency ---
 logger.info("Env validation result:", envError ? envError.details : "Success");
-logger.info("Environment variables validated:", Object.keys(process.env).filter(k => k.startsWith("CHATBASE") || k.startsWith("ELEVEN") || k.startsWith("VOICE") || k.includes("URL") || k.includes("PORT") || k.startsWith("OPENAI") || k.includes("TTL"))); // Added OpenAI and TTL
+logger.info("Environment variables validated:", Object.keys(process.env).filter(k => k.startsWith("CHATBASE") || k.startsWith("ELEVEN") || k.startsWith("VOICE") || k.includes("URL") || k.includes("PORT") || k.startsWith("OPENAI") || k.includes("TTL")));
 logger.info("About to check envError");
 if (envError) {
   logger.error(`Environment validation failed: ${envError.details.map(d => d.message).join(", ")}`);
@@ -142,14 +120,11 @@ if (useRedis) {
     // Add command_timeout for Redis commands
     socket: {
         connectTimeout: 10000, // 10 seconds to connect
-        // Other socket options if needed
     }
   });
 
   redisClient.on("error", (err) => {
     logger.error({ err: err.stack, code: "REDIS_CONNECTION_ERROR" }, `Redis connection error`);
-    // Consider setting useRedis to false here to fall back to in-memory if a persistent error
-    // For now, retry strategy handles transient issues.
   });
 
   (async () => {
@@ -183,16 +158,14 @@ app.use(
   }),
 );
 
-// --- chatSchema fix: allow empty string for initial load ---
 const chatSchema = Joi.object({
-  text: Joi.string().trim().allow("").min(0).max(1000).required(), // Allow empty string for initial load
+  text: Joi.string().trim().allow("").min(0).max(1000).required(),
   sessionId: Joi.string().uuid().required(),
 });
-// --- End chatSchema fix ---
 
 const speakbaseSchema = Joi.object({
   text: Joi.string().trim().min(1).max(1000).required(),
-  userMessage: Joi.string().trim().min(0).max(1000).optional(), // Changed min(1) to min(0) as it's optional
+  userMessage: Joi.string().trim().min(0).max(1000).optional(),
   sessionId: Joi.string().uuid().required(),
   character: Joi.string().optional(),
 });
@@ -253,7 +226,6 @@ function extractStudentName(text) {
     return null;
 }
 
-// --- ADDED FUNCTION: extractStudentLevel ---
 /**
  * Extracts a student level (beginner, intermediate, expert) from the given text.
  * @param {string} text - The user's input text.
@@ -261,13 +233,12 @@ function extractStudentName(text) {
  */
 function extractStudentLevel(text) {
     const lowerText = text.toLowerCase();
-    if (lowerText.includes("beginner") || lowerText.includes("beginning")) return "beginner"; // Added 'beginning'
+    if (lowerText.includes("beginner") || lowerText.includes("beginning")) return "beginner";
     if (lowerText.includes("intermediate")) return "intermediate";
     if (lowerText.includes("expert")) return "expert";
     logger.debug(`No student level detected in text: "${text}"`);
     return null;
 }
-// --- END ADDED FUNCTION ---
 
 async function setSession(sessionId, data) {
   try {
@@ -303,7 +274,7 @@ async function getSession(sessionId) {
     } else {
       const storedData = userMemory.get(sessionId);
       if (storedData && (Date.now() - storedData.timestamp <= SESSION_TTL * 1000)) {
-          data = storedData; // Return full storedData
+          data = storedData;
       } else if (storedData) {
           userMemory.delete(sessionId);
           chatMemory.delete(sessionId); // Also clear associated chat history
@@ -336,7 +307,6 @@ function storeChatHistory(sessionId, messages) {
       content: sanitizeHtml(msg.content, { allowedTags: [], allowedAttributes: {} }).slice(0, 1000),
     }));
 
-    // Only store messages with content to avoid Chatbase errors
     const filteredMessages = sanitizedMessages.filter(msg => msg.content && msg.content.length > 0);
 
     chatMemory.set(sessionId, filteredMessages.length > 12 ? filteredMessages.slice(-12) : filteredMessages);
@@ -360,7 +330,7 @@ async function callChatbase(sessionId, messages, chatbotId, apiKey) {
       { messages, chatbotId },
       {
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        timeout: 30000 // Add a 30-second timeout for Chatbase API calls
+        timeout: 30000
       },
     );
 
@@ -429,30 +399,25 @@ app.post("/chat", async (req, res) => {
     const { text, sessionId } = value;
     const sanitizedText = sanitizeHtml(text, { allowedTags: [], allowedAttributes: {} });
 
-    // Retrieve existing session data
     const sessionData = await getSession(sessionId) || {};
 
     let botReplyText = "";
     let isWelcomeMessage = false;
 
-    // 1. Initial Welcome message from Mr. McArthur when frontend sends empty string on new session.
-    // Also, if session is new or character somehow got unset AND frontend sends empty text
     if ((!sessionData.character || !sessionData.studentName || !sessionData.studentLevel) && text === "") {
         logger.info(`New/Reset session ${sessionId}: Sending initial welcome message from Mr. McArthur due to empty text and missing session info.`);
         sessionData.character = DEFAULT_CHARACTER;
-        sessionData.studentName = null; // Ensure these are reset on "new" session condition
+        sessionData.studentName = null;
         sessionData.studentLevel = null;
-        await setSession(sessionId, sessionData); // Save character for the session
+        await setSession(sessionId, sessionData);
         botReplyText = `Welcome to Waterwheel Village, students! I'm Mr. McArthur, your teacher. What's your name, if you'd like to share it? And are you a beginner, intermediate, or expert student?`;
         isWelcomeMessage = true;
     }
-    // 2. Handle the user's first reply where they introduce themselves and their level.
-    // This block is for when Mr. McArthur is the character and we still need name/level, and actual text is provided.
     else if (sessionData.character === DEFAULT_CHARACTER && (!sessionData.studentName || !sessionData.studentLevel) && text !== "") {
         const detectedName = extractStudentName(sanitizedText);
         const detectedLevel = extractStudentLevel(sanitizedText);
 
-        let replyNeeded = false; // Flag to indicate if a specific reply is needed for name/level capture
+        let replyNeeded = false;
 
         if (detectedName && !sessionData.studentName) {
             sessionData.studentName = detectedName;
@@ -466,28 +431,21 @@ app.post("/chat", async (req, res) => {
         }
 
         if (replyNeeded) {
-            // Construct a dynamic reply based on the *current* state of sessionData
             if (sessionData.studentName && sessionData.studentLevel) {
-                // --- GRAMMAR FIX: 'a' vs 'an' for student level ---
                 const article = (sessionData.studentLevel === 'intermediate' || sessionData.studentLevel === 'expert') ? 'an' : 'a';
-                // --- END GRAMMAR FIX ---
                 botReplyText = `It's lovely to meet you, ${sessionData.studentName}! As ${article} ${sessionData.studentLevel} student, how can I help you today?`;
             } else if (sessionData.studentName && !sessionData.studentLevel) {
-                // Fixed variable name: sessionName.studentName -> sessionData.studentName
                 botReplyText = `It's lovely to meet you, ${sessionData.studentName}! What kind of student are you? A beginner, intermediate, or expert?`;
             } else if (!sessionData.studentName && sessionData.studentLevel) {
                 const article = (sessionData.studentLevel === 'intermediate' || sessionData.studentLevel === 'expert') ? 'an' : 'a';
                 botReplyText = `Oh, so you're ${article} ${sessionData.studentLevel} student! And what name should I call you?`;
             }
-            // If neither name nor level were present/detected, or if it's the specific edge case of just "Fred"
-            // we will let Chatbase handle it by not setting botReplyText here.
             else {
-                 // Fall through to Chatbase if no specific info was detected to update session
-                 botReplyText = ""; // Clear for Chatbase processing
+                 botReplyText = "";
             }
 
-            if (botReplyText) { // Only set session and return if a specific reply was generated
-                await setSession(sessionId, sessionData); // Save the updated session with name and level
+            if (botReplyText) {
+                await setSession(sessionId, sessionData);
 
                 const historyForNameLevel = chatMemory.get(sessionId) || [];
                 if (text !== "") {
@@ -501,72 +459,38 @@ app.post("/chat", async (req, res) => {
         }
     }
 
-    // 3. Detect character for subsequent turns or if character wasn't set after welcome/name capture.
-    // This runs if no specific botReplyText was generated above.
-    // ADDED LOGGING HERE
     logger.debug(`Character detection phase started. isWelcomeMessage: ${isWelcomeMessage}, botReplyText: "${botReplyText}" (length ${botReplyText.length}).`);
     logger.debug(`Current session character (before detection logic): ${sessionData.character || "N/A"}. User input text (sanitized): "${sanitizedText}".`);
 
-    // --- IMPORTANT FIX FOR CHARACTER SWITCHING ---
-    // The detectCharacter(sanitizedText) on every user input can prematurely change the bot's persona.
-    // We want the character to switch only when Chatbase explicitly "directs" the conversation
-    // to a new character, or when the user explicitly "I want to talk to X".
-    // For now, to stop the premature switching, we'll *prevent* `sessionData.character` from being
-    // updated by `detectCharacter` based solely on the user's general input.
-    // Chatbase's response will implicitly change the character's voice in /speakbase if the text
-    // generated is from a new character.
-    //
-    // The primary way character should change is that Chatbase's response itself is for a new character.
-    // We will revisit explicit character switching if needed later.
     if (!isWelcomeMessage && !botReplyText) {
       const detectedCharacter = detectCharacter(sanitizedText);
       logger.debug(`'detectCharacter("${sanitizedText}")' returned: "${detectedCharacter}".`);
 
-      // Prevent user input like "who can I talk to" from changing the character.
-      // The `sessionData.character` should be managed by the Chatbase response for now,
-      // or a very explicit user command.
-      // If the character is currently default (McArthur) and user asks "who can I talk to",
-      // Chatbase replies as McArthur, listing options. The character should only change
-      // when the user *selects* a character to talk to.
-      //
-      // If Chatbase outputs a response that clearly starts as a new character's intro,
-      // *then* the /speakbase endpoint's logic can correctly pick it up.
       if (detectedCharacter && detectedCharacter !== sessionData.character) {
         logger.warn(`Character "${detectedCharacter}" was detected in user input ("${sanitizedText}"), but NOT updating session character "${sessionData.character}". This will be handled by Chatbase response or explicit command.`);
-        // TEMPORARILY COMMENTING OUT THESE LINES TO PREVENT PREMATURE CHARACTER SWITCH
-        // sessionData.character = detectedCharacter;
-        // await setSession(sessionId, sessionData);
-        // logger.info(`Session ${sessionId}: Character updated to "${detectedCharacter}" from user input.`);
+        // sessionData.character = detectedCharacter; // Keep commented for now
+        // await setSession(sessionId, sessionData); // Keep commented for now
+        // logger.info(`Session ${sessionId}: Character updated to "${detectedCharacter}" from user input.`); // Keep commented for now
       } else if (!sessionData.character) {
-        // This case should ideally mean a very fresh session that wasn't caught by welcome message
-        // or a session where character was explicitly unset. Default to McArthur.
         sessionData.character = DEFAULT_CHARACTER;
         await setSession(sessionId, sessionData);
         logger.info(`Session ${sessionId}: Default character "${DEFAULT_CHARACTER}" set as no character detected and no character in session.`);
       }
     }
     logger.debug(`After character detection phase, session character is now: ${sessionData.character || "N/A"}.`);
-    // --- END IMPORTANT FIX FOR CHARACTER SWITCHING ---
 
-
-    // 4. Call Chatbase if no specific welcome/name/level reply was generated.
-    if (!isWelcomeMessage && !botReplyText) { // Ensure botReplyText is still empty
+    if (!isWelcomeMessage && !botReplyText) {
       const previousRaw = chatMemory.get(sessionId) || [];
-      // Filter out any messages with empty content from previous history before sending to Chatbase
       const previous = previousRaw.filter(msg => msg.content && msg.content.length > 0);
       let systemPrompt = null;
 
-      let prefix = "";
-      // Ensure sessionData.character is set BEFORE attempting to build prefix.
-      // If it's still null here, default it to DEFAULT_CHARACTER to proceed with Chatbase.
       if (!sessionData.character) {
           sessionData.character = DEFAULT_CHARACTER;
           logger.warn(`sessionData.character was null before Chatbase call, defaulting to "${DEFAULT_CHARACTER}".`);
       }
 
-
+      let prefix = "";
       if (sessionData.character) {
-          // More robust article selection for system prompt
           const studentArticle = (sessionData.studentLevel === 'intermediate' || sessionData.studentLevel === 'expert') ? 'an' : 'a';
 
           if (sessionData.character === DEFAULT_CHARACTER && sessionData.studentName && sessionData.studentLevel) {
@@ -576,9 +500,8 @@ app.post("/chat", async (req, res) => {
           } else if (sessionData.character === DEFAULT_CHARACTER && sessionData.studentLevel) {
               prefix = `You are Mr. McArthur, a teacher in Waterwheel Village. The student is ${studentArticle} ${sessionData.studentLevel} student. Stay in character.`;
           } else if (sessionData.studentName && sessionData.studentLevel) {
-              // Retrieve the character's full name/role from characterAliases for the prompt
               const characterInfo = characterAliases.find(c => c.key === sessionData.character);
-              const characterDisplayName = characterInfo ? characterInfo.names[0] : sessionData.character; // Use first alias name or key
+              const characterDisplayName = characterInfo ? characterInfo.names[0] : sessionData.character;
               prefix = `You are ${characterDisplayName}, a character in Waterwheel Village. Address the student as ${sessionData.studentName}. They are ${studentArticle} ${sessionData.studentLevel} student. Stay in character.`;
           } else if (sessionData.studentName) {
               const characterInfo = characterAliases.find(c => c.key === sessionData.character);
@@ -594,8 +517,7 @@ app.post("/chat", async (req, res) => {
               prefix = `You are ${characterDisplayName}, a character in Waterwheel Village. Stay in character.`;
           }
       } else {
-          // This case should ideally not be hit after the initial character setting logic.
-          prefix = "You are a helpful assistant in Waterwheel Village. Stay in character."; // Fallback, though sessionData.character should now be set
+          prefix = "You are a helpful assistant in Waterwheel Village. Stay in character.";
       }
       systemPrompt = { role: "system", content: prefix };
       logger.debug(`System prompt set for character: ${sessionData.character}`);
@@ -610,35 +532,19 @@ app.post("/chat", async (req, res) => {
         process.env.CHATBASE_API_KEY
       );
 
-      // --- Post-Chatbase Character Update Logic ---
-      // After Chatbase generates a reply, check if that reply indicates a character switch.
-      // This is crucial: Chatbase is providing the *response text*. If that response text
-      // says "You are now talking to Kwame", then we update the character.
-      // This is still using `detectCharacter` on the *bot's reply*, which may or may not be explicit enough.
-      // A more robust solution would involve Chatbase generating a specific JSON structure for intent.
-      // For now, let's try to detect the character *from the bot's generated reply*.
       const detectedCharacterInBotReply = detectCharacter(botReplyText);
       logger.debug(`Character detected in Chatbase's reply: "${detectedCharacterInBotReply || "None"}" for session ${sessionId}.`);
 
-      // ONLY update session character if the bot's *own reply* explicitly mentions
-      // a new character (e.g., "You are now talking to Kwame").
-      // This logic relies on Chatbase generating specific phrasing.
-      // If Chatbase just starts talking *as* Kwame without saying "You are talking to Kwame",
-      // this won't trigger a switch here.
       if (detectedCharacterInBotReply && detectedCharacterInBotReply !== sessionData.character) {
           sessionData.character = detectedCharacterInBotReply;
           await setSession(sessionId, sessionData);
           logger.info(`Session ${sessionId}: Character updated to "${detectedCharacterInBotReply}" based on Chatbase's reply text.`);
       }
-      // --- End Post-Chatbase Character Update Logic ---
-
     }
 
-    // Always store the history of the current interaction
     const finalHistoryMessages = chatMemory.get(sessionId) || [];
 
-    // Add current user message if it's not the initial empty trigger
-    if (text !== "") { // Use original 'text' here, as 'sanitizedText' might be empty after sanitizing if input was just spaces
+    if (text !== "") {
         finalHistoryMessages.push({ role: "user", content: sanitizedText });
     }
 
@@ -656,9 +562,7 @@ app.post("/chat", async (req, res) => {
 });
 
 
-// === MODIFIED app.post("/speakbase") ===
 app.post("/speakbase", async (req, res) => {
-  // Validate incoming request body with Joi schema
   const { error: validationError, value } = speakbaseSchema.validate(req.body);
   if (validationError) {
     logger.warn(`Invalid speakbase input: ${validationError.details[0].message}`);
@@ -673,20 +577,15 @@ app.post("/speakbase", async (req, res) => {
 
   let finalCharacterKey = frontendCharacter;
 
-  // IMPORTANT: Backend should primarily determine character from session for consistency.
-  const sessionData = await getSession(sessionId); // Fetch session data here
+  const sessionData = await getSession(sessionId);
   if (sessionData && sessionData.character) {
-      finalCharacterKey = sessionData.character; // Use character from session if available
+      finalCharacterKey = sessionData.character;
       logger.debug(`Using character from session for speech: "${finalCharacterKey}"`);
   } else if (!finalCharacterKey) {
-    // If no character from session and no character from frontend, try to detect from text
-    // This part should primarily catch the *initial* detection from a new bot reply
-    // if the Chatbase response *implicitly* changed character without explicit session update.
     const detectedCharacterFromText = detectCharacter(botReplyForSpeech);
     finalCharacterKey = detectedCharacterFromText || DEFAULT_CHARACTER;
     logger.info(`No session or frontend character. Detected from text: "${detectedCharacterFromText || 'None'}", Final character for speech: "${finalCharacterKey}"`);
   } else {
-    // Frontend provided a character, but no session character. Validate it against known characters.
     if (!Object.keys(characterVoices).includes(finalCharacterKey)) {
         logger.warn(`Frontend requested character "${finalCharacterKey}" not found in characterVoices. Falling back to default.`);
         finalCharacterKey = DEFAULT_CHARACTER;
@@ -694,19 +593,17 @@ app.post("/speakbase", async (req, res) => {
     logger.debug(`Using frontend-provided character: "${finalCharacterKey}" for speech (no session character).`);
   }
 
-  // Get voiceId from the characterVoices object (from config.js)
   let voiceId = characterVoices[finalCharacterKey];
   const voiceSettingsForCharacter = voiceSettings[finalCharacterKey] || voiceSettings.default;
 
   if (!voiceId) {
     logger.error({ character: finalCharacterKey }, `No voice ID found in config for character "${finalCharacterKey}". Falling back to ${DEFAULT_CHARACTER}.`);
-    // Fallback to default character's voice if the specific one is not found
     voiceId = characterVoices[DEFAULT_CHARACTER] || process.env.VOICE_MCARTHUR;
-    if (!voiceId) { // If even default is not found (shouldn't happen with validation)
+    if (!voiceId) {
       logger.error(`FATAL: No valid voice ID found for any character, including default "${DEFAULT_CHARACTER}".`);
       return res.status(500).json({ error: `No valid voice ID found for any character.` });
     }
-    finalCharacterKey = DEFAULT_CHARACTER; // Update character key to match the voice used
+    finalCharacterKey = DEFAULT_CHARACTER;
   }
 
   if (!process.env.ELEVEN_API_KEY) {
@@ -716,7 +613,6 @@ app.post("/speakbase", async (req, res) => {
 
   try {
     const controller = new AbortController();
-    // Set a timeout for the ElevenLabs API call (e.g., 20 seconds)
     const timeout = 20 * 1000;
     const timeoutId = setTimeout(() => {
       controller.abort();
@@ -734,30 +630,28 @@ app.post("/speakbase", async (req, res) => {
         },
         body: JSON.stringify({
           text: botReplyForSpeech,
-          model_id: "eleven_multilingual_v2", // Assuming this is the correct model
+          model_id: "eleven_multilingual_v2",
           voice_settings: {
             stability: voiceSettingsForCharacter.stability,
             similarity_boost: voiceSettingsForCharacter.similarity_boost,
           },
         }),
-        signal: controller.signal // Apply the abort signal
+        signal: controller.signal
       }
     );
 
-    clearTimeout(timeoutId); // Clear the timeout if the fetch completes within the time
+    clearTimeout(timeoutId);
 
     if (!elevenlabsRes.ok) {
       const errorText = await elevenlabsRes.text();
-      // --- Improved ElevenLabs error logging ---
       logger.error({
         status: elevenlabsRes.status,
         details: errorText,
         character: finalCharacterKey,
         voiceId: voiceId,
-        textSample: botReplyForSpeech.substring(0, Math.min(botReplyForSpeech.length, 100)), // Log first 100 chars
+        textSample: botReplyForSpeech.substring(0, Math.min(botReplyForSpeech.length, 100)),
         code: "ELEVENLABS_NON_OK_RESPONSE"
       }, `ElevenLabs API returned non-OK status for session ${sessionId}.`);
-      // --- End Improved ElevenLabs error logging ---
       return res.status(elevenlabsRes.status).json({
         error: "Failed to generate speech from ElevenLabs.",
         details: errorText,
@@ -770,13 +664,12 @@ app.post("/speakbase", async (req, res) => {
     logger.info(`🔊 Speech generated successfully for session ${sessionId}.`);
 
   } catch (error) {
-    // Log specific error if timeout or network issue occurs
     if (error.name === 'AbortError') {
       logger.error(
         { error: error.message, code: "ELEVENLABS_TIMEOUT", character: finalCharacterKey, voiceId: voiceId, textSample: botReplyForSpeech.substring(0, Math.min(botReplyForSpeech.length, 100)) },
         `ElevenLabs API call timed out for session ${sessionId}.`
       );
-      res.status(504).json({ error: "Speech generation timed out." }); // 504 Gateway Timeout
+      res.status(504).json({ error: "Speech generation timed out." });
     } else {
       logger.error(
         { error: error.stack, code: "ELEVENLABS_API_CALL_ERROR", character: finalCharacterKey, voiceId: voiceId, textSample: botReplyForSpeech.substring(0, Math.min(botReplyForSpeech.length, 100)) },
@@ -786,11 +679,8 @@ app.post("/speakbase", async (req, res) => {
     }
   }
 });
-// === END MODIFIED app.post("/speakbase") ===
 
 // --- Placeholder for Exercise Endpoints ---
-// You will add the /generate-exercises and /check-exercises endpoints here.
-// Example structure (don't uncomment this until you're ready to add the full code):
 /*
 app.post("/generate-exercises", async (req, res) => {
   // ... (code for exercise generation, as discussed previously)
