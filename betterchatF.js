@@ -31,7 +31,7 @@ const { OpenAI } = require("openai"); // Add this line
 
 // Make sure these paths are correct, they would be relative to betterchatF.js
 // Assuming config.js has characterVoices, characterAliases, voiceSettings
-const { characterVoices, characterAliases, voiceSettings } = require("./config");
+const { characterVoices, characterAliases, voiceSettings } = require("./config"); // This line correctly imports from config.js
 
 // --- Logger Configuration Update ---
 const logger = pino({
@@ -206,22 +206,34 @@ function detectCharacter(text, currentSessionCharacter = null) {
   // This rule should only trigger if the current speaker is McArthur and there's no strong handoff.
   if (currentSessionCharacter === DEFAULT_CHARACTER) {
     // Regex to match known character names at the end of a sentence (or near end)
-    const characterSuggestionRegex = new RegExp(`(?:${Object.keys(characterVoices).filter(k => k !== DEFAULT_CHARACTER).join('|')})\\s*\\.?$`, 'i');
-    const match = cleanedText.match(characterSuggestionRegex);
-    if (match) {
-        const suggestedChar = match[0].toLowerCase(); // Use match[0] to get the full matched string
-        // Find the actual character key from aliases based on the matched name
-        const detectedKeyFromAlias = characterAliases.find(alias =>
-          alias.names.some(n => suggestedChar.includes(n.toLowerCase()))
-        )?.key;
+    // Ensure all character keys are included in the regex, excluding the default character
+    const characterNamesForRegex = Object.keys(characterVoices)
+        .filter(k => k !== DEFAULT_CHARACTER)
+        .map(key => {
+            const alias = characterAliases.find(a => a.key === key);
+            return alias ? alias.names.map(n => n.toLowerCase()).join('|') : key.toLowerCase();
+        })
+        .flat()
+        .join('|');
 
-        if (detectedKeyFromAlias && detectedKeyFromAlias !== DEFAULT_CHARACTER) {
-            logger.debug(`detectCharacter: McArthur suggested character at end of response: "${detectedKeyFromAlias}".`);
-            return detectedKeyFromAlias;
+    if (characterNamesForRegex) { // Only proceed if there are names to match
+        const characterSuggestionRegex = new RegExp(`(?:${characterNamesForRegex})\\s*\\.?$`, 'i');
+        const match = cleanedText.match(characterSuggestionRegex);
+        if (match) {
+            const suggestedCharName = match[0].toLowerCase(); // Get the matched name from the regex
+
+            // Find the actual character key from aliases based on the matched name
+            const detectedKeyFromAlias = characterAliases.find(alias =>
+              alias.names.some(n => suggestedCharName.includes(n.toLowerCase()))
+            )?.key;
+
+            if (detectedKeyFromAlias && detectedKeyFromAlias !== DEFAULT_CHARACTER) {
+                logger.debug(`detectCharacter: McArthur suggested character at end of response: "${detectedKeyFromAlias}".`);
+                return detectedKeyFromAlias;
+            }
         }
     }
   }
-
 
   // Fallback: If no explicit switch detected, maintain the current character.
   // This is crucial: if no rule above triggers, stick with the current speaker.
