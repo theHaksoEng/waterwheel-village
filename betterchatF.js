@@ -30,6 +30,7 @@ const { v4: uuidv4 } = require("uuid");
 const { OpenAI } = require("openai"); // Add this line
 
 // Make sure these paths are correct, they would be relative to betterchatF.js
+// Assuming config.js has characterVoices, characterAliases, voiceSettings
 const { characterVoices, characterAliases, voiceSettings } = require("./config");
 
 // --- Logger Configuration Update ---
@@ -64,9 +65,9 @@ const envSchema = Joi.object({
   REDIS_URL: Joi.string().uri().optional(),
   PORT: Joi.number().default(3000),
   VOICE_FATIMA: Joi.string().required(),
-  VOICE_IBRAHIM: Joi.string().required(), // Corrected 'm' to 'M' here
+  VOICE_IBRAHIM: Joi.string().required(),
   VOICE_ANIKA: Joi.string().required(),
-  VOICE_KWAME: Joi.string().required(),
+  VOICE_KWAME: Joi.string().required(), // Ensure Kwame is here
   VOICE_SOPHIA: Joi.string().required(),
   VOICE_LIANG: Joi.string().required(),
   VOICE_JOHANNES: Joi.string().required(),
@@ -170,29 +171,70 @@ const speakbaseSchema = Joi.object({
   character: Joi.string().optional(),
 });
 
-function detectCharacter(text) {
+// --- ENHANCED detectCharacter function ---
+function detectCharacter(text, currentSessionCharacter = null) {
   if (!text || typeof text !== "string") {
-    logger.debug(`No valid text provided for character detection.`);
-    return null;
+    logger.debug(`detectCharacter: No valid text provided for character detection.`);
+    return currentSessionCharacter; // Maintain current character if no valid text
   }
 
   // Remove punctuation and convert to lowercase for robust matching
   const cleanedText = text.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, "");
 
-  for (const { key, names } of characterAliases) {
-    for (const name of names) {
-      // Ensure the name is a whole word match or part of a very specific phrase
-      const namePattern = new RegExp(`\\b${name.toLowerCase()}\\b`, 'u');
-      if (cleanedText.match(namePattern)) {
-        logger.debug(`Character detected: "${key}" from text: "${text}" via alias "${name}"`);
-        return key;
+  // Rule 1: Explicit Handover / New Character Introduction (Highest Priority)
+  // Look for phrases like "Greetings, I am [Name]" or "Hello, I'm [Name]" at the beginning of the response
+  for (const charKey of Object.keys(characterVoices)) { // Iterate through actual character keys
+    const characterInfo = characterAliases.find(alias => alias.key === charKey);
+    if (!characterInfo) continue; // Skip if no alias info for this key
+
+    for (const name of characterInfo.names) {
+      const lowerName = name.toLowerCase();
+      if (
+        cleanedText.startsWith(`greetings, ${lowerName}! i am ${lowerName}`) ||
+        cleanedText.startsWith(`hello, i am ${lowerName}`) ||
+        cleanedText.startsWith(`ah, hello, my friend! ${lowerName} here`) || // From Fatima's prev intro
+        cleanedText.startsWith(`greetings, my name is ${lowerName}`)
+      ) {
+        logger.debug(`detectCharacter: Clear handoff detected to: "${charKey}" via phrase starting with "${lowerName}".`);
+        return charKey; // Found a strong signal for a new character
       }
     }
   }
 
-  logger.debug(`No specific character detected in text: "${text}". Falling back to null.`);
-  return null;
+  // Rule 2: If McArthur is currently speaking and suggests a *named* character at the END of his response.
+  // This is a secondary rule for when McArthur is still guiding and makes a clear suggestion.
+  // This rule should only trigger if the current speaker is McArthur and there's no strong handoff.
+  if (currentSessionCharacter === DEFAULT_CHARACTER) {
+    // Regex to match known character names at the end of a sentence (or near end)
+    const characterSuggestionRegex = new RegExp(`(?:${Object.keys(characterVoices).filter(k => k !== DEFAULT_CHARACTER).join('|')})\\s*\\.?$`, 'i');
+    const match = cleanedText.match(characterSuggestionRegex);
+    if (match) {
+        const suggestedChar = match[0].toLowerCase(); // Use match[0] to get the full matched string
+        // Find the actual character key from aliases based on the matched name
+        const detectedKeyFromAlias = characterAliases.find(alias =>
+          alias.names.some(n => suggestedChar.includes(n.toLowerCase()))
+        )?.key;
+
+        if (detectedKeyFromAlias && detectedKeyFromAlias !== DEFAULT_CHARACTER) {
+            logger.debug(`detectCharacter: McArthur suggested character at end of response: "${detectedKeyFromAlias}".`);
+            return detectedKeyFromAlias;
+        }
+    }
+  }
+
+
+  // Fallback: If no explicit switch detected, maintain the current character.
+  // This is crucial: if no rule above triggers, stick with the current speaker.
+  if (currentSessionCharacter) {
+    logger.debug(`detectCharacter: No explicit character switch detected. Maintaining current session character: "${currentSessionCharacter}".`);
+    return currentSessionCharacter;
+  }
+
+  // Default if no session character and no explicit detection (e.g., very first message of a new session)
+  logger.debug(`detectCharacter: No specific character detected, no current session character. Defaulting to ${DEFAULT_CHARACTER}.`);
+  return DEFAULT_CHARACTER;
 }
+// --- END ENHANCED detectCharacter function ---
 
 /**
  * Extracts a student name from the given text using common patterns.
@@ -404,6 +446,7 @@ app.post("/chat", async (req, res) => {
     let botReplyText = "";
     let isWelcomeMessage = false;
 
+    // --- Initial Welcome Message Logic ---
     if ((!sessionData.character || !sessionData.studentName || !sessionData.studentLevel) && text === "") {
         logger.info(`New/Reset session ${sessionId}: Sending initial welcome message from Mr. McArthur due to empty text and missing session info.`);
         sessionData.character = DEFAULT_CHARACTER;
@@ -413,6 +456,7 @@ app.post("/chat", async (req, res) => {
         botReplyText = `Welcome to Waterwheel Village, students! I'm Mr. McArthur, your teacher. What's your name, if you'd like to share it? And are you a beginner, intermediate, or expert student?`;
         isWelcomeMessage = true;
     }
+    // --- Capture Name/Level Logic (if McArthur is speaking and info is missing) ---
     else if (sessionData.character === DEFAULT_CHARACTER && (!sessionData.studentName || !sessionData.studentLevel) && text !== "") {
         const detectedName = extractStudentName(sanitizedText);
         const detectedLevel = extractStudentLevel(sanitizedText);
@@ -441,86 +485,66 @@ app.post("/chat", async (req, res) => {
                 botReplyText = `Oh, so you're ${article} ${sessionData.studentLevel} student! And what name should I call you?`;
             }
             else {
-                 botReplyText = "";
+                 botReplyText = ""; // No new info to update from, so no specific reply needed here.
             }
 
             if (botReplyText) {
-                await setSession(sessionId, sessionData);
+                await setSession(sessionId, sessionData); // Save updated session info
 
                 const historyForNameLevel = chatMemory.get(sessionId) || [];
-                if (text !== "") {
+                if (text !== "") { // Add user input to history if not empty
                     historyForNameLevel.push({ role: "user", content: sanitizedText });
                 }
                 historyForNameLevel.push({ role: "assistant", content: botReplyText });
                 storeChatHistory(sessionId, historyForNameLevel);
 
-                return res.json({ text: botReplyText });
+                return res.json({ text: botReplyText }); // Send back the immediate reply
             }
         }
     }
 
-    logger.debug(`Character detection phase started. isWelcomeMessage: ${isWelcomeMessage}, botReplyText: "${botReplyText}" (length ${botReplyText.length}).`);
-    logger.debug(`Current session character (before detection logic): ${sessionData.character || "N/A"}. User input text (sanitized): "${sanitizedText}".`);
-
-    if (!isWelcomeMessage && !botReplyText) {
-      const detectedCharacter = detectCharacter(sanitizedText);
-      logger.debug(`'detectCharacter("${sanitizedText}")' returned: "${detectedCharacter}".`);
-
-      if (detectedCharacter && detectedCharacter !== sessionData.character) {
-        logger.warn(`Character "${detectedCharacter}" was detected in user input ("${sanitizedText}"), but NOT updating session character "${sessionData.character}". This will be handled by Chatbase response or explicit command.`);
-        // sessionData.character = detectedCharacter; // Keep commented for now
-        // await setSession(sessionId, sessionData); // Keep commented for now
-        // logger.info(`Session ${sessionId}: Character updated to "${detectedCharacter}" from user input.`); // Keep commented for now
-      } else if (!sessionData.character) {
-        sessionData.character = DEFAULT_CHARACTER;
-        await setSession(sessionId, sessionData);
-        logger.info(`Session ${sessionId}: Default character "${DEFAULT_CHARACTER}" set as no character detected and no character in session.`);
-      }
-    }
-    logger.debug(`After character detection phase, session character is now: ${sessionData.character || "N/A"}.`);
-
+    // --- Main Chatbase Interaction Logic ---
+    // This section runs if it's not a welcome message, and not a name/level capture phase that generated a reply.
     if (!isWelcomeMessage && !botReplyText) {
       const previousRaw = chatMemory.get(sessionId) || [];
       const previous = previousRaw.filter(msg => msg.content && msg.content.length > 0);
       let systemPrompt = null;
 
+      // Ensure a character is set for the session before proceeding to LLM
       if (!sessionData.character) {
           sessionData.character = DEFAULT_CHARACTER;
           logger.warn(`sessionData.character was null before Chatbase call, defaulting to "${DEFAULT_CHARACTER}".`);
       }
-
+      
       let prefix = "";
-      if (sessionData.character) {
-          const studentArticle = (sessionData.studentLevel === 'intermediate' || sessionData.studentLevel === 'expert') ? 'an' : 'a';
+      // Construct the system prompt based on current character and student info
+      const studentArticle = (sessionData.studentLevel === 'intermediate' || sessionData.studentLevel === 'expert') ? 'an' : 'a';
+      const characterInfo = characterAliases.find(c => c.key === sessionData.character);
+      const characterDisplayName = characterInfo ? characterInfo.names[0] : sessionData.character;
 
-          if (sessionData.character === DEFAULT_CHARACTER && sessionData.studentName && sessionData.studentLevel) {
-              prefix = `You are Mr. McArthur, a teacher in Waterwheel Village. Address the student as ${sessionData.studentName}. They are ${studentArticle} ${sessionData.studentLevel} student. Stay in character.`;
-          } else if (sessionData.character === DEFAULT_CHARACTER && sessionData.studentName) {
-              prefix = `You are Mr. McArthur, a teacher in Waterwheel Village. Address the student as ${sessionData.studentName}. Stay in character.`;
-          } else if (sessionData.character === DEFAULT_CHARACTER && sessionData.studentLevel) {
-              prefix = `You are Mr. McArthur, a teacher in Waterwheel Village. The student is ${studentArticle} ${sessionData.studentLevel} student. Stay in character.`;
-          } else if (sessionData.studentName && sessionData.studentLevel) {
-              const characterInfo = characterAliases.find(c => c.key === sessionData.character);
-              const characterDisplayName = characterInfo ? characterInfo.names[0] : sessionData.character;
-              prefix = `You are ${characterDisplayName}, a character in Waterwheel Village. Address the student as ${sessionData.studentName}. They are ${studentArticle} ${sessionData.studentLevel} student. Stay in character.`;
-          } else if (sessionData.studentName) {
-              const characterInfo = characterAliases.find(c => c.key === sessionData.character);
-              const characterDisplayName = characterInfo ? characterInfo.names[0] : sessionData.character;
-              prefix = `You are ${characterDisplayName}, a character in Waterwheel Village. Address the student as ${sessionData.studentName}. Stay in character.`;
-          } else if (sessionData.studentLevel) {
-              const characterInfo = characterAliases.find(c => c.key === sessionData.character);
-              const characterDisplayName = characterInfo ? characterInfo.names[0] : sessionData.character;
-              prefix = `You are ${characterDisplayName}, a character in Waterwheel Village. The student is ${studentArticle} ${sessionData.studentLevel} student. Stay in character.`;
-          } else {
-              const characterInfo = characterAliases.find(c => c.key === sessionData.character);
-              const characterDisplayName = characterInfo ? characterInfo.names[0] : sessionData.character;
-              prefix = `You are ${characterDisplayName}, a character in Waterwheel Village. Stay in character.`;
-          }
-      } else {
-          prefix = "You are a helpful assistant in Waterwheel Village. Stay in character.";
+      if (sessionData.character === DEFAULT_CHARACTER) { // Mr. McArthur's specific prompt
+          prefix = `You are Mr. McArthur, a teacher in Waterwheel Village.`;
+      } else { // Other characters' specific prompt
+          prefix = `You are ${characterDisplayName}, a character in Waterwheel Village.`;
       }
+
+      // Add student details if available
+      if (sessionData.studentName) {
+          prefix += ` Address the student as ${sessionData.studentName}.`;
+      }
+      if (sessionData.studentLevel) {
+          prefix += ` They are ${studentArticle} ${sessionData.studentLevel} student.`;
+      }
+      prefix += ` Stay in character.`;
+
+      // --- ADDING THE NEW LLM PROMPT INSTRUCTION FOR MCARTHUR ---
+      if (sessionData.character === DEFAULT_CHARACTER) {
+        prefix += ` IMPORTANT RULE: When the student asks to speak with another villager, first, confirm the request. Then, if you are introducing the student to a new villager, generate a response that **begins with the new villager greeting the student directly, using their own name** (e.g., "Greetings, [StudentName]! I am [New Character's Name]..."). This signals the handoff. If you are just suggesting options, you may refer to them by their role (e.g., 'the healer') or briefly by name if necessary for clarity, but primarily aim for a direct handoff when requested. Your primary role is to guide and facilitate introductions.`;
+      }
+      // --- END NEW LLM PROMPT INSTRUCTION ---
+
       systemPrompt = { role: "system", content: prefix };
-      logger.debug(`System prompt set for character: ${sessionData.character}`);
+      logger.debug(`System prompt set for character: ${sessionData.character}. Content: "${systemPrompt.content.substring(0, Math.min(systemPrompt.content.length, 200))}..."`); // Log first 200 chars
 
       const replyMessages = [...(systemPrompt ? [systemPrompt] : []), ...previous, { role: "user", content: sanitizedText }];
       logger.debug(`Calling Chatbase with messages: ${JSON.stringify(replyMessages)}`);
@@ -532,27 +556,38 @@ app.post("/chat", async (req, res) => {
         process.env.CHATBASE_API_KEY
       );
 
-      const detectedCharacterInBotReply = detectCharacter(botReplyText);
+      // --- Character detection based on BOT'S REPLY (this is where the session character changes) ---
+      const detectedCharacterInBotReply = detectCharacter(botReplyText, sessionData.character); // Pass current session character
       logger.debug(`Character detected in Chatbase's reply: "${detectedCharacterInBotReply || "None"}" for session ${sessionId}.`);
 
       if (detectedCharacterInBotReply && detectedCharacterInBotReply !== sessionData.character) {
           sessionData.character = detectedCharacterInBotReply;
           await setSession(sessionId, sessionData);
           logger.info(`Session ${sessionId}: Character updated to "${detectedCharacterInBotReply}" based on Chatbase's reply text.`);
+      } else if (!detectedCharacterInBotReply && sessionData.character) { // If nothing detected, keep existing character
+          logger.info(`Session ${sessionId}: No new character detected in bot reply. Retaining current character "${sessionData.character}".`);
+      } else if (!sessionData.character && detectedCharacterInBotReply) { // If no session char, but one detected
+          sessionData.character = detectedCharacterInBotReply;
+          await setSession(sessionId, sessionData);
+          logger.info(`Session ${sessionId}: No prior character, but new character "${detectedCharacterInBotReply}" detected in bot reply. Setting it.`);
+      } else if (!sessionData.character && !detectedCharacterInBotReply) { // No session char, no detected char
+          sessionData.character = DEFAULT_CHARACTER;
+          await setSession(sessionId, sessionData);
+          logger.info(`Session ${sessionId}: No character detected and no prior character. Defaulting to "${DEFAULT_CHARACTER}".`);
       }
     }
 
     const finalHistoryMessages = chatMemory.get(sessionId) || [];
 
-    if (text !== "") {
+    if (text !== "") { // Only add user message to history if it's not the initial empty trigger
         finalHistoryMessages.push({ role: "user", content: sanitizedText });
     }
-
     finalHistoryMessages.push({ role: "assistant", content: botReplyText });
-
     storeChatHistory(sessionId, finalHistoryMessages);
 
-    res.json({ text: botReplyText });
+    // Send the response back to the frontend
+    res.json({ text: botReplyText, character: sessionData.character }); // Also send back the *final* character
+
   } catch (error) {
     const status = error.status || 500;
     const code = error.code || "INTERNAL_SERVER_ERROR";
@@ -575,17 +610,19 @@ app.post("/speakbase", async (req, res) => {
   logger.info(`🔉 /speakbase route hit for session ${sessionId}. Text: "${botReplyForSpeech.substring(0, Math.min(botReplyForSpeech.length, 50))}..."`);
   logger.debug(`Requested Character (from frontend): "${frontendCharacter}"`);
 
-  let finalCharacterKey = frontendCharacter;
+  let finalCharacterKey = frontendCharacter; // Start with character from frontend (which is from the session)
 
   const sessionData = await getSession(sessionId);
   if (sessionData && sessionData.character) {
-      finalCharacterKey = sessionData.character;
+      finalCharacterKey = sessionData.character; // Prioritize character stored in session
       logger.debug(`Using character from session for speech: "${finalCharacterKey}"`);
   } else if (!finalCharacterKey) {
-    const detectedCharacterFromText = detectCharacter(botReplyForSpeech);
+    // If no frontend character AND no session character, try to detect from text, else default
+    const detectedCharacterFromText = detectCharacter(botReplyForSpeech, DEFAULT_CHARACTER); // Pass default for currentSessionCharacter for initial detection
     finalCharacterKey = detectedCharacterFromText || DEFAULT_CHARACTER;
     logger.info(`No session or frontend character. Detected from text: "${detectedCharacterFromText || 'None'}", Final character for speech: "${finalCharacterKey}"`);
   } else {
+    // If frontend character exists but no session character, use frontend one but validate
     if (!Object.keys(characterVoices).includes(finalCharacterKey)) {
         logger.warn(`Frontend requested character "${finalCharacterKey}" not found in characterVoices. Falling back to default.`);
         finalCharacterKey = DEFAULT_CHARACTER;
