@@ -1,68 +1,8 @@
-// At the top of your file, assuming express is imported and app is defined:
-// const express = require('express');
-// const app = express();
-// const { createLogger, format, transports } = require('winston');
-// const logger = createLogger({ /* ... your logger config ... */ });
-
-// IMPORTANT: Ensure your 'sessions' object is defined globally or accessible here.
-// For example:
-const sessions = {}; // This should be where your session data is stored and managed.
-
-// Existing routes (e.g., /chat, /speakbase) ...
-
-// ADD THIS NEW ROUTE:
-app.get('/session/:sessionId', (req, res) => {
-    const sessionId = req.params.sessionId;
-    const session = sessions[sessionId]; // Retrieve session data
-
-    if (session) {
-        // Ensure that 'session.character' is being set correctly whenever the character changes
-        // (e.g., in your /chat endpoint after detectCharacter)
-        logger.debug(`GET /session/${sessionId}: Session found. Character: ${session.character || 'default'}`);
-        res.json({ character: session.character || 'mcarthur' }); // Send back the character, default if not set
-    } else {
-        logger.warn(`GET /session/${sessionId}: Session not found for ID: ${sessionId}`);
-        // Respond with a default character if session is not found, or an error if preferred.
-        // Returning default 'mcarthur' helps avoid frontend errors if session not yet established.
-        res.status(404).json({ error: 'Session not found or not initialized', character: 'mcarthur' });
-    }
-});
-
-// REMINDER: In your /chat POST route, after calling `detectCharacter`,
-// you MUST update the session's character. Example:
-/*
-app.post('/chat', async (req, res) => {
-    const { text, sessionId } = req.body;
-    let session = sessions[sessionId];
-
-    if (!session) {
-        session = {
-            chatHistory: [],
-            character: 'mcarthur', // Initialize default character for new session
-            // ... other session data
-        };
-        sessions[sessionId] = session;
-    }
-
-    // ... your LLM call to get botResponseText ...
-    const botResponseText = "Bot's reply"; // Replace with actual LLM response
-    const detectedCharacter = detectCharacter(botResponseText, session.character);
-
-    // IMPORTANT: Update the session with the new character
-    if (detectedCharacter && detectedCharacter !== session.character) {
-        session.character = detectedCharacter;
-        logger.info(`Session ${sessionId} character updated to: ${detectedCharacter}`);
-    }
-
-    // ... rest of your /chat logic ...
-    res.json({ text: botResponseText });
-});
-*/
-require("dotenv").config();
+require("dotenv").config(); // Load environment variables first
 const express = require("express");
-const app = express();
+const app = express(); // Initialize Express app immediately after requiring express
 
-app.set("trust proxy", 1);
+app.set("trust proxy", 1); // For proxy headers, e.g., on Render
 
 // Simple sanitize function to clean user input
 function sanitize(input) {
@@ -77,6 +17,7 @@ function sanitize(input) {
     })[char])
     .trim();
 }
+
 const axios = require("axios");
 const axiosRetry = require("axios-retry").default;
 const cors = require("cors");
@@ -87,13 +28,13 @@ const pino = require("pino");
 const sanitizeHtml = require("sanitize-html");
 const { v4: uuidv4 } = require("uuid");
 
-const { OpenAI } = require("openai"); // Add this line
+const { OpenAI } = require("openai");
 
 // Make sure these paths are correct, they would be relative to betterchatF.js
 // Assuming config.js has characterVoices, characterAliases, voiceSettings
-const { characterVoices, characterAliases, voiceSettings } = require("./config"); // This line correctly imports from config.js
+const { characterVoices, characterAliases, voiceSettings } = require("./config");
 
-// --- Logger Configuration Update ---
+// --- Logger Configuration ---
 const logger = pino({
   level: process.env.NODE_ENV === 'production' ? 'info' : 'debug', // Set to 'debug' for more verbose logging during development
   transport: process.env.NODE_ENV === 'production' ? {
@@ -106,7 +47,7 @@ const logger = pino({
     },
   },
 });
-// --- End Logger Configuration Update ---
+// --- End Logger Configuration ---
 
 const DEFAULT_CHARACTER = "mcarthur";
 const SESSION_TTL = parseInt(process.env.SESSION_TTL || 60 * 60, 10);
@@ -120,21 +61,22 @@ const envSchema = Joi.object({
   CHATBASE_BOT_ID: Joi.string().required(),
   CHATBASE_API_KEY: Joi.string().required(),
   ELEVEN_API_KEY: Joi.string().required(),
-  ELEVEN_VOICE_ID: Joi.string().optional(),
+  ELEVEN_VOICE_ID: Joi.string().optional(), // Default voice ID if not character-specific
   WORDPRESS_URL: Joi.string().uri().required(),
   REDIS_URL: Joi.string().uri().optional(),
   PORT: Joi.number().default(3000),
+  // Ensure all character voice IDs are required if used in characterVoices map
   VOICE_FATIMA: Joi.string().required(),
   VOICE_IBRAHIM: Joi.string().required(),
   VOICE_ANIKA: Joi.string().required(),
-  VOICE_KWAME: Joi.string().required(), // Ensure Kwame is here
+  VOICE_KWAME: Joi.string().required(),
   VOICE_SOPHIA: Joi.string().required(),
   VOICE_LIANG: Joi.string().required(),
   VOICE_JOHANNES: Joi.string().required(),
   VOICE_ALEKSANDERI: Joi.string().required(),
   VOICE_NADIA: Joi.string().required(),
   VOICE_MCARTHUR: Joi.string().required(),
-  OPENAI_API_KEY: Joi.string().optional(), // Made optional for now
+  OPENAI_API_KEY: Joi.string().optional(),
   EXERCISE_TTL: Joi.number().default(5 * 60),
 }).unknown(true);
 
@@ -162,8 +104,8 @@ logger.info("OpenAI client initialized.");
 logger.info("Express app initialized");
 let redisClient;
 let useRedis = !!process.env.REDIS_URL;
-const userMemory = new Map();
-const chatMemory = new Map();
+const userMemory = new Map(); // In-memory session storage fallback
+const chatMemory = new Map(); // In-memory chat history storage fallback
 axiosRetry(axios, { retries: 3, retryDelay: axiosRetry.exponentialDelay });
 
 logger.info(`Dependencies loaded: express@${require("express/package.json").version}, axios@${require("axios/package.json").version}`);
@@ -174,11 +116,9 @@ try {
   logger.warn(`Redis package not found, but REDIS_URL is set. Continuing without Redis version check.`);
 }
 
-
 if (useRedis) {
   redisClient = redis.createClient({
     url: process.env.REDIS_URL,
-    // Add command_timeout for Redis commands
     socket: {
         connectTimeout: 10000, // 10 seconds to connect
     }
@@ -208,8 +148,7 @@ axiosRetry(axios, {
 });
 
 app.use(cors({ origin: process.env.WORDPRESS_URL }));
-
-app.use(express.json());
+app.use(express.json()); // Middleware to parse JSON request bodies
 
 app.use(
   rateLimit({
@@ -250,11 +189,9 @@ function detectCharacter(text, currentSessionCharacter = null) {
     for (const name of characterInfo.names) {
       const lowerName = name.toLowerCase();
 
-      // NEW PATTERN: Account for student's name in the greeting
-      // We need a more flexible regex that allows for an arbitrary word (the student's name)
-      // after "greetings," and before "i am [character name]"
-// Make punctuation optional or match common punctuation marks after student's name
-const greetingPattern1 = new RegExp(`^greetings,\\s+\\S+[^a-z0-9]*\\s+i\\s+am\\s+${lowerName}`, 'i');      const greetingPattern2 = new RegExp(`^hello,\\s+i\\s+am\\s+${lowerName}`, 'i'); // e.g., "Hello, I am Ibrahim" (without student name)
+      // NEW PATTERN: Account for student's name in the greeting, allowing various punctuation or none
+      const greetingPattern1 = new RegExp(`^greetings,\\s+\\S+[^a-z0-9]*\\s+i\\s+am\\s+${lowerName}`, 'i');
+      const greetingPattern2 = new RegExp(`^hello,\\s+i\\s+am\\s+${lowerName}`, 'i'); // e.g., "Hello, I am Ibrahim" (without student name)
       const greetingPattern3 = new RegExp(`^ah,\\s+hello,\\s+my\\s+friend!\\s+${lowerName}\\s+here`, 'i'); // Fatima's specific intro
 
       // Combine conditions:
@@ -288,7 +225,6 @@ const greetingPattern1 = new RegExp(`^greetings,\\s+\\S+[^a-z0-9]*\\s+i\\s+am\\s
 
     if (characterNamesForRegex) { // Only proceed if there are names to match
         // Match if the sentence ends with a character name or a phrase that strongly implies it.
-        // We need to be careful not to pick up names that are part of other words.
         // Using word boundaries \b for better precision.
         const characterSuggestionRegex = new RegExp(`\\b(?:${characterNamesForRegex})\\b\\s*(\\.|!|\\?|$)`, 'i');
         const match = cleanedText.match(characterSuggestionRegex);
@@ -302,16 +238,11 @@ const greetingPattern1 = new RegExp(`^greetings,\\s+\\S+[^a-z0-9]*\\s+i\\s+am\\s
 
             if (detectedKeyFromAlias && detectedKeyFromAlias !== DEFAULT_CHARACTER) {
                 logger.debug(`detectCharacter: McArthur suggested character at end of response: "${detectedKeyFromAlias}".`);
-                // IMPORTANT: When McArthur suggests a character, he should set the *next* character.
-                // This means the session character should be updated *here* if this rule fires.
-                // However, the function `detectCharacter` *returns* the character, so the calling
-                // code needs to handle setting it in the session.
                 return detectedKeyFromAlias;
             }
         }
     }
   }
-
 
   // Fallback: If no explicit switch detected, maintain the current character.
   // This is crucial: if no rule above triggers, stick with the current speaker.
@@ -372,6 +303,7 @@ function extractStudentLevel(text) {
     return null;
 }
 
+// Session management functions (using userMemory/redisClient)
 async function setSession(sessionId, data) {
   try {
     const sessionDataToStore = { ...data, timestamp: Date.now() };
@@ -478,6 +410,8 @@ async function callChatbase(sessionId, messages, chatbotId, apiKey) {
   }
 }
 
+// --- ROUTES ---
+
 app.get("/", (req, res) => {
   logger.info(`Root endpoint accessed`);
   res.send("🌍 Waterwheel Village - BetterChat is online!");
@@ -501,20 +435,23 @@ app.get("/health", async (req, res) => {
   res.json(health);
 });
 
+// NEW: Session endpoint to retrieve character for frontend
 app.get("/session/:sessionId", async (req, res) => {
   const sessionId = req.params.sessionId;
   try {
-    const sessionData = await getSession(sessionId);
+    const sessionData = await getSession(sessionId); // Use existing getSession function
     if (sessionData) {
       logger.info(`Session data requested for ${sessionId}: ${JSON.stringify(sessionData)}`);
-      res.json(sessionData);
+      // Return the character, defaulting to 'mcarthur' if not set
+      res.json({ character: sessionData.character || DEFAULT_CHARACTER });
     } else {
-      logger.warn(`Session data not found for ${sessionId}`);
-      res.status(404).json({ error: "Session not found", code: "SESSION_NOT_FOUND" });
+      logger.warn(`Session data not found for ${sessionId}. Returning default character.`);
+      // If session not found, return 404 but also provide a default character
+      res.status(404).json({ error: "Session not found", code: "SESSION_NOT_FOUND", character: DEFAULT_CHARACTER });
     }
   } catch (error) {
     logger.error({ error: error.stack, code: "GET_SESSION_ENDPOINT_ERROR" }, `Failed to retrieve session data for ${sessionId}`);
-    res.status(500).json({ error: "Internal server error", code: "SERVER_ERROR" });
+    res.status(500).json({ error: "Internal server error", code: "SERVER_ERROR", character: DEFAULT_CHARACTER });
   }
 });
 
@@ -531,17 +468,21 @@ app.post("/chat", async (req, res) => {
     const { text, sessionId } = value;
     const sanitizedText = sanitizeHtml(text, { allowedTags: [], allowedAttributes: {} });
 
-    const sessionData = await getSession(sessionId) || {};
+    let sessionData = await getSession(sessionId); // Use let because we might re-initialize it
 
     let botReplyText = "";
     let isWelcomeMessage = false;
 
     // --- Initial Welcome Message Logic ---
-    if ((!sessionData.character || !sessionData.studentName || !sessionData.studentLevel) && text === "") {
-        logger.info(`New/Reset session ${sessionId}: Sending initial welcome message from Mr. McArthur due to empty text and missing session info.`);
-        sessionData.character = DEFAULT_CHARACTER;
-        sessionData.studentName = null;
-        sessionData.studentLevel = null;
+    if (!sessionData || (!sessionData.character && !sessionData.studentName && !sessionData.studentLevel)) {
+        // If sessionData is null or character/name/level are all missing, treat as new/reset
+        logger.info(`New/Reset session ${sessionId}: Sending initial welcome message from Mr. McArthur due to missing session info.`);
+        sessionData = { // Initialize new sessionData
+            character: DEFAULT_CHARACTER,
+            studentName: null,
+            studentLevel: null,
+            timestamp: Date.now() // Add timestamp for TTL
+        };
         await setSession(sessionId, sessionData);
         botReplyText = `Welcome to Waterwheel Village, students! I'm Mr. McArthur, your teacher. What's your name, if you'd like to share it? And are you a beginner, intermediate, or expert student?`;
         isWelcomeMessage = true;
@@ -588,7 +529,7 @@ app.post("/chat", async (req, res) => {
                 historyForNameLevel.push({ role: "assistant", content: botReplyText });
                 storeChatHistory(sessionId, historyForNameLevel);
 
-                return res.json({ text: botReplyText }); // Send back the immediate reply
+                return res.json({ text: botReplyText, character: sessionData.character }); // Send back the immediate reply
             }
         }
     }
@@ -682,7 +623,7 @@ app.post("/chat", async (req, res) => {
     const status = error.status || 500;
     const code = error.code || "INTERNAL_SERVER_ERROR";
     logger.error({ error: error.stack, code }, `Chat endpoint failed`);
-    res.status(status).json({ error: error.message, code });
+    res.status(status).json({ error: error.message, code, character: DEFAULT_CHARACTER }); // Ensure character is sent even on error
   }
 });
 
