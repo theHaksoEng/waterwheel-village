@@ -1,3 +1,63 @@
+// At the top of your file, assuming express is imported and app is defined:
+// const express = require('express');
+// const app = express();
+// const { createLogger, format, transports } = require('winston');
+// const logger = createLogger({ /* ... your logger config ... */ });
+
+// IMPORTANT: Ensure your 'sessions' object is defined globally or accessible here.
+// For example:
+const sessions = {}; // This should be where your session data is stored and managed.
+
+// Existing routes (e.g., /chat, /speakbase) ...
+
+// ADD THIS NEW ROUTE:
+app.get('/session/:sessionId', (req, res) => {
+    const sessionId = req.params.sessionId;
+    const session = sessions[sessionId]; // Retrieve session data
+
+    if (session) {
+        // Ensure that 'session.character' is being set correctly whenever the character changes
+        // (e.g., in your /chat endpoint after detectCharacter)
+        logger.debug(`GET /session/${sessionId}: Session found. Character: ${session.character || 'default'}`);
+        res.json({ character: session.character || 'mcarthur' }); // Send back the character, default if not set
+    } else {
+        logger.warn(`GET /session/${sessionId}: Session not found for ID: ${sessionId}`);
+        // Respond with a default character if session is not found, or an error if preferred.
+        // Returning default 'mcarthur' helps avoid frontend errors if session not yet established.
+        res.status(404).json({ error: 'Session not found or not initialized', character: 'mcarthur' });
+    }
+});
+
+// REMINDER: In your /chat POST route, after calling `detectCharacter`,
+// you MUST update the session's character. Example:
+/*
+app.post('/chat', async (req, res) => {
+    const { text, sessionId } = req.body;
+    let session = sessions[sessionId];
+
+    if (!session) {
+        session = {
+            chatHistory: [],
+            character: 'mcarthur', // Initialize default character for new session
+            // ... other session data
+        };
+        sessions[sessionId] = session;
+    }
+
+    // ... your LLM call to get botResponseText ...
+    const botResponseText = "Bot's reply"; // Replace with actual LLM response
+    const detectedCharacter = detectCharacter(botResponseText, session.character);
+
+    // IMPORTANT: Update the session with the new character
+    if (detectedCharacter && detectedCharacter !== session.character) {
+        session.character = detectedCharacter;
+        logger.info(`Session ${sessionId} character updated to: ${detectedCharacter}`);
+    }
+
+    // ... rest of your /chat logic ...
+    res.json({ text: botResponseText });
+});
+*/
 require("dotenv").config();
 const express = require("express");
 const app = express();
@@ -182,20 +242,29 @@ function detectCharacter(text, currentSessionCharacter = null) {
   const cleanedText = text.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, "");
 
   // Rule 1: Explicit Handover / New Character Introduction (Highest Priority)
-  // Look for phrases like "Greetings, I am [Name]" or "Hello, I'm [Name]" at the beginning of the response
+  // Look for phrases like "Greetings, [StudentName]! I am [CharacterName]" or "Hello, I'm [CharacterName]"
   for (const charKey of Object.keys(characterVoices)) { // Iterate through actual character keys
     const characterInfo = characterAliases.find(alias => alias.key === charKey);
     if (!characterInfo) continue; // Skip if no alias info for this key
 
     for (const name of characterInfo.names) {
       const lowerName = name.toLowerCase();
+
+      // NEW PATTERN: Account for student's name in the greeting
+      // We need a more flexible regex that allows for an arbitrary word (the student's name)
+      // after "greetings," and before "i am [character name]"
+// Make punctuation optional or match common punctuation marks after student's name
+const greetingPattern1 = new RegExp(`^greetings,\\s+\\S+[^a-z0-9]*\\s+i\\s+am\\s+${lowerName}`, 'i');      const greetingPattern2 = new RegExp(`^hello,\\s+i\\s+am\\s+${lowerName}`, 'i'); // e.g., "Hello, I am Ibrahim" (without student name)
+      const greetingPattern3 = new RegExp(`^ah,\\s+hello,\\s+my\\s+friend!\\s+${lowerName}\\s+here`, 'i'); // Fatima's specific intro
+
+      // Combine conditions:
       if (
-        cleanedText.startsWith(`greetings, ${lowerName}! i am ${lowerName}`) ||
-        cleanedText.startsWith(`hello, i am ${lowerName}`) ||
-        cleanedText.startsWith(`ah, hello, my friend! ${lowerName} here`) || // From Fatima's prev intro
-        cleanedText.startsWith(`greetings, my name is ${lowerName}`)
+        greetingPattern1.test(cleanedText) ||
+        greetingPattern2.test(cleanedText) ||
+        greetingPattern3.test(cleanedText) ||
+        cleanedText.startsWith(`greetings, my name is ${lowerName}`) // Keep this for completeness
       ) {
-        logger.debug(`detectCharacter: Clear handoff detected to: "${charKey}" via phrase starting with "${lowerName}".`);
+        logger.debug(`detectCharacter: Clear handoff detected to: "${charKey}" via phrase matching "${lowerName}".`);
         return charKey; // Found a strong signal for a new character
       }
     }
@@ -211,29 +280,38 @@ function detectCharacter(text, currentSessionCharacter = null) {
         .filter(k => k !== DEFAULT_CHARACTER)
         .map(key => {
             const alias = characterAliases.find(a => a.key === key);
-            return alias ? alias.names.map(n => n.toLowerCase()).join('|') : key.toLowerCase();
+            // Include both the key and all alias names in the regex for matching
+            return alias ? [key.toLowerCase(), ...alias.names.map(n => n.toLowerCase())].join('|') : key.toLowerCase();
         })
         .flat()
         .join('|');
 
     if (characterNamesForRegex) { // Only proceed if there are names to match
-        const characterSuggestionRegex = new RegExp(`(?:${characterNamesForRegex})\\s*\\.?$`, 'i');
+        // Match if the sentence ends with a character name or a phrase that strongly implies it.
+        // We need to be careful not to pick up names that are part of other words.
+        // Using word boundaries \b for better precision.
+        const characterSuggestionRegex = new RegExp(`\\b(?:${characterNamesForRegex})\\b\\s*(\\.|!|\\?|$)`, 'i');
         const match = cleanedText.match(characterSuggestionRegex);
         if (match) {
-            const suggestedCharName = match[0].toLowerCase(); // Get the matched name from the regex
+            const suggestedCharName = match[0].toLowerCase().replace(/[\.!?,]$/,'').trim(); // Get the matched name, remove trailing punctuation
 
             // Find the actual character key from aliases based on the matched name
             const detectedKeyFromAlias = characterAliases.find(alias =>
-              alias.names.some(n => suggestedCharName.includes(n.toLowerCase()))
+              alias.names.some(n => suggestedCharName === n.toLowerCase() || suggestedCharName === alias.key.toLowerCase())
             )?.key;
 
             if (detectedKeyFromAlias && detectedKeyFromAlias !== DEFAULT_CHARACTER) {
                 logger.debug(`detectCharacter: McArthur suggested character at end of response: "${detectedKeyFromAlias}".`);
+                // IMPORTANT: When McArthur suggests a character, he should set the *next* character.
+                // This means the session character should be updated *here* if this rule fires.
+                // However, the function `detectCharacter` *returns* the character, so the calling
+                // code needs to handle setting it in the session.
                 return detectedKeyFromAlias;
             }
         }
     }
   }
+
 
   // Fallback: If no explicit switch detected, maintain the current character.
   // This is crucial: if no rule above triggers, stick with the current speaker.
