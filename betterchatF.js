@@ -190,16 +190,17 @@ function detectCharacter(text, currentSessionCharacter = null) {
       const lowerName = name.toLowerCase();
 
       // NEW PATTERN: Account for student's name in the greeting, allowing various punctuation or none
-      const greetingPattern1 = new RegExp(`^greetings,\\s+\\S+[^a-z0-9]*\\s+i\\s+am\\s+${lowerName}`, 'i');
-      const greetingPattern2 = new RegExp(`^hello,\\s+i\\s+am\\s+${lowerName}`, 'i'); // e.g., "Hello, I am Ibrahim" (without student name)
-      const greetingPattern3 = new RegExp(`^ah,\\s+hello,\\s+my\\s+friend!\\s+${lowerName}\\s+here`, 'i'); // Fatima's specific intro
+      // Removed the '^' from the regex to allow it to match anywhere in the string
+      const greetingPattern1 = new RegExp(`greetings,\\s+\\S+[^a-z0-9]*\\s+i\\s+am\\s+${lowerName}`, 'i');
+      const greetingPattern2 = new RegExp(`hello,\\s+i\\s+am\\s+${lowerName}`, 'i'); // e.g., "Hello, I am Ibrahim" (without student name)
+      const greetingPattern3 = new RegExp(`ah,\\s+hello,\\s+my\\s+friend!\\s+${lowerName}\\s+here`, 'i'); // Fatima's specific intro
 
       // Combine conditions:
       if (
         greetingPattern1.test(cleanedText) ||
         greetingPattern2.test(cleanedText) ||
         greetingPattern3.test(cleanedText) ||
-        cleanedText.startsWith(`greetings, my name is ${lowerName}`) // Keep this for completeness
+        cleanedText.includes(`greetings, my name is ${lowerName}`) // Simplified check for this case
       ) {
         logger.debug(`detectCharacter: Clear handoff detected to: "${charKey}" via phrase matching "${lowerName}".`);
         return charKey; // Found a strong signal for a new character
@@ -255,7 +256,6 @@ function detectCharacter(text, currentSessionCharacter = null) {
   logger.debug(`detectCharacter: No specific character detected, no current session character. Defaulting to ${DEFAULT_CHARACTER}.`);
   return DEFAULT_CHARACTER;
 }
-// --- END ENHANCED detectCharacter function ---
 
 /**
  * Extracts a student name from the given text using common patterns.
