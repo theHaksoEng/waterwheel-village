@@ -174,10 +174,9 @@ const speakbaseSchema = Joi.object({
 function detectCharacter(text, currentSessionCharacter = null) {
   if (!text || typeof text !== "string") {
     logger.debug(`detectCharacter: No valid text provided for character detection.`);
-    return currentSessionCharacter; // Maintain current character if no valid text
+    return currentSessionCharacter;
   }
 
-  // Remove punctuation and convert to lowercase for robust matching
   const cleanedText = text.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, "");
 
   // Rule 1: Explicit Handover / New Character Introduction (Highest Priority)
@@ -188,11 +187,11 @@ function detectCharacter(text, currentSessionCharacter = null) {
     for (const name of characterInfo.names) {
       const lowerName = name.toLowerCase();
 
-      // NEW PATTERN: Made the part between "greetings," and "i am" optional
+      // New flexible regex patterns
       const greetingPattern1 = new RegExp(`greetings!?(?:\\s+\\S+[^a-z0-9]*)?\\s+i\\s+am\\s+${lowerName}`, 'i');
-      const greetingPattern2 = new RegExp(`hello,\\s+i\\s+am\\s+${lowerName}`, 'i');
+      const greetingPattern2 = new RegExp(`hello,?(?:\\s+\\S+[^a-z0-9]*)?\\s+i\\s+am\\s+${lowerName}`, 'i'); // Added flexibility to this pattern
       const greetingPattern3 = new RegExp(`ah,\\s+hello,\\s+my\\s+friend!\\s+${lowerName}\\s+here`, 'i');
-
+      
       if (
         greetingPattern1.test(cleanedText) ||
         greetingPattern2.test(cleanedText) ||
