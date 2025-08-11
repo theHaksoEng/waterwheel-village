@@ -170,35 +170,26 @@ const speakbaseSchema = Joi.object({
   character: Joi.string().optional(),
 });
 
-// --- ENHANCED detectCharacter function ---
+// --- FINAL, ROBUST detectCharacter function ---
 function detectCharacter(text, currentSessionCharacter = null) {
   if (!text || typeof text !== "string") {
-    logger.debug(`detectCharacter: No valid text provided for character detection.`);
+    logger.debug(`detectCharacter: No valid text provided.`);
     return currentSessionCharacter;
   }
 
   const cleanedText = text.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, "");
 
-  // Rule 1: Explicit Handover / New Character Introduction (Highest Priority)
+  // Rule 1: Direct, explicit handoff with "I am" pattern (Highest Priority)
   for (const charKey of Object.keys(characterVoices)) {
     const characterInfo = characterAliases.find(alias => alias.key === charKey);
     if (!characterInfo) continue;
 
     for (const name of characterInfo.names) {
       const lowerName = name.toLowerCase();
-
-      // New flexible regex patterns
-      const greetingPattern1 = new RegExp(`greetings!?(?:\\s+\\S+[^a-z0-9]*)?\\s+i\\s+am\\s+${lowerName}`, 'i');
-      const greetingPattern2 = new RegExp(`hello,?(?:\\s+\\S+[^a-z0-9]*)?\\s+i\\s+am\\s+${lowerName}`, 'i'); // Added flexibility to this pattern
-      const greetingPattern3 = new RegExp(`ah,\\s+hello,\\s+my\\s+friend!\\s+${lowerName}\\s+here`, 'i');
-      
-      if (
-        greetingPattern1.test(cleanedText) ||
-        greetingPattern2.test(cleanedText) ||
-        greetingPattern3.test(cleanedText) ||
-        cleanedText.includes(`greetings, my name is ${lowerName}`)
-      ) {
-        logger.debug(`detectCharacter: Clear handoff detected to: "${charKey}" via phrase matching "${lowerName}".`);
+      // Look for a specific pattern: "I am [Name]" or "I'm [Name]"
+      const handoffPattern = new RegExp(`i\\s+(?:am|'m)\\s+${lowerName}`, 'i');
+      if (handoffPattern.test(cleanedText)) {
+        logger.info(`detectCharacter: Explicit handoff detected to: "${charKey}" via phrase matching "I am ${lowerName}".`);
         return charKey;
       }
     }
