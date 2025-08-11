@@ -665,7 +665,7 @@ app.post("/speakbase", async (req, res) => {
   }
 
   const { text, sessionId, character: frontendCharacter } = value;
-}
+
   const botReplyForSpeech = text;
 
   logger.info(`🔉 /speakbase route hit for session ${sessionId}. Text: "${botReplyForSpeech.substring(0, Math.min(botReplyForSpeech.length, 50))}..."`);
