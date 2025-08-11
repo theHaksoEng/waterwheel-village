@@ -181,29 +181,26 @@ function detectCharacter(text, currentSessionCharacter = null) {
   const cleanedText = text.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, "");
 
   // Rule 1: Explicit Handover / New Character Introduction (Highest Priority)
-  // Look for phrases like "Greetings, [StudentName]! I am [CharacterName]" or "Hello, I'm [CharacterName]"
-  for (const charKey of Object.keys(characterVoices)) { // Iterate through actual character keys
+  for (const charKey of Object.keys(characterVoices)) {
     const characterInfo = characterAliases.find(alias => alias.key === charKey);
-    if (!characterInfo) continue; // Skip if no alias info for this key
+    if (!characterInfo) continue;
 
     for (const name of characterInfo.names) {
       const lowerName = name.toLowerCase();
 
-      // NEW PATTERN: Account for student's name in the greeting, allowing various punctuation or none
-      // Removed the '^' from the regex to allow it to match anywhere in the string
-      const greetingPattern1 = new RegExp(`greetings,\\s+\\S+[^a-z0-9]*\\s+i\\s+am\\s+${lowerName}`, 'i');
-      const greetingPattern2 = new RegExp(`hello,\\s+i\\s+am\\s+${lowerName}`, 'i'); // e.g., "Hello, I am Ibrahim" (without student name)
-      const greetingPattern3 = new RegExp(`ah,\\s+hello,\\s+my\\s+friend!\\s+${lowerName}\\s+here`, 'i'); // Fatima's specific intro
+      // NEW PATTERN: Made the part between "greetings," and "i am" optional
+      const greetingPattern1 = new RegExp(`greetings!?(?:\\s+\\S+[^a-z0-9]*)?\\s+i\\s+am\\s+${lowerName}`, 'i');
+      const greetingPattern2 = new RegExp(`hello,\\s+i\\s+am\\s+${lowerName}`, 'i');
+      const greetingPattern3 = new RegExp(`ah,\\s+hello,\\s+my\\s+friend!\\s+${lowerName}\\s+here`, 'i');
 
-      // Combine conditions:
       if (
         greetingPattern1.test(cleanedText) ||
         greetingPattern2.test(cleanedText) ||
         greetingPattern3.test(cleanedText) ||
-        cleanedText.includes(`greetings, my name is ${lowerName}`) // Simplified check for this case
+        cleanedText.includes(`greetings, my name is ${lowerName}`)
       ) {
         logger.debug(`detectCharacter: Clear handoff detected to: "${charKey}" via phrase matching "${lowerName}".`);
-        return charKey; // Found a strong signal for a new character
+        return charKey;
       }
     }
   }
