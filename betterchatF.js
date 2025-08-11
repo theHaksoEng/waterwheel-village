@@ -515,52 +515,53 @@ app.post("/chat", async (req, res) => {
         botReplyText = `Welcome to Waterwheel Village, students! I'm Mr. McArthur, your teacher. What's your name, if you'd like to share it? And are you a beginner, intermediate, or expert student?`;
         isWelcomeMessage = true;
     }
-    // --- Capture Name/Level Logic (if McArthur is speaking and info is missing) ---
-    else if (sessionData.character === DEFAULT_CHARACTER && (!sessionData.studentName || !sessionData.studentLevel) && text !== "") {
-        const detectedName = extractStudentName(sanitizedText);
-        const detectedLevel = extractStudentLevel(sanitizedText);
+// --- Capture Name/Level Logic (if McArthur is speaking and info is missing) ---
+else if (sessionData.character === DEFAULT_CHARACTER && (!sessionData.studentName || !sessionData.studentLevel) && text !== "") {
+  const parsedInfo = parseInitialMessage(sanitizedText);
+  
+  let replyNeeded = false;
 
-        let replyNeeded = false;
-
-        if (detectedName && !sessionData.studentName) {
-            sessionData.studentName = detectedName;
-            logger.info(`Session ${sessionId}: Student name "${detectedName}" captured.`);
-            replyNeeded = true;
-        }
-        if (detectedLevel && !sessionData.studentLevel) {
-            sessionData.studentLevel = detectedLevel;
-            logger.info(`Session ${sessionId}: Student level "${detectedLevel}" captured.`);
-            replyNeeded = true;
-        }
-
-        if (replyNeeded) {
-            if (sessionData.studentName && sessionData.studentLevel) {
-                const article = (sessionData.studentLevel === 'intermediate' || sessionData.studentLevel === 'expert') ? 'an' : 'a';
-                botReplyText = `It's lovely to meet you, ${sessionData.studentName}! As ${article} ${sessionData.studentLevel} student, how can I help you today?`;
-            } else if (sessionData.studentName && !sessionData.studentLevel) {
-                botReplyText = `It's lovely to meet you, ${sessionData.studentName}! What kind of student are you? A beginner, intermediate, or expert?`;
-            } else if (!sessionData.studentName && sessionData.studentLevel) {
-                const article = (sessionData.studentLevel === 'intermediate' || sessionData.studentLevel === 'expert') ? 'an' : 'a';
-                botReplyText = `Oh, so you're ${article} ${sessionData.studentLevel} student! And what name should I call you?`;
-            }
-            else {
-                 botReplyText = ""; // No new info to update from, so no specific reply needed here.
-            }
-
-            if (botReplyText) {
-                await setSession(sessionId, sessionData); // Save updated session info
-
-                const historyForNameLevel = chatMemory.get(sessionId) || [];
-                if (text !== "") { // Add user input to history if not empty
-                    historyForNameLevel.push({ role: "user", content: sanitizedText });
-                }
-                historyForNameLevel.push({ role: "assistant", content: botReplyText });
-                storeChatHistory(sessionId, historyForNameLevel);
-
-                return res.json({ text: botReplyText, character: sessionData.character }); // Send back the immediate reply
-            }
-        }
+  // Use the new parsedInfo object to check for and update the session data
+  if (parsedInfo) {
+    if (parsedInfo.name && !sessionData.studentName) {
+      sessionData.studentName = parsedInfo.name;
+      logger.info(`Session ${sessionId}: Student name "${parsedInfo.name}" captured.`);
+      replyNeeded = true;
     }
+    if (parsedInfo.skill && !sessionData.studentLevel) {
+      sessionData.studentLevel = parsedInfo.skill;
+      logger.info(`Session ${sessionId}: Student level "${parsedInfo.skill}" captured.`);
+      replyNeeded = true;
+    }
+  }
+
+  if (replyNeeded) {
+      if (sessionData.studentName && sessionData.studentLevel) {
+          const article = (sessionData.studentLevel === 'intermediate' || sessionData.studentLevel === 'expert') ? 'an' : 'a';
+          botReplyText = `It's lovely to meet you, ${sessionData.studentName}! As ${article} ${sessionData.studentLevel} student, how can I help you today?`;
+      } else if (sessionData.studentName && !sessionData.studentLevel) {
+          botReplyText = `It's lovely to meet you, ${sessionData.studentName}! What kind of student are you? A beginner, intermediate, or expert?`;
+      } else if (!sessionData.studentName && sessionData.studentLevel) {
+          const article = (sessionData.studentLevel === 'intermediate' || sessionData.studentLevel === 'expert') ? 'an' : 'a';
+          botReplyText = `Oh, so you're ${article} ${sessionData.studentLevel} student! And what name should I call you?`;
+      } else {
+           botReplyText = "";
+      }
+
+      if (botReplyText) {
+          await setSession(sessionId, sessionData);
+
+          const historyForNameLevel = chatMemory.get(sessionId) || [];
+          if (text !== "") {
+              historyForNameLevel.push({ role: "user", content: sanitizedText });
+          }
+          historyForNameLevel.push({ role: "assistant", content: botReplyText });
+          storeChatHistory(sessionId, historyForNameLevel);
+
+          return res.json({ text: botReplyText, character: sessionData.character });
+      }
+  }
+}
 
     // --- Main Chatbase Interaction Logic ---
     // This section runs if it's not a welcome message, and not a name/level capture phase that generated a reply.
@@ -664,22 +665,6 @@ app.post("/speakbase", async (req, res) => {
   }
 
   const { text, sessionId, character: frontendCharacter } = value;
-  // This is an example of what to look for and replace.
-// Find the part of your code that handles the first user message.
-// It might look something like this (or similar logic):
-const parsedInfo = parseInitialMessage(userMessage);
-
-if (parsedInfo) {
-  // Use the parsed and corrected data to build the response
-  // The bot response should be dynamically built using the variables
-  const botResponse = `It's lovely to meet you, ${parsedInfo.name}! As a ${parsedInfo.skill} student, how can I help you today?`;
-
-  // Then, send this botResponse to your chatbot logic
-  // e.g., sendToChatbase(botResponse, ...);
-  // or return { text: botResponse, character: 'mcarthur' };
-} else {
-  // If the parsing fails, you can fall back to the old method
-  // or a different response
 }
   const botReplyForSpeech = text;
 
