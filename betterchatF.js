@@ -252,7 +252,39 @@ function detectCharacter(text, currentSessionCharacter = null) {
   logger.debug(`detectCharacter: No specific character detected, no current session character. Defaulting to ${DEFAULT_CHARACTER}.`);
   return DEFAULT_CHARACTER;
 }
+/**
+ * Parses the user's first message to extract their name and skill level.
+ * @param {string} text - The user's transcribed message.
+ * @returns {object|null} An object with name and skill, or null if not found.
+ */
+function parseInitialMessage(text) {
+  if (!text) return null;
 
+  const lowerText = text.toLowerCase().trim();
+  const skillLevels = ['beginner', 'intermediate', 'expert'];
+  let extractedName = '';
+  let extractedSkill = '';
+
+  // Look for the name
+  const nameMatch = lowerText.match(/(?:my name is|i'm)\s+([a-z]+)/);
+  if (nameMatch) {
+    // Capitalize the first letter of the name
+    extractedName = nameMatch[1].charAt(0).toUpperCase() + nameMatch[1].slice(1);
+  }
+
+  // Look for the skill level
+  const skillMatch = lowerText.match(/(?:and a|as a)\s+(beginner|intermediate|expert)/);
+  if (skillMatch) {
+    extractedSkill = skillMatch[1];
+  }
+
+  // Return the result only if both are found
+  if (extractedName && extractedSkill) {
+    return { name: extractedName, skill: extractedSkill };
+  }
+
+  return null;
+}
 /**
  * Extracts a student name from the given text using common patterns.
  * @param {string} text - The user's input text.
@@ -632,6 +664,23 @@ app.post("/speakbase", async (req, res) => {
   }
 
   const { text, sessionId, character: frontendCharacter } = value;
+  // This is an example of what to look for and replace.
+// Find the part of your code that handles the first user message.
+// It might look something like this (or similar logic):
+const parsedInfo = parseInitialMessage(userMessage);
+
+if (parsedInfo) {
+  // Use the parsed and corrected data to build the response
+  // The bot response should be dynamically built using the variables
+  const botResponse = `It's lovely to meet you, ${parsedInfo.name}! As a ${parsedInfo.skill} student, how can I help you today?`;
+
+  // Then, send this botResponse to your chatbot logic
+  // e.g., sendToChatbase(botResponse, ...);
+  // or return { text: botResponse, character: 'mcarthur' };
+} else {
+  // If the parsing fails, you can fall back to the old method
+  // or a different response
+}
   const botReplyForSpeech = text;
 
   logger.info(`🔉 /speakbase route hit for session ${sessionId}. Text: "${botReplyForSpeech.substring(0, Math.min(botReplyForSpeech.length, 50))}..."`);
