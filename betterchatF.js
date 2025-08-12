@@ -503,7 +503,7 @@ app.post("/chat", async (req, res) => {
             timestamp: Date.now() // Add timestamp for TTL
         };
         await setSession(sessionId, sessionData);
-        botReplyText = `Welcome to Waterwheel Village, students! I'm Mr. McArthur, your teacher. What's your name, if you'd like to share it? And are you a beginner, intermediate, or expert student?`;
+        botReplyText = `Welcome to Waterwheel Village, students! I'm Mr. McArthur, your teacher. What's your name? Are you a beginner, intermediate, or expert student?`;
         isWelcomeMessage = true;
     }
 // --- Capture Name/Level Logic (if McArthur is speaking and info is missing) ---
