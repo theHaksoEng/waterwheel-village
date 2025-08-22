@@ -1,85 +1,78 @@
+require('dotenv').config();
+
 const express = require("express");
 const axios = require("axios");
-const winston = require("winston");
+const pino = require("pino");
 const axiosRetry = require("axios-retry").default;
-const redis = require("redis");
+const Redis = require("ioredis");
 const { v4: uuidv4 } = require("uuid");
+const cors = require("cors");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const SESSION_TTL = 3600; // 1 hour in seconds
 const MAX_SESSIONS = 1000;
 
-// Logger setup
-const logger = winston.createLogger({
+const logger = pino({
   level: "info",
-  format: winston.format.combine(
-    winston.format.timestamp(),
-    winston.format.json()
-  ),
-  transports: [
-    new winston.transports.File({ filename: "./logs/app.log" }),
-    new winston.transports.Console()
-  ],
+  transport: {
+    target: "pino-pretty",
+    options: { colorize: true }
+  }
 });
 
 logger.info("Express app initialized");
 
-// Redis setup
 let redisClient;
 let useRedis = !!process.env.REDIS_URL;
 
 if (useRedis) {
-  redisClient = redis.createClient({
-    url: process.env.REDIS_URL,
-    socket: { connectTimeout: 10000 },
+  redisClient = new Redis(process.env.REDIS_URL, {
+    tls: {
+      rejectUnauthorized: false, // Temporarily disable strict certificate validation for testing (remove in production)
+    },
+    connectTimeout: 10000,
   });
   redisClient.on("error", (err) => {
     logger.error({ err: err.stack, code: "REDIS_CONNECTION_ERROR" }, "Redis connection error");
     useRedis = false;
   });
-  (async () => {
-    try {
-      await redisClient.connect();
-      logger.info("Successfully connected to Redis");
-    } catch (err) {
-      logger.error({ err: err.stack, code: "REDIS_CONNECT_FAILED" }, "Failed to connect to Redis, falling back to in-memory Map");
-      useRedis = false;
-    }
-  })();
+  redisClient.on("connect", () => {
+    logger.info("Successfully connected to Redis");
+  });
+  redisClient.on("error", (err) => {
+    logger.error({ err: err.stack, code: "REDIS_CONNECT_FAILED" }, "Failed to connect to Redis, falling back to in-memory Map");
+    useRedis = false;
+  });
 } else {
   logger.warn("No REDIS_URL provided, using in-memory Map.");
 }
 
-// In-memory fallback
 const userMemory = new Map();
 const chatMemory = new Map();
 
-// Rate limiting
 const rateLimit = require("express-rate-limit");
 const limiter = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
-  max: 30, // 30 requests per minute per IP
+  windowMs: 60 * 1000,
+  max: 30,
   message: "Too many requests, please try again later.",
 });
 app.use("/chat", limiter);
 
-// Middleware
 app.use(express.json());
+app.use(cors());
 
-// Axios retry setup
 axiosRetry(axios, {
   retries: 3,
   retryDelay: (retryCount) => retryCount * 1000,
   retryCondition: (error) => error.response?.status >= 500,
 });
 
-// Session management
 async function setSession(sessionId, data) {
   try {
     const sessionDataToStore = { ...data, timestamp: Date.now() };
     if (useRedis) {
-      await redisClient.setEx(sessionId, SESSION_TTL, JSON.stringify(sessionDataToStore));
+      await redisClient.set(sessionId, JSON.stringify(sessionDataToStore), "EX", SESSION_TTL);
     } else {
       userMemory.set(sessionId, sessionDataToStore);
       setTimeout(() => {
@@ -125,7 +118,7 @@ async function getSession(sessionId) {
 async function storeChatHistory(sessionId, messages) {
   try {
     if (useRedis) {
-      await redisClient.setEx(`chat:${sessionId}`, SESSION_TTL, JSON.stringify(messages));
+      await redisClient.set(`chat:${sessionId}`, JSON.stringify(messages), "EX", SESSION_TTL);
     } else {
       chatMemory.set(sessionId, messages);
     }
@@ -148,7 +141,6 @@ async function getChatHistory(sessionId) {
   }
 }
 
-// Health endpoint
 app.get("/health", async (req, res) => {
   logger.info("Health check requested");
   const health = {
@@ -169,7 +161,6 @@ app.get("/health", async (req, res) => {
   res.json(health);
 });
 
-// History endpoint
 app.post("/history", async (req, res) => {
   const { sessionId } = req.body;
   if (!sessionId) {
@@ -180,7 +171,6 @@ app.post("/history", async (req, res) => {
   res.json({ messages });
 });
 
-// Chat endpoint
 app.post("/chat", async (req, res) => {
   const { text: rawText, sessionId: providedSessionId } = req.body;
   const sessionId = providedSessionId || uuidv4();
@@ -193,7 +183,6 @@ app.post("/chat", async (req, res) => {
       return res.status(400).json({ error: "Session ID is required" });
     }
 
-    // Skip empty text for ongoing sessions
     let sessionData = await getSession(sessionId);
     if (!sanitizedText && !isWelcomeMessage && sessionData) {
       logger.info(`Session ${sessionId}: Empty text received—skipping Chatbase call`);
@@ -218,7 +207,7 @@ app.post("/chat", async (req, res) => {
       messages.push({ role: "user", content: sanitizedText });
     }
 
-    const prompt = `You are ${character} in Waterwheel Village...`; // Customize as needed
+    const prompt = `You are ${character} in Waterwheel Village...`;
     try {
       const response = await axios.post(
         "https://api.chatbase.io/v1/chat/completions",
@@ -262,7 +251,6 @@ app.post("/chat", async (req, res) => {
   }
 });
 
-// Speakbase endpoint
 app.post("/speakbase", async (req, res) => {
   const { text, sessionId, character } = req.body;
   if (!text || !sessionId) {
@@ -271,7 +259,7 @@ app.post("/speakbase", async (req, res) => {
   }
 
   try {
-    const voiceId = character === "mcarthur" ? "your-voice-id" : "another-voice-id"; // Customize
+    const voiceId = character === "mcarthur" ? "your-voice-id" : "another-voice-id";
     const response = await axios.post(
       `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
       { text, voice_settings: { stability: 0.5, similarity_boost: 0.5 } },
@@ -288,7 +276,6 @@ app.post("/speakbase", async (req, res) => {
   }
 });
 
-// Graceful shutdown
 process.on("SIGTERM", async () => {
   logger.info("Received SIGTERM, gracefully shutting down...");
   if (redisClient && useRedis) {
