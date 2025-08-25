@@ -1,1 +1,1 @@
-{"error":"Failed to generate speech from ElevenLabs.","details":"{\"detail\":{\"status\":\"quota_exceeded\",\"message\":\"This request exceeds your quota of 184781. You have 18 credits remaining, while 32 credits are required for this request.\"}}"}
+{"detail":{"status":"needs_authorization","message":"Neither authorization header nor xi-api-key received, please provide one."}}

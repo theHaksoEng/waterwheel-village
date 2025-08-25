@@ -1,82 +1,71 @@
+// betterchatF.js — CommonJS with async main() (Option A)
 require('dotenv').config();
-
-const express = require("express");
-const axios = require("axios");
-const pino = require("pino");
-const axiosRetry = require("axios-retry").default;
-const Redis = require("ioredis");
-const { v4: uuidv4 } = require("uuid");
-const cors = require("cors");
+console.log('REDIS_URL:', process.env.REDIS_URL);
+const express = require('express');
+const axios = require('axios');
+const winston = require('winston');
+const axiosRetry = require('axios-retry').default;
+const redis = require('redis');
+const { v4: uuidv4 } = require('uuid');
+const rateLimit = require('express-rate-limit');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const SESSION_TTL = 3600; // 1 hour in seconds
 const MAX_SESSIONS = 1000;
 
-const logger = pino({
-  level: "info",
-  transport: {
-    target: "pino-pretty",
-    options: { colorize: true }
-  }
+// ===== Logger setup =====
+const logger = winston.createLogger({
+  level: 'info',
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.json()
+  ),
+  transports: [
+    new winston.transports.File({ filename: './logs/app.log' }),
+    new winston.transports.Console(),
+  ],
 });
 
-logger.info("Express app initialized");
+logger.info('Express app initialized');
 
-let redisClient;
+// ===== Global, set in main() =====
+let redisClient; // will be assigned in main()
 let useRedis = !!process.env.REDIS_URL;
 
-if (useRedis) {
-  redisClient = new Redis(process.env.REDIS_URL, {
-    tls: {
-      rejectUnauthorized: false, // Temporarily disable strict certificate validation for testing (remove in production)
-    },
-    connectTimeout: 10000,
-  });
-  redisClient.on("error", (err) => {
-    logger.error({ err: err.stack, code: "REDIS_CONNECTION_ERROR" }, "Redis connection error");
-    useRedis = false;
-  });
-  redisClient.on("connect", () => {
-    logger.info("Successfully connected to Redis");
-  });
-  redisClient.on("error", (err) => {
-    logger.error({ err: err.stack, code: "REDIS_CONNECT_FAILED" }, "Failed to connect to Redis, falling back to in-memory Map");
-    useRedis = false;
-  });
-} else {
-  logger.warn("No REDIS_URL provided, using in-memory Map.");
-}
-
+// ===== In-memory fallbacks =====
 const userMemory = new Map();
 const chatMemory = new Map();
 
-const rateLimit = require("express-rate-limit");
+// ===== Middleware =====
+app.use(express.json({ limit: '2mb' }));
+
+// Rate limiting (only /chat)
 const limiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 30,
-  message: "Too many requests, please try again later.",
+  windowMs: 60 * 1000, // 1 minute
+  max: 30, // 30 requests per minute per IP
+  message: 'Too many requests, please try again later.',
 });
-app.use("/chat", limiter);
+app.use('/chat', limiter);
 
-app.use(express.json());
-app.use(cors());
-
+// ===== Axios retry setup =====
 axiosRetry(axios, {
   retries: 3,
   retryDelay: (retryCount) => retryCount * 1000,
-  retryCondition: (error) => error.response?.status >= 500,
+  retryCondition: (error) => (error.response?.status || 0) >= 500,
 });
 
+// ===== Session helpers =====
 async function setSession(sessionId, data) {
   try {
     const sessionDataToStore = { ...data, timestamp: Date.now() };
-    if (useRedis) {
-      await redisClient.set(sessionId, JSON.stringify(sessionDataToStore), "EX", SESSION_TTL);
+    if (useRedis && redisClient) {
+      await redisClient.setEx(sessionId, SESSION_TTL, JSON.stringify(sessionDataToStore));
     } else {
       userMemory.set(sessionId, sessionDataToStore);
       setTimeout(() => {
-        if (userMemory.has(sessionId) && (Date.now() - userMemory.get(sessionId).timestamp > SESSION_TTL * 1000)) {
+        const stored = userMemory.get(sessionId);
+        if (stored && Date.now() - stored.timestamp > SESSION_TTL * 1000) {
           userMemory.delete(sessionId);
           chatMemory.delete(sessionId);
           logger.info(`Session ${sessionId}: Expired and deleted from in-memory storage`);
@@ -85,7 +74,7 @@ async function setSession(sessionId, data) {
     }
     logger.info(`Session ${sessionId}: Successfully set data ${JSON.stringify(sessionDataToStore)}`);
   } catch (error) {
-    logger.error({ error: error.stack, code: "SESSION_SET_ERROR" }, `Failed to set session ${sessionId}`);
+    logger.error({ error: error.stack, code: 'SESSION_SET_ERROR' }, `Failed to set session ${sessionId}`);
     throw error;
   }
 }
@@ -93,7 +82,7 @@ async function setSession(sessionId, data) {
 async function getSession(sessionId) {
   try {
     let data;
-    if (useRedis) {
+    if (useRedis && redisClient) {
       const redisData = await redisClient.get(sessionId);
       data = redisData ? JSON.parse(redisData) : null;
     } else {
@@ -107,127 +96,160 @@ async function getSession(sessionId) {
         data = null;
       }
     }
-    logger.info(`Session ${sessionId}: Retrieved data ${JSON.stringify(data) || "none"}`);
+    logger.info(`Session ${sessionId}: Retrieved data ${JSON.stringify(data) || 'none'}`);
     return data || null;
   } catch (error) {
-    logger.error({ error: error.stack, code: "SESSION_GET_ERROR" }, `Failed to get session ${sessionId}`);
+    logger.error({ error: error.stack, code: 'SESSION_GET_ERROR' }, `Failed to get session ${sessionId}`);
     return null;
   }
 }
 
 async function storeChatHistory(sessionId, messages) {
   try {
-    if (useRedis) {
-      await redisClient.set(`chat:${sessionId}`, JSON.stringify(messages), "EX", SESSION_TTL);
+    if (useRedis && redisClient) {
+      await redisClient.setEx(`chat:${sessionId}`, SESSION_TTL, JSON.stringify(messages));
     } else {
       chatMemory.set(sessionId, messages);
     }
     logger.info(`Session ${sessionId}: Chat history stored`);
   } catch (error) {
-    logger.error({ error: error.stack, code: "CHAT_HISTORY_SET_ERROR" }, `Failed to store chat history for ${sessionId}`);
+    logger.error({ error: error.stack, code: 'CHAT_HISTORY_SET_ERROR' }, `Failed to store chat history for ${sessionId}`);
   }
 }
 
 async function getChatHistory(sessionId) {
   try {
-    if (useRedis) {
+    if (useRedis && redisClient) {
       const data = await redisClient.get(`chat:${sessionId}`);
       return data ? JSON.parse(data) : [];
     }
     return chatMemory.get(sessionId) || [];
   } catch (error) {
-    logger.error({ error: error.stack, code: "CHAT_HISTORY_GET_ERROR" }, `Failed to get chat history for ${sessionId}`);
+    logger.error({ error: error.stack, code: 'CHAT_HISTORY_GET_ERROR' }, `Failed to get chat history for ${sessionId}`);
     return [];
   }
 }
 
-app.get("/health", async (req, res) => {
-  logger.info("Health check requested");
+// ===== Health endpoint =====
+app.get('/health', async (req, res) => {
+  logger.info('Health check requested');
   const health = {
-    status: "ok",
+    status: 'ok',
     uptime: process.uptime(),
-    redis: useRedis ? "connected" : "in-memory",
-    sessionCount: useRedis ? await redisClient.dbsize() : userMemory.size,
+    redis: useRedis ? 'connected' : 'in-memory',
+    sessionCount: useRedis && redisClient ? undefined : userMemory.size,
   };
-  if (useRedis) {
+
+  if (useRedis && redisClient) {
     try {
       await redisClient.ping();
-      health.redis = "connected";
+      health.redis = 'connected';
+      if (typeof redisClient.dbsize === 'function') {
+        health.sessionCount = await redisClient.dbsize();
+      }
     } catch (err) {
-      logger.error({ err: err.stack, code: "REDIS_PING_ERROR" }, "Redis ping failed");
-      health.redis = "disconnected";
+      logger.error({ err: err.stack, code: 'REDIS_PING_ERROR' }, 'Redis ping failed');
+      health.redis = 'disconnected';
     }
   }
   res.json(health);
 });
 
-app.post("/history", async (req, res) => {
-  const { sessionId } = req.body;
+// ===== History endpoint =====
+app.post('/history', async (req, res) => {
+  const { sessionId } = req.body || {};
   if (!sessionId) {
-    logger.error({ code: "INVALID_SESSION_ID" }, "No sessionId provided in /history");
-    return res.status(400).json({ error: "Session ID is required" });
+    logger.error({ code: 'INVALID_SESSION_ID' }, 'No sessionId provided in /history');
+    return res.status(400).json({ error: 'Session ID is required' });
   }
   const messages = await getChatHistory(sessionId);
   res.json({ messages });
 });
 
-app.post("/chat", async (req, res) => {
-  const { text: rawText, sessionId: providedSessionId } = req.body;
+// ===== Chat endpoint =====
+app.post('/chat', async (req, res) => {
+  const { text: rawText, sessionId: providedSessionId } = req.body || {};
   const sessionId = providedSessionId || uuidv4();
-  const sanitizedText = rawText ? String(rawText).trim() : "";
+  const sanitizedText = rawText ? String(rawText).trim() : '';
   const isWelcomeMessage = !sanitizedText;
 
   try {
     if (!sessionId) {
-      logger.error({ code: "INVALID_SESSION_ID" }, "No sessionId provided or generated");
-      return res.status(400).json({ error: "Session ID is required" });
+      logger.error({ code: 'INVALID_SESSION_ID' }, 'No sessionId provided or generated');
+      return res.status(400).json({ error: 'Session ID is required' });
     }
 
+    // Skip empty text for ongoing sessions
     let sessionData = await getSession(sessionId);
     if (!sanitizedText && !isWelcomeMessage && sessionData) {
       logger.info(`Session ${sessionId}: Empty text received—skipping Chatbase call`);
-      return res.json({ text: "", character: sessionData.character });
+      return res.json({ text: '', character: sessionData.character });
     }
 
     let messages = await getChatHistory(sessionId);
-    let character = sessionData?.character || "mcarthur";
+    let character = sessionData?.character || 'mcarthur';
 
     if (isWelcomeMessage && !sessionData) {
-      sessionData = { character: "mcarthur", studentName: null, studentLevel: null };
+      sessionData = { character: 'mcarthur', studentName: null, studentLevel: null };
       await setSession(sessionId, sessionData);
       messages.push({
-        role: "assistant",
-        content: "Welcome to Waterwheel Village, students! I'm Mr. McArthur, your teacher. What's your name? Are you a beginner, intermediate, or expert student?",
+        role: 'assistant',
+        content:
+          "Welcome to Waterwheel Village, students! I'm Mr. McArthur, your teacher. What's your name? Are you a beginner, intermediate, or expert student?",
       });
       await storeChatHistory(sessionId, messages);
       return res.json({ text: messages[messages.length - 1].content, character });
     }
 
     if (sanitizedText) {
-      messages.push({ role: "user", content: sanitizedText });
+      messages.push({ role: 'user', content: sanitizedText });
     }
 
-    const prompt = `You are ${character} in Waterwheel Village...`;
+    // ===== Updated Chatbase call with guard, system prompt, and fallback =====
+    const systemPrompt = `You are ${character} in Waterwheel Village. You are a kind ESL teacher. Be brief, encouraging, and correct mistakes gently. Always ask one short follow-up question.`;
+    const outboundMessages = [
+      { role: 'system', content: systemPrompt },
+      ...messages.map(m => ({ role: m.role, content: m.content })),
+    ];
+
+    const key = process.env.CHATBASE_API_KEY;
+    if (!key || key === 'YOUR_CHATBASE_KEY') {
+      const fallback = "Nice to meet you! I heard: '" + sanitizedText + "'. Welcome, let's start with a simple warm-up. Can you say: 'My name is ____. I live in ____.'?";
+      messages.push({ role: 'assistant', content: fallback });
+      await storeChatHistory(sessionId, messages);
+      return res.json({ text: fallback, character, note: 'local-fallback-no-chatbase' });
+    }
+
     try {
       const response = await axios.post(
-        "https://api.chatbase.io/v1/chat/completions",
+        'https://api.chatbase.io/v1/chat/completions',
         {
-          model: "mistral-7b",
-          messages,
+          model: 'mistral-7b',
+          messages: outboundMessages,
           max_tokens: 150,
         },
         {
           headers: {
-            Authorization: `Bearer ${process.env.CHATBASE_API_KEY}`,
+            Authorization: `Bearer ${key}`,
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
           },
           timeout: 30000,
         }
       );
 
-      const responseText = response.data.choices[0].message.content.trim();
-      messages.push({ role: "assistant", content: responseText });
+      const responseText = response?.data?.choices?.[0]?.message?.content?.trim?.() || '';
+      if (!responseText) {
+        logger.warn({ code: 'CHATBASE_EMPTY_REPLY', data: response?.data }, 'Chatbase returned no content; using fallback');
+        const fb = "Thanks, got it! Let’s practice: say, 'I am a beginner. I want to learn about ____.' What topic interests you today?";
+        messages.push({ role: 'assistant', content: fb });
+        await storeChatHistory(sessionId, messages);
+        return res.json({ text: fb, character, note: 'fallback-empty-reply' });
+      }
 
-      if (sanitizedText.includes("my name is") && !sessionData?.studentName) {
+      messages.push({ role: 'assistant', content: responseText });
+
+      if (sanitizedText.includes('my name is') && !sessionData?.studentName) {
         const nameMatch = sanitizedText.match(/my name is (\w+)/i);
         const levelMatch = sanitizedText.match(/I am a (beginner|intermediate|expert)/i);
         sessionData = {
@@ -240,55 +262,125 @@ app.post("/chat", async (req, res) => {
       }
 
       await storeChatHistory(sessionId, messages);
-      res.json({ text: responseText, character });
+      return res.json({ text: responseText, character });
     } catch (error) {
-      logger.error({ error: error.stack, code: "CHATBASE_ERROR" }, "Error calling Chatbase API");
-      res.status(500).json({ error: "Failed to process chat request" });
+      const status = error.response?.status;
+      let body = '';
+      try {
+        body = typeof error.response?.data === 'string' ? error.response.data : JSON.stringify(error.response?.data);
+      } catch {}
+      logger.error({ error: error.stack, code: 'CHATBASE_ERROR', status, body: String(body).slice(0, 500) }, 'Error calling Chatbase API');
+      const fb = "Thanks! I understand. Let’s begin with a short exercise: tell me 3 things about yourself using simple sentences.";
+      messages.push({ role: 'assistant', content: fb });
+      await storeChatHistory(sessionId, messages);
+      return res.json({ text: fb, character, note: 'fallback-upstream-error', upstreamStatus: status });
     }
   } catch (error) {
-    logger.error({ error: error.stack, code: "CHAT_ENDPOINT_ERROR" }, `Error in /chat endpoint for session ${sessionId}`);
-    res.status(500).json({ error: "Internal server error" });
+    logger.error({ error: error.stack, code: 'CHAT_ENDPOINT_ERROR' }, `Error in /chat endpoint for session ${sessionId}`);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-app.post("/speakbase", async (req, res) => {
-  const { text, sessionId, character } = req.body;
+// ===== Speakbase endpoint =====
+app.post('/speakbase', async (req, res) => {
+  const { text, sessionId, character } = req.body || {};
   if (!text || !sessionId) {
-    logger.error({ code: "INVALID_SPEAKBASE_INPUT" }, "Missing text or sessionId in /speakbase");
-    return res.status(400).json({ error: "Text and sessionId are required" });
+    logger.error({ code: 'INVALID_SPEAKBASE_INPUT' }, 'Missing text or sessionId in /speakbase');
+    return res.status(400).json({ error: 'Text and sessionId are required' });
   }
 
   try {
-    const voiceId = character === "mcarthur" ? "your-voice-id" : "another-voice-id";
+    // Map characters to voice IDs; fall back to env VOICE_ID
+    const voiceMap = {
+      mcarthur: process.env.VOICE_ID || 'your-voice-id',
+    };
+    const voiceId = voiceMap[character] || process.env.VOICE_ID || 'your-voice-id';
+
     const response = await axios.post(
       `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
-      { text, voice_settings: { stability: 0.5, similarity_boost: 0.5 } },
+      { text, model_id: 'eleven_multilingual_v2', voice_settings: { stability: 0.5, similarity_boost: 0.5 } },
       {
-        headers: { "xi-api-key": process.env.ELEVENLABS_API_KEY },
-        responseType: "arraybuffer",
+        headers: { 'xi-api-key': process.env.ELEVENLABS_API_KEY, Accept: 'audio/mpeg', 'Content-Type': 'application/json' },
+        responseType: 'arraybuffer',
+        timeout: 60000,
       }
     );
-    res.set("Content-Type", "audio/mpeg");
-    res.send(response.data);
+
+    const buf = Buffer.from(response.data);
+    res.set('Content-Type', 'audio/mpeg');
+    res.set('Content-Length', String(buf.length));
+    res.set('Cache-Control', 'no-store');
+    return res.send(buf);
   } catch (error) {
-    logger.error({ error: error.stack, code: "ELEVENLABS_ERROR" }, "Error calling ElevenLabs API");
-    res.status(500).json({ error: "Failed to generate speech" });
+    const status = error.response?.status;
+    const body = (() => {
+      try { return error.response?.data?.toString?.() || ''; } catch { return ''; }
+    })();
+    logger.error({ error: error.stack, code: 'ELEVENLABS_ERROR', status, body: String(body).slice(0, 500) }, 'Error calling ElevenLabs API');
+    return res.status(502).json({ error: 'Failed to generate speech', upstreamStatus: status });
   }
 });
 
-process.on("SIGTERM", async () => {
-  logger.info("Received SIGTERM, gracefully shutting down...");
-  if (redisClient && useRedis) {
-    try {
+// ===== Graceful shutdown =====
+process.on('SIGTERM', async () => {
+  logger.info('Received SIGTERM, gracefully shutting down...');
+  try {
+    if (redisClient && useRedis) {
       await redisClient.quit();
-      logger.info("Redis connection closed");
-    } catch (err) {
-      logger.error({ err: err.stack, code: "REDIS_QUIT_ERROR" }, "Error closing Redis connection");
+      logger.info('Redis connection closed');
     }
+  } catch (err) {
+    logger.error({ err: err.stack, code: 'REDIS_QUIT_ERROR' }, 'Error closing Redis connection');
+  } finally {
+    process.exit(0);
   }
-  process.exit(0);
 });
 
-app.listen(PORT, () => {
-  logger.info(`Server is running and listening on port ${PORT}`);
+// ===== Async startup (Option A) =====
+async function main() {
+  // Redis setup (optional)
+  if (useRedis) {
+    const MAX_RETRIES = 5;
+    const RETRY_DELAY_MS = 2000;
+    
+    for (let i = 0; i < MAX_RETRIES; i++) {
+      try {
+        redisClient = redis.createClient({
+          url: process.env.REDIS_URL,
+          socket: { 
+            connectTimeout: 10000,
+            pingInterval: 10000, 
+          },
+        });
+        
+        redisClient.on('error', (err) => {
+          logger.error({ err: err.stack, code: 'REDIS_CONNECTION_ERROR' }, 'Redis connection error');
+        });
+        
+        await redisClient.connect();
+        logger.info('Successfully connected to Redis');
+        break; // Exit the loop on successful connection
+      } catch (err) {
+        if (i < MAX_RETRIES - 1) {
+          logger.warn({ code: 'REDIS_CONNECT_RETRY' }, `Failed to connect to Redis, retrying in ${RETRY_DELAY_MS / 1000}s...`);
+          await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
+        } else {
+          logger.error({ err: err.stack, code: 'REDIS_CONNECT_FAILED' }, 'Failed to connect to Redis after multiple retries, falling back to in-memory Map');
+          useRedis = false; // Fallback to in-memory
+        }
+      }
+    }
+  } else {
+    logger.warn('No REDIS_URL provided, using in-memory Map. Consider setting REDIS_URL for persistent session storage.');
+  }
+
+  // Start HTTP server AFTER init completes
+  app.listen(PORT, () => {
+    logger.info(`Server is running and listening on port ${PORT}`);
+  });
+}
+
+main().catch((err) => {
+  logger.error({ err: err.stack, code: 'FATAL_STARTUP' }, 'Fatal startup error');
+  process.exit(1);
 });
