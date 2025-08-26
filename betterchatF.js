@@ -349,7 +349,7 @@ async function main() {
             url: process.env.REDIS_URL,
             socket: { 
                 connectTimeout: 10000,
-                pingInterval: 10000,
+                pingInterval: 5000,
             },
             reconnectStrategy: retries => {
                 return Math.min(retries * 50, 500);
