@@ -7,6 +7,15 @@ const axiosRetry = require('axios-retry').default;
 const redis = require('redis');
 const { v4: uuidv4 } = require('uuid');
 const rateLimit = require('express-rate-limit');
+// ===== Middleware =====
+// Add the CORS middleware here, before your routes
+const corsOptions = {
+  origin: 'https://www.aaronhakso.com',
+  optionsSuccessStatus: 200 // For legacy browser support
+};
+app.use(cors(corsOptions));
+
+app.use(express.json({ limit: '2mb' }));
 
 const app = express();
 const PORT = process.env.PORT || 3000;
