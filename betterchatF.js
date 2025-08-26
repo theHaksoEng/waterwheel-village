@@ -228,7 +228,7 @@ app.post('/chat', async (req, res) => {
 
     try {
       const response = await axios.post(
-        'https://api.chatbase.io/v1/chat/completions',
+        'https://www.chatbase.co/api/v1/chat',
         {
               chatbotId: CHATBOT_ID, // <-- Add this line
           model: 'mistral-7b',
