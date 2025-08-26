@@ -345,13 +345,17 @@ async function main() {
     
     for (let i = 0; i < MAX_RETRIES; i++) {
       try {
-        redisClient = redis.createClient({
-          url: process.env.REDIS_URL,
-          socket: { 
-            connectTimeout: 10000,
-            pingInterval: 10000, 
-          },
-        });
+        // New code to paste
+redisClient = redis.createClient({
+    url: process.env.REDIS_URL,
+    socket: { 
+        connectTimeout: 10000,
+        pingInterval: 10000,
+    },
+    reconnectStrategy: retries => {
+        return Math.min(retries * 50, 500);
+    },
+});
         
         redisClient.on('error', (err) => {
           logger.error({ err: err.stack, code: 'REDIS_CONNECTION_ERROR' }, 'Redis connection error');
