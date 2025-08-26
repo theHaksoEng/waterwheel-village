@@ -28,6 +28,7 @@ const logger = winston.createLogger({
 });
 
 logger.info('Express app initialized');
+const CHATBOT_ID = process.env.CHATBASE_CHATBOT_ID;
 
 // ===== Global, set in main() =====
 let redisClient; // will be assigned in main()
@@ -229,6 +230,7 @@ app.post('/chat', async (req, res) => {
       const response = await axios.post(
         'https://api.chatbase.io/v1/chat/completions',
         {
+              chatbotId: CHATBOT_ID, // <-- Add this line
           model: 'mistral-7b',
           messages: outboundMessages,
           max_tokens: 150,
