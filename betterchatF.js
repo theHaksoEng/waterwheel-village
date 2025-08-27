@@ -185,77 +185,88 @@ app.post('/chat', async (req, res) => {
       return res.status(400).json({ error: 'Session ID is required' });
     }
 
-    // Skip empty text for ongoing sessions
+    // Fetch session
     let sessionData = await getSession(sessionId);
-    if (!sanitizedText && !isWelcomeMessage && sessionData) {
-      logger.info(`Session ${sessionId}: Empty text received—skipping Chatbase call`);
-      return res.json({ text: '', character: sessionData.character });
-    }
-
-    let messages = await getChatHistory(sessionId);
     let character = sessionData?.character || 'mcarthur';
 
+    // Handle welcome message (first time)
     if (isWelcomeMessage && !sessionData) {
       sessionData = { character: 'mcarthur', studentName: null, studentLevel: null };
       await setSession(sessionId, sessionData);
-      messages.push({
-        role: 'assistant',
-        content:
-          "Welcome to Waterwheel Village, students! I'm Mr. McArthur, your teacher. What's your name? Are you a beginner, intermediate, or expert student?",
-      });
-      await storeChatHistory(sessionId, messages);
-      return res.json({ text: messages[messages.length - 1].content, character });
+
+      const welcomeMsg =
+        "Welcome to Waterwheel Village, students! I'm Mr. McArthur, your teacher. What's your name? Are you a beginner, intermediate, or expert student?";
+      await storeChatHistory(sessionId, [{ role: 'assistant', content: welcomeMsg }]);
+
+      return res.json({ text: welcomeMsg, character });
     }
+
+    // Retrieve chat history
+    let messages = await getChatHistory(sessionId);
 
     if (sanitizedText) {
       messages.push({ role: 'user', content: sanitizedText });
+    } else if (!isWelcomeMessage && sessionData) {
+      logger.info(`Session ${sessionId}: Empty text received—skipping Chatbase call`);
+      return res.json({ text: '', character });
     }
 
-    // ===== Updated Chatbase call with guard, system prompt, and fallback =====
+    // Build system + user messages
     const systemPrompt = `You are ${character} in Waterwheel Village. You are a kind ESL teacher. Be brief, encouraging, and correct mistakes gently. Always ask one short follow-up question.`;
     const outboundMessages = [
       { role: 'system', content: systemPrompt },
-      ...messages.map(m => ({ role: m.role, content: m.content })),
+      ...messages,
     ];
 
     const key = process.env.CHATBASE_API_KEY;
-    if (!key || key === 'YOUR_CHATBASE_KEY') {
-      const fallback = "Nice to meet you! I heard: '" + sanitizedText + "'. Welcome, let's start with a simple warm-up. Can you say: 'My name is ____. I live in ____.'?";
+    const CHATBOT_ID = process.env.CHATBASE_CHATBOT_ID;
+
+    if (!key || !CHATBOT_ID) {
+      const fallback =
+        "Nice to meet you! I heard: '" +
+        sanitizedText +
+        "'. Welcome, let's start with a simple warm-up. Can you say: 'My name is ____. I live in ____.'?";
       messages.push({ role: 'assistant', content: fallback });
       await storeChatHistory(sessionId, messages);
       return res.json({ text: fallback, character, note: 'local-fallback-no-chatbase' });
     }
 
+    // ===== Chatbase call =====
     try {
       const response = await axios.post(
         'https://www.chatbase.co/api/v1/integrations/chat',
         {
-              chatbotId: CHATBOT_ID, // <-- Add this line
-          model: 'mistral-7b',
+          chatbotId: CHATBOT_ID,
+          conversationId: sessionId, // keeps conversation alive
           messages: outboundMessages,
-          max_tokens: 150,
         },
         {
           headers: {
             Authorization: `Bearer ${key}`,
             'Content-Type': 'application/json',
-            Accept: 'application/json',
           },
           timeout: 30000,
         }
       );
 
-      const responseText = response?.data?.choices?.[0]?.message?.content?.trim?.() || '';
+      const responseText = response?.data?.output?.trim?.() || '';
+
       if (!responseText) {
-        logger.warn({ code: 'CHATBASE_EMPTY_REPLY', data: response?.data }, 'Chatbase returned no content; using fallback');
-        const fb = "Thanks, got it! Let’s practice: say, 'I am a beginner. I want to learn about ____.' What topic interests you today?";
+        logger.warn(
+          { code: 'CHATBASE_EMPTY_REPLY', data: response?.data },
+          'Chatbase returned no content; using fallback'
+        );
+        const fb =
+          "Thanks, got it! Let’s practice: say, 'I am a beginner. I want to learn about ____.' What topic interests you today?";
         messages.push({ role: 'assistant', content: fb });
         await storeChatHistory(sessionId, messages);
         return res.json({ text: fb, character, note: 'fallback-empty-reply' });
       }
 
+      // Push Chatbase reply into history
       messages.push({ role: 'assistant', content: responseText });
 
+      // Capture student name + level if provided
       if (sanitizedText.includes('my name is') && !sessionData?.studentName) {
         const nameMatch = sanitizedText.match(/my name is (\w+)/i);
         const levelMatch = sanitizedText.match(/I am a (beginner|intermediate|expert)/i);
@@ -274,16 +285,37 @@ app.post('/chat', async (req, res) => {
       const status = error.response?.status;
       let body = '';
       try {
-        body = typeof error.response?.data === 'string' ? error.response.data : JSON.stringify(error.response?.data);
+        body =
+          typeof error.response?.data === 'string'
+            ? error.response.data
+            : JSON.stringify(error.response?.data);
       } catch {}
-      logger.error({ error: error.stack, code: 'CHATBASE_ERROR', status, body: String(body).slice(0, 500) }, 'Error calling Chatbase API');
-      const fb = "Thanks! I understand. Let’s begin with a short exercise: tell me 3 things about yourself using simple sentences.";
+      logger.error(
+        {
+          error: error.stack,
+          code: 'CHATBASE_ERROR',
+          status,
+          body: String(body).slice(0, 500),
+        },
+        'Error calling Chatbase API'
+      );
+
+      const fb =
+        "Thanks! I understand. Let’s begin with a short exercise: tell me 3 things about yourself using simple sentences.";
       messages.push({ role: 'assistant', content: fb });
       await storeChatHistory(sessionId, messages);
-      return res.json({ text: fb, character, note: 'fallback-upstream-error', upstreamStatus: status });
+      return res.json({
+        text: fb,
+        character,
+        note: 'fallback-upstream-error',
+        upstreamStatus: status,
+      });
     }
   } catch (error) {
-    logger.error({ error: error.stack, code: 'CHAT_ENDPOINT_ERROR' }, `Error in /chat endpoint for session ${sessionId}`);
+    logger.error(
+      { error: error.stack, code: 'CHAT_ENDPOINT_ERROR' },
+      `Error in /chat endpoint for session ${sessionId}`
+    );
     res.status(500).json({ error: 'Internal server error' });
   }
 });
