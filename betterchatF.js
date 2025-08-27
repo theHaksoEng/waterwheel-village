@@ -185,11 +185,11 @@ app.post('/chat', async (req, res) => {
       return res.status(400).json({ error: 'Session ID is required' });
     }
 
-    // Fetch session
+    // Get existing session
     let sessionData = await getSession(sessionId);
     let character = sessionData?.character || 'mcarthur';
 
-    // Handle welcome message (first time)
+    // Welcome message for first-time sessions
     if (isWelcomeMessage && !sessionData) {
       sessionData = { character: 'mcarthur', studentName: null, studentLevel: null };
       await setSession(sessionId, sessionData);
@@ -201,7 +201,7 @@ app.post('/chat', async (req, res) => {
       return res.json({ text: welcomeMsg, character });
     }
 
-    // Retrieve chat history
+    // Load chat history
     let messages = await getChatHistory(sessionId);
 
     if (sanitizedText) {
@@ -211,13 +211,14 @@ app.post('/chat', async (req, res) => {
       return res.json({ text: '', character });
     }
 
-    // Build system + user messages
+    // Add system prompt for Chatbase context
     const systemPrompt = `You are ${character} in Waterwheel Village. You are a kind ESL teacher. Be brief, encouraging, and correct mistakes gently. Always ask one short follow-up question.`;
     const outboundMessages = [
       { role: 'system', content: systemPrompt },
       ...messages,
     ];
 
+    // API keys
     const key = process.env.CHATBASE_API_KEY;
     const CHATBOT_ID = process.env.CHATBASE_CHATBOT_ID;
 
@@ -231,13 +232,13 @@ app.post('/chat', async (req, res) => {
       return res.json({ text: fallback, character, note: 'local-fallback-no-chatbase' });
     }
 
-    // ===== Chatbase call =====
+    // ===== Chatbase Call =====
     try {
       const response = await axios.post(
-        'https://www.chatbase.co/api/v1/integrations/chat',
+        'https://www.chatbase.co/api/v1/chat',
         {
           chatbotId: CHATBOT_ID,
-          conversationId: sessionId, // keeps conversation alive
+          conversationId: sessionId,
           messages: outboundMessages,
         },
         {
@@ -249,7 +250,7 @@ app.post('/chat', async (req, res) => {
         }
       );
 
-      const responseText = response?.data?.output?.trim?.() || '';
+      const responseText = response?.data?.text?.trim?.() || '';
 
       if (!responseText) {
         logger.warn(
@@ -263,10 +264,10 @@ app.post('/chat', async (req, res) => {
         return res.json({ text: fb, character, note: 'fallback-empty-reply' });
       }
 
-      // Push Chatbase reply into history
+      // Save Chatbase reply to history
       messages.push({ role: 'assistant', content: responseText });
 
-      // Capture student name + level if provided
+      // Capture student info if mentioned
       if (sanitizedText.includes('my name is') && !sessionData?.studentName) {
         const nameMatch = sanitizedText.match(/my name is (\w+)/i);
         const levelMatch = sanitizedText.match(/I am a (beginner|intermediate|expert)/i);
