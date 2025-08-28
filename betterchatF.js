@@ -2,8 +2,10 @@ require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
 const { v4: uuidv4 } = require('uuid');
+const cors = require('cors');   // ✅ NEW
 
 const app = express();
+app.use(cors());               // ✅ Allow all origins (you can restrict later)
 app.use(express.json());
 
 // ===== Simple in-memory storage (replace with Redis/DB in production) =====
@@ -42,8 +44,8 @@ const voices = {
 function normalize(text) {
   return text
     .toLowerCase()
-    .replace(/[^a-z\s]/g, " ")
-    .replace(/\s+/g, " ")
+    .replace(/[^a-z\s]/g, " ") // remove punctuation
+    .replace(/\s+/g, " ")      // collapse spaces
     .trim();
 }
 
@@ -149,22 +151,8 @@ app.post('/chat', async (req, res) => {
     console.log("=== RAW TEXT ===", responseText);
     console.log("=== DETECTED CHARACTER ===", detectedCharacter);
 
-    // Save assistant reply
     messages.push({ role: 'assistant', content: responseText });
     await storeChatHistory(sessionId, messages);
-
-    // Update session if user gave name/level
-    if (sanitizedText.includes('my name is') && !sessionData?.studentName) {
-      const nameMatch = sanitizedText.match(/my name is (\w+)/i);
-      const levelMatch = sanitizedText.match(/I am a (beginner|intermediate|expert)/i);
-      sessionData = {
-        ...sessionData,
-        studentName: nameMatch ? nameMatch[1] : sessionData?.studentName,
-        studentLevel: levelMatch ? levelMatch[1] : sessionData?.studentLevel,
-        character: detectedCharacter,
-      };
-      await setSession(sessionId, sessionData);
-    }
 
     return res.json({
       text: responseText,
@@ -175,16 +163,11 @@ app.post('/chat', async (req, res) => {
   } catch (error) {
     console.error('Error in /chat:', error.response?.data || error.message);
     const fb = "Thanks! Let’s begin with a short exercise: tell me 3 things about yourself.";
-    return res.json({
-      text: fb,
-      character: 'mcarthur',
-      voiceId: voices.mcarthur,
-      note: 'fallback-error'
-    });
+    return res.json({ text: fb, character: 'mcarthur', voiceId: voices.mcarthur, note: 'fallback-error' });
   }
 });
 
-// ===== /chat-test endpoint =====
+// ===== Debug endpoint =====
 app.get('/chat-test', async (req, res) => {
   try {
     const key = process.env.CHATBASE_API_KEY;
@@ -213,6 +196,11 @@ app.get('/chat-test', async (req, res) => {
       data: error.response?.data || error.message,
     });
   }
+});
+
+// ===== Healthcheck endpoint =====
+app.get('/health', (req, res) => {
+  res.json({ ok: true, status: "Waterwheel backend alive" });
 });
 
 // ===== Start server =====
