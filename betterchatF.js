@@ -83,19 +83,19 @@ app.post('/chat', async (req, res) => {
       return res.status(400).json({ error: 'Session ID is required' });
     }
 
+    // Session defaults
     let sessionData = await getSession(sessionId);
-    let character = sessionData?.character || 'mcarthur';
-
-    // Welcome message
-    if (isWelcomeMessage && !sessionData) {
+    if (!sessionData) {
       sessionData = { character: 'mcarthur', studentName: null, studentLevel: null };
       await setSession(sessionId, sessionData);
+    }
+    let character = sessionData.character;
 
+    // Welcome message
+    if (isWelcomeMessage && !sessionData.studentName) {
       const welcomeMsg =
         "Welcome to Waterwheel Village, students! I'm Mr. McArthur, your teacher. What's your name? Are you a beginner, intermediate, or expert student?";
-
       await storeChatHistory(sessionId, [{ role: 'assistant', content: welcomeMsg }]);
-
       return res.json({
         text: welcomeMsg,
         character: 'mcarthur',
@@ -107,12 +107,6 @@ app.post('/chat', async (req, res) => {
     let messages = await getChatHistory(sessionId);
     if (sanitizedText) {
       messages.push({ role: 'user', content: sanitizedText });
-    } else if (!isWelcomeMessage && sessionData) {
-      return res.json({
-        text: '',
-        character,
-        voiceId: voices[character] || voices.mcarthur
-      });
     }
 
     // Add system prompt
@@ -127,7 +121,6 @@ app.post('/chat', async (req, res) => {
       const fallback = `Nice to meet you! I heard: '${sanitizedText}'. Can you say: 'My name is ____. I live in ____.'?`;
       messages.push({ role: 'assistant', content: fallback });
       await storeChatHistory(sessionId, messages);
-
       return res.json({
         text: fallback,
         character,
@@ -155,13 +148,30 @@ app.post('/chat', async (req, res) => {
 
     const responseText = response?.data?.text?.trim?.() || '';
 
-    // Detect character from reply
-    let detectedCharacter = detectCharacter(responseText, "mcarthur");
+    // Detect character from reply (PERSISTENT)
+    let detectedCharacter = detectCharacter(responseText, sessionData.character || "mcarthur");
+    sessionData.character = detectedCharacter;   // update session character
+    await setSession(sessionId, sessionData);
+
     console.log("=== RAW TEXT ===", responseText);
     console.log("=== DETECTED CHARACTER ===", detectedCharacter);
 
+    // Save assistant reply
     messages.push({ role: 'assistant', content: responseText });
     await storeChatHistory(sessionId, messages);
+
+    // Update session if user gave name/level
+    if (sanitizedText.toLowerCase().includes('my name is') && !sessionData?.studentName) {
+      const nameMatch = sanitizedText.match(/my name is (\w+)/i);
+      const levelMatch = sanitizedText.match(/I am a (beginner|intermediate|expert)/i);
+      sessionData = {
+        ...sessionData,
+        studentName: nameMatch ? nameMatch[1] : sessionData?.studentName,
+        studentLevel: levelMatch ? levelMatch[1] : sessionData?.studentLevel,
+        character: detectedCharacter,
+      };
+      await setSession(sessionId, sessionData);
+    }
 
     return res.json({
       text: responseText,
@@ -175,6 +185,7 @@ app.post('/chat', async (req, res) => {
     return res.json({ text: fb, character: 'mcarthur', voiceId: voices.mcarthur, note: 'fallback-error' });
   }
 });
+
 // ===== /speakbase endpoint =====
 app.post('/speakbase', async (req, res) => {
   try {
