@@ -5,6 +5,17 @@ const { v4: uuidv4 } = require('uuid');
 const cors = require('cors');   // ✅ NEW
 
 const app = express();
+const cors = require('cors');
+
+const corsOptions = {
+  origin: '*',  // or put your site domain instead of *
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions)); // enable preflight for all
+
 app.use(cors());               // ✅ Allow all origins (you can restrict later)
 app.use(express.json());
 
