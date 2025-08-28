@@ -175,6 +175,40 @@ app.post('/chat', async (req, res) => {
     return res.json({ text: fb, character: 'mcarthur', voiceId: voices.mcarthur, note: 'fallback-error' });
   }
 });
+// ===== /speakbase endpoint =====
+app.post('/speakbase', async (req, res) => {
+  try {
+    const { text, voiceId, character } = req.body;
+    if (!text) {
+      return res.status(400).json({ error: "Text is required" });
+    }
+
+    const finalVoiceId = voiceId || voices[character] || voices.default;
+
+    const response = await axios.post(
+      `https://api.elevenlabs.io/v1/text-to-speech/${finalVoiceId}`,
+      {
+        text,
+        voice_settings: { stability: 0.3, similarity_boost: 0.8 }
+      },
+      {
+        headers: {
+          "Accept": "audio/mpeg",
+          "Content-Type": "application/json",
+          "xi-api-key": process.env.ELEVENLABS_API_KEY
+        },
+        responseType: "arraybuffer"
+      }
+    );
+
+    res.setHeader("Content-Type", "audio/mpeg");
+    res.send(response.data);
+  } catch (error) {
+    console.error("Error in /speakbase:", error.response?.data || error.message);
+    res.status(500).json({ error: "Failed to generate speech" });
+  }
+});
+
 
 // ===== Debug endpoint =====
 app.get('/chat-test', async (req, res) => {
