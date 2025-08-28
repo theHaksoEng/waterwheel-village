@@ -2,8 +2,6 @@ require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
 const { v4: uuidv4 } = require('uuid');
-const cors = require('cors');   // ✅ NEW
-
 const app = express();
 const cors = require('cors');
 
