@@ -13,8 +13,7 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions)); // enable preflight for all
-
-app.use(cors());               // ✅ Allow all origins (you can restrict later)
+app.use(cors());
 app.use(express.json());
 
 // ===== Simple in-memory storage (replace with Redis/DB in production) =====
@@ -58,19 +57,26 @@ function normalize(text) {
     .trim();
 }
 
+// ✅ FIXED: persist current speaker if no new one is mentioned
 function detectCharacter(text, fallback = "mcarthur") {
   if (!text) return fallback;
   const lower = normalize(text);
 
-  for (const name of Object.keys(voices)) {
-    if (name === "default") continue;
-    if (lower.includes(name)) {
-      return name;
-    }
-  }
+  // Strong patterns: explicit first-person introductions
+  if (/^fatima[:,]?|^i am fatima|^my name is fatima/.test(lower)) return "fatima";
+  if (/^kwame[:,]?|^i am kwame|^my name is kwame/.test(lower)) return "kwame";
+  if (/^nadia[:,]?|^i am nadia|^my name is nadia/.test(lower)) return "nadia";
+  if (/^ibrahim[:,]?|^i am ibrahim|^my name is ibrahim/.test(lower)) return "ibrahim";
+  if (/^johannes[:,]?|^i am johannes|^my name is johannes/.test(lower)) return "johannes";
+  if (/^aleksanderi[:,]?|^i am aleksanderi|^my name is aleksanderi/.test(lower)) return "aleksanderi";
+  if (/^liang[:,]?|^i am liang|^my name is liang/.test(lower)) return "liang";
+  if (/^anika[:,]?|^i am anika|^my name is anika/.test(lower)) return "anika";
+  if (/^sophia[:,]?|^i am sophia|^my name is sophia/.test(lower)) return "sophia";
+  if (/^mcarthur[:,]?|^i am mcarthur|^my name is mcarthur/.test(lower)) return "mcarthur";
+
+  // Otherwise, stay with current speaker
   return fallback;
 }
-
 // ===== /chat endpoint =====
 app.post('/chat', async (req, res) => {
   const { text: rawText, sessionId: providedSessionId } = req.body || {};
@@ -94,12 +100,12 @@ app.post('/chat', async (req, res) => {
     // Welcome message
     if (isWelcomeMessage && !sessionData.studentName) {
       const welcomeMsg =
-        "Welcome to Waterwheel Village, students! I'm Mr. McArthur, your teacher. What's your name? Are you a beginner, intermediate, or expert student?";
+        "Welcome to Waterwheel Village, students! I'm Mr. McArthur, friend. What's your name? Are you a beginner, intermediate, or expert student?";
       await storeChatHistory(sessionId, [{ role: 'assistant', content: welcomeMsg }]);
       return res.json({
         text: welcomeMsg,
         character: 'mcarthur',
-        voiceId: voices.mcarthur
+        voiceId: voices.mcarthur 
       });
     }
 
@@ -148,7 +154,7 @@ app.post('/chat', async (req, res) => {
 
     const responseText = response?.data?.text?.trim?.() || '';
 
-    // Detect character from reply (PERSISTENT)
+    // ✅ Persist character unless another is explicitly named
     let detectedCharacter = detectCharacter(responseText, sessionData.character || "mcarthur");
     sessionData.character = detectedCharacter;   // update session character
     await setSession(sessionId, sessionData);
@@ -219,7 +225,6 @@ app.post('/speakbase', async (req, res) => {
     res.status(500).json({ error: "Failed to generate speech" });
   }
 });
-
 
 // ===== Debug endpoint =====
 app.get('/chat-test', async (req, res) => {
