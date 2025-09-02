@@ -103,10 +103,12 @@ app.post('/chat', async (req, res) => {
         "Welcome to Waterwheel Village, friends! I'm Mr. McArthur. What's your name? Are you a beginner, intermediate, or expert student?";
       await storeChatHistory(sessionId, [{ role: 'assistant', content: welcomeMsg }]);
       return res.json({
-        text: welcomeMsg,
-        character: 'mcarthur',
-        voiceId: voices.mcarthur 
-      });
+  text: responseText,
+  character: detectedCharacter,
+  voiceId: voices[detectedCharacter] || voices.mcarthur,
+  level: sessionData.studentLevel || null   // ✅ add level so frontend shows badge
+});
+
     }
 
     // Load history
@@ -167,17 +169,20 @@ app.post('/chat', async (req, res) => {
     await storeChatHistory(sessionId, messages);
 
     // Update session if user gave name/level
-    if (sanitizedText.toLowerCase().includes('my name is') && !sessionData?.studentName) {
-      const nameMatch = sanitizedText.match(/my name is (\w+)/i);
-      const levelMatch = sanitizedText.match(/I am a (beginner|intermediate|expert)/i);
-      sessionData = {
-        ...sessionData,
-        studentName: nameMatch ? nameMatch[1] : sessionData?.studentName,
-        studentLevel: levelMatch ? levelMatch[1] : sessionData?.studentLevel,
-        character: detectedCharacter,
-      };
-      await setSession(sessionId, sessionData);
-    }
+    // Update session if user gave name and/or level
+if (sanitizedText.toLowerCase().includes('my name is') || sanitizedText.toLowerCase().includes('i am')) {
+  const nameMatch = sanitizedText.match(/my name is (\w+)/i);
+  const levelMatch = sanitizedText.match(/i am (a )?(beginner|intermediate|expert)/i);
+
+  sessionData = {
+    ...sessionData,
+    studentName: nameMatch ? nameMatch[1] : sessionData?.studentName,
+    studentLevel: levelMatch ? levelMatch[2].toLowerCase() : sessionData?.studentLevel,
+    character: detectedCharacter,
+  };
+
+  await setSession(sessionId, sessionData);
+}
 
     return res.json({
       text: responseText,
