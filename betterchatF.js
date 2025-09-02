@@ -62,21 +62,23 @@ function detectCharacter(text, fallback = "mcarthur") {
   if (!text) return fallback;
   const lower = normalize(text);
 
-  // Strong patterns: explicit first-person introductions
-  if (/^fatima[:,]?|^i am fatima|^my name is fatima/.test(lower)) return "fatima";
-  if (/^kwame[:,]?|^i am kwame|^my name is kwame/.test(lower)) return "kwame";
-  if (/^nadia[:,]?|^i am nadia|^my name is nadia/.test(lower)) return "nadia";
-  if (/^ibrahim[:,]?|^i am ibrahim|^my name is ibrahim/.test(lower)) return "ibrahim";
-  if (/^johannes[:,]?|^i am johannes|^my name is johannes/.test(lower)) return "johannes";
-  if (/^aleksanderi[:,]?|^i am aleksanderi|^my name is aleksanderi/.test(lower)) return "aleksanderi";
-  if (/^liang[:,]?|^i am liang|^my name is liang/.test(lower)) return "liang";
-  if (/^anika[:,]?|^i am anika|^my name is anika/.test(lower)) return "anika";
-  if (/^sophia[:,]?|^i am sophia|^my name is sophia/.test(lower)) return "sophia";
-  if (/^mcarthur[:,]?|^i am mcarthur|^my name is mcarthur/.test(lower)) return "mcarthur";
+  // Strong patterns: explicit mentions of a character introducing themselves
+  if (lower.includes("i am fatima") || lower.includes("my name is fatima") || lower.includes("greetings") && lower.includes("fatima")) return "fatima";
+  if (lower.includes("i am kwame")  || lower.includes("my name is kwame")  || lower.includes("greetings") && lower.includes("kwame"))  return "kwame";
+  if (lower.includes("i am nadia")  || lower.includes("my name is nadia")  || lower.includes("greetings") && lower.includes("nadia"))  return "nadia";
+  if (lower.includes("i am ibrahim")|| lower.includes("my name is ibrahim")|| lower.includes("greetings") && lower.includes("ibrahim"))return "ibrahim";
+  if (lower.includes("i am johannes")||lower.includes("my name is johannes")||lower.includes("greetings") && lower.includes("johannes"))return "johannes";
+  if (lower.includes("i am aleksanderi")||lower.includes("my name is aleksanderi")||lower.includes("greetings") && lower.includes("aleksanderi"))return "aleksanderi";
+  if (lower.includes("i am liang")  || lower.includes("my name is liang")  || lower.includes("greetings") && lower.includes("liang"))  return "liang";
+  if (lower.includes("i am anika")  || lower.includes("my name is anika")  || lower.includes("greetings") && lower.includes("anika"))  return "anika";
+  if (lower.includes("i am sophia") || lower.includes("my name is sophia") || lower.includes("greetings") && lower.includes("sophia")) return "sophia";
+  if (lower.includes("i am mcarthur")||lower.includes("my name is mcarthur")||lower.includes("greetings") && lower.includes("mcarthur"))return "mcarthur";
 
-  // Otherwise, stay with current speaker
+  // Otherwise stick with whoever was last speaking
   return fallback;
 }
+
+
 // ===== /chat endpoint =====
 app.post('/chat', async (req, res) => {
   const { text: rawText, sessionId: providedSessionId } = req.body || {};
@@ -100,7 +102,7 @@ app.post('/chat', async (req, res) => {
     // Welcome message
     if (isWelcomeMessage && !sessionData.studentName) {
       const welcomeMsg =
-        "Welcome to Waterwheel Village, students! I'm Mr. McArthur, friend. What's your name? Are you a beginner, intermediate, or expert student?";
+        "Welcome to Waterwheel Village, friends! I'm Mr. McArthur. What's your name? Are you a beginner, intermediate, or expert student?";
       await storeChatHistory(sessionId, [{ role: 'assistant', content: welcomeMsg }]);
       return res.json({
         text: welcomeMsg,
