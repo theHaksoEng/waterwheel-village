@@ -60,24 +60,22 @@ function normalize(text) {
 // ✅ FIXED: persist current speaker if no new one is mentioned
 function detectCharacter(text, fallback = "mcarthur") {
   if (!text) return fallback;
-  const lower = normalize(text);
+  const lower = text.toLowerCase();
 
-  // Strong patterns: explicit mentions of a character introducing themselves
-  if (lower.includes("i am fatima") || lower.includes("my name is fatima") || lower.includes("greetings") && lower.includes("fatima")) return "fatima";
-  if (lower.includes("i am kwame")  || lower.includes("my name is kwame")  || lower.includes("greetings") && lower.includes("kwame"))  return "kwame";
-  if (lower.includes("i am nadia")  || lower.includes("my name is nadia")  || lower.includes("greetings") && lower.includes("nadia"))  return "nadia";
-  if (lower.includes("i am ibrahim")|| lower.includes("my name is ibrahim")|| lower.includes("greetings") && lower.includes("ibrahim"))return "ibrahim";
-  if (lower.includes("i am johannes")||lower.includes("my name is johannes")||lower.includes("greetings") && lower.includes("johannes"))return "johannes";
-  if (lower.includes("i am aleksanderi")||lower.includes("my name is aleksanderi")||lower.includes("greetings") && lower.includes("aleksanderi"))return "aleksanderi";
-  if (lower.includes("i am liang")  || lower.includes("my name is liang")  || lower.includes("greetings") && lower.includes("liang"))  return "liang";
-  if (lower.includes("i am anika")  || lower.includes("my name is anika")  || lower.includes("greetings") && lower.includes("anika"))  return "anika";
-  if (lower.includes("i am sophia") || lower.includes("my name is sophia") || lower.includes("greetings") && lower.includes("sophia")) return "sophia";
-  if (lower.includes("i am mcarthur")||lower.includes("my name is mcarthur")||lower.includes("greetings") && lower.includes("mcarthur"))return "mcarthur";
+  // Match "i am ___", "my name is ___", or explicit names anywhere
+  if (/(^|\s)(i am|my name is)\s+fatima/.test(lower) || /fatima[:,]?/.test(lower)) return "fatima";
+  if (/(^|\s)(i am|my name is)\s+kwame/.test(lower) || /kwame[:,]?/.test(lower)) return "kwame";
+  if (/(^|\s)(i am|my name is)\s+nadia/.test(lower) || /nadia[:,]?/.test(lower)) return "nadia";
+  if (/(^|\s)(i am|my name is)\s+ibrahim/.test(lower) || /ibrahim[:,]?/.test(lower)) return "ibrahim";
+  if (/(^|\s)(i am|my name is)\s+johannes/.test(lower) || /johannes[:,]?/.test(lower)) return "johannes";
+  if (/(^|\s)(i am|my name is)\s+aleksanderi/.test(lower) || /aleksanderi[:,]?/.test(lower)) return "aleksanderi";
+  if (/(^|\s)(i am|my name is)\s+liang/.test(lower) || /liang[:,]?/.test(lower)) return "liang";
+  if (/(^|\s)(i am|my name is)\s+anika/.test(lower) || /anika[:,]?/.test(lower)) return "anika";
+  if (/(^|\s)(i am|my name is)\s+sophia/.test(lower) || /sophia[:,]?/.test(lower)) return "sophia";
+  if (/(^|\s)(i am|my name is)\s+mcarthur/.test(lower) || /mcarthur[:,]?/.test(lower)) return "mcarthur";
 
-  // Otherwise stick with whoever was last speaking
-  return fallback;
+  return fallback; // stay with whoever was speaking before
 }
-
 
 // ===== /chat endpoint =====
 app.post('/chat', async (req, res) => {
