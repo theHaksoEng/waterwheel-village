@@ -116,9 +116,23 @@ app.post('/chat', async (req, res) => {
     }
 
     // Build system prompt
-    const systemPrompt = `You are ${character} in Waterwheel Village. 
-    You are a kind ESL teacher. Be brief, encouraging, and correct mistakes gently. 
-    Always ask one short follow-up question.`;
+    let levelInstruction = "";
+if (sessionData.studentLevel === "beginner") {
+  levelInstruction = "Use very simple words and short sentences. Teach around 100 new words per week. Repeat and encourage often.";
+} else if (sessionData.studentLevel === "intermediate") {
+  levelInstruction = "Use normal conversational English. Introduce some new words and grammar corrections. Keep the flow interactive.";
+} else if (sessionData.studentLevel === "expert") {
+  levelInstruction = "Challenge the student with advanced vocabulary, idioms, and storytelling. Encourage natural conversation, debates, and deeper cultural topics.";
+}
+
+const systemPrompt = `
+You are ${character} in Waterwheel Village. 
+You are a kind ESL teacher. Be brief, encouraging, and correct mistakes gently. 
+Always ask one short follow-up question.
+Adapt your difficulty to the student: ${sessionData.studentLevel || "unknown"}.
+${levelInstruction}
+`;
+
     const outboundMessages = [{ role: 'system', content: systemPrompt }, ...messages];
 
     // Check Chatbase keys
