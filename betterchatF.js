@@ -89,7 +89,7 @@ app.post('/chat', async (req, res) => {
       return res.status(400).json({ error: 'Session ID is required' });
     }
 
-    // Session defaults
+    // Load or initialize session
     let sessionData = await getSession(sessionId);
     if (!sessionData) {
       sessionData = { character: 'mcarthur', studentName: null, studentLevel: null };
@@ -97,34 +97,33 @@ app.post('/chat', async (req, res) => {
     }
     let character = sessionData.character;
 
-    // Welcome message
+    // Handle welcome case
     if (isWelcomeMessage && !sessionData.studentName) {
       const welcomeMsg =
         "Welcome to Waterwheel Village, friends! I'm Mr. McArthur. What's your name? Are you a beginner, intermediate, or expert student?";
       await storeChatHistory(sessionId, [{ role: 'assistant', content: welcomeMsg }]);
       return res.json({
-  text: responseText,
-  character: detectedCharacter,
-  voiceId: voices[detectedCharacter] || voices.mcarthur,
-  level: sessionData.studentLevel || null   // ✅ add level so frontend shows badge
-});
-
+        text: welcomeMsg,
+        character: 'mcarthur',
+        voiceId: voices.mcarthur 
+      });
     }
 
-    // Load history
+    // Load history & add user input
     let messages = await getChatHistory(sessionId);
     if (sanitizedText) {
       messages.push({ role: 'user', content: sanitizedText });
     }
 
-    // Add system prompt
-    const systemPrompt = `You are ${character} in Waterwheel Village. You are a kind ESL teacher. Be brief, encouraging, and correct mistakes gently. Always ask one short follow-up question.`;
+    // Build system prompt
+    const systemPrompt = `You are ${character} in Waterwheel Village. 
+    You are a kind ESL teacher. Be brief, encouraging, and correct mistakes gently. 
+    Always ask one short follow-up question.`;
     const outboundMessages = [{ role: 'system', content: systemPrompt }, ...messages];
 
-    // API keys
+    // Check Chatbase keys
     const key = process.env.CHATBASE_API_KEY;
     const CHATBOT_ID = process.env.CHATBASE_CHATBOT_ID;
-
     if (!key || !CHATBOT_ID) {
       const fallback = `Nice to meet you! I heard: '${sanitizedText}'. Can you say: 'My name is ____. I live in ____.'?`;
       messages.push({ role: 'assistant', content: fallback });
@@ -154,40 +153,37 @@ app.post('/chat', async (req, res) => {
       }
     );
 
+    // ✅ Now responseText is defined properly
     const responseText = response?.data?.text?.trim?.() || '';
 
-    // ✅ Persist character unless another is explicitly named
+    // Detect speaker & update session
     let detectedCharacter = detectCharacter(responseText, sessionData.character || "mcarthur");
-    sessionData.character = detectedCharacter;   // update session character
+    sessionData.character = detectedCharacter;
+
+    // Update student info if available
+    if (sanitizedText.toLowerCase().includes("my name is")) {
+      const nameMatch = sanitizedText.match(/my name is (\w+)/i);
+      const levelMatch = sanitizedText.match(/i am (a )?(beginner|intermediate|expert)/i);
+      sessionData.studentName = nameMatch ? nameMatch[1] : sessionData.studentName;
+      sessionData.studentLevel = levelMatch ? levelMatch[2].toLowerCase() : sessionData.studentLevel;
+    }
+
     await setSession(sessionId, sessionData);
 
     console.log("=== RAW TEXT ===", responseText);
     console.log("=== DETECTED CHARACTER ===", detectedCharacter);
+    if (sessionData.studentName) console.log("=== STUDENT NAME ===", sessionData.studentName);
+    if (sessionData.studentLevel) console.log("=== STUDENT LEVEL ===", sessionData.studentLevel);
 
     // Save assistant reply
     messages.push({ role: 'assistant', content: responseText });
     await storeChatHistory(sessionId, messages);
 
-    // Update session if user gave name/level
-    // Update session if user gave name and/or level
-if (sanitizedText.toLowerCase().includes('my name is') || sanitizedText.toLowerCase().includes('i am')) {
-  const nameMatch = sanitizedText.match(/my name is (\w+)/i);
-  const levelMatch = sanitizedText.match(/i am (a )?(beginner|intermediate|expert)/i);
-
-  sessionData = {
-    ...sessionData,
-    studentName: nameMatch ? nameMatch[1] : sessionData?.studentName,
-    studentLevel: levelMatch ? levelMatch[2].toLowerCase() : sessionData?.studentLevel,
-    character: detectedCharacter,
-  };
-
-  await setSession(sessionId, sessionData);
-}
-
     return res.json({
       text: responseText,
       character: detectedCharacter,
-      voiceId: voices[detectedCharacter] || voices.mcarthur
+      voiceId: voices[detectedCharacter] || voices.mcarthur,
+      level: sessionData.studentLevel || null
     });
 
   } catch (error) {
