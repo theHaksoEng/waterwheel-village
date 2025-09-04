@@ -204,11 +204,12 @@ app.post('/speakbase', async (req, res) => {
 });
 
 // ===== Word list & quiz endpoints =====
+// ===== Word list & quiz endpoints =====
 app.get('/wordlist/:week/:level', (req, res) => {
   const { week, level } = req.params;
   const data = wordLists[`week${week}`]?.[level];
   if (!data) return res.status(404).json({ error: "Word list not found" });
-  res.json({ week, level, words: data });
+  res.json(data);
 });
 
 app.get('/quiz/:week/:level', (req, res) => {
@@ -216,13 +217,15 @@ app.get('/quiz/:week/:level', (req, res) => {
   const data = wordLists[`week${week}`]?.[level];
   if (!data) return res.status(404).json({ error: "Quiz data not found" });
 
-  // 🎯 Pick 5 random words (or fewer if list < 5)
-  const shuffled = [...data].sort(() => 0.5 - Math.random());
-  const quizSet = shuffled.slice(0, 5);
+  // return 5 random words, not just 1
+  const quizSample = [];
+  for (let i = 0; i < 5; i++) {
+    const randomWord = data[Math.floor(Math.random() * data.length)];
+    quizSample.push(randomWord);
+  }
 
-  res.json({ week, level, quiz: quizSet });
+  res.json(quizSample);
 });
-
 
 // ===== Healthcheck endpoint =====
 app.get('/health', (req, res) => { res.json({ ok: true, status: "Waterwheel backend alive" }); });
