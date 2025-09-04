@@ -208,8 +208,9 @@ app.get('/wordlist/:week/:level', (req, res) => {
   const { week, level } = req.params;
   const data = wordLists[`week${week}`]?.[level];
   if (!data) return res.status(404).json({ error: "Word list not found" });
-  res.json(data);
+  res.json({ week, level, words: data });
 });
+
 
 app.get('/quiz/:week/:level', (req, res) => {
   const { week, level } = req.params;
