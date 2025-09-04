@@ -211,14 +211,18 @@ app.get('/wordlist/:week/:level', (req, res) => {
   res.json({ week, level, words: data });
 });
 
-
 app.get('/quiz/:week/:level', (req, res) => {
   const { week, level } = req.params;
   const data = wordLists[`week${week}`]?.[level];
   if (!data) return res.status(404).json({ error: "Quiz data not found" });
-  const randomWord = data[Math.floor(Math.random() * data.length)];
-  res.json(randomWord);
+
+  // 🎯 Pick 5 random words (or fewer if list < 5)
+  const shuffled = [...data].sort(() => 0.5 - Math.random());
+  const quizSet = shuffled.slice(0, 5);
+
+  res.json({ week, level, quiz: quizSet });
 });
+
 
 // ===== Healthcheck endpoint =====
 app.get('/health', (req, res) => { res.json({ ok: true, status: "Waterwheel backend alive" }); });
