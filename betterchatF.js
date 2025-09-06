@@ -95,6 +95,174 @@ const wordLists = {
       { eng: "night", fin: "yö" },
       { eng: "morning", fin: "aamu" },
       { eng: "evening", fin: "ilta" }
+    ],
+    intermediate: [
+      { eng: "uncle", fin: "setä / eno" },
+      { eng: "aunt", fin: "täti" },
+      { eng: "cousin", fin: "serkku" },
+      { eng: "nephew", fin: "veljen-/siskonpoika" },
+      { eng: "niece", fin: "veljen-/siskontytär" },
+      { eng: "neighbour", fin: "naapuri" },
+      { eng: "baby", fin: "vauva" },
+      { eng: "husband", fin: "aviomies" },
+      { eng: "wife", fin: "vaimo" },
+      { eng: "relative", fin: "sukulainen" },
+      { eng: "address", fin: "osoite" },
+      { eng: "village", fin: "kylä" },
+      { eng: "town", fin: "kaupunki" },
+      { eng: "country", fin: "maa" },
+      { eng: "world", fin: "maailma" },
+      { eng: "earth", fin: "maa / maapallo" },
+      { eng: "sky", fin: "taivas" },
+      { eng: "sun", fin: "aurinko" },
+      { eng: "moon", fin: "kuu" },
+      { eng: "star", fin: "tähti" },
+      { eng: "weather", fin: "sää" },
+      { eng: "rain", fin: "sade" },
+      { eng: "snow", fin: "lumi" },
+      { eng: "wind", fin: "tuuli" },
+      { eng: "cold", fin: "kylmä" },
+      { eng: "warm", fin: "lämmin" },
+      { eng: "hot", fin: "kuuma" },
+      { eng: "clothes", fin: "vaatteet" },
+      { eng: "shirt", fin: "paita" },
+      { eng: "pants", fin: "housut" },
+      { eng: "dress", fin: "mekko" },
+      { eng: "shoes", fin: "kengät" },
+      { eng: "coat", fin: "takki" },
+      { eng: "hat", fin: "hattu" },
+      { eng: "train", fin: "juna" },
+      { eng: "airplane", fin: "lentokone" },
+      { eng: "ship", fin: "laiva" },
+      { eng: "station", fin: "asema" },
+      { eng: "airport", fin: "lentokenttä" },
+      { eng: "ticket", fin: "lippu" },
+      { eng: "travel", fin: "matkustaa" },
+      { eng: "journey", fin: "matka" },
+      { eng: "work", fin: "työ" },
+      { eng: "job", fin: "ammatti / työ" },
+      { eng: "office", fin: "toimisto" },
+      { eng: "factory", fin: "tehdas" },
+      { eng: "computer", fin: "tietokone" },
+      { eng: "phone", fin: "puhelin" },
+      { eng: "message", fin: "viesti" },
+      { eng: "language", fin: "kieli" },
+      { eng: "English", fin: "englanti" },
+      { eng: "Finnish", fin: "suomi" },
+      { eng: "question", fin: "kysymys" },
+      { eng: "answer", fin: "vastaus" },
+      { eng: "example", fin: "esimerkki" },
+      { eng: "story", fin: "tarina" },
+      { eng: "song", fin: "laulu" },
+      { eng: "music", fin: "musiikki" },
+      { eng: "friend", fin: "ystävä" },
+      { eng: "people", fin: "ihmiset" },
+      { eng: "man", fin: "mies" },
+      { eng: "woman", fin: "nainen" },
+      { eng: "young", fin: "nuori" },
+      { eng: "old", fin: "vanha" },
+      { eng: "happy", fin: "iloinen" },
+      { eng: "sad", fin: "surullinen" },
+      { eng: "big", fin: "iso" },
+      { eng: "small", fin: "pieni" },
+      { eng: "good", fin: "hyvä" },
+      { eng: "bad", fin: "huono" },
+      { eng: "beautiful", fin: "kaunis" },
+      { eng: "ugly", fin: "ruma" },
+      { eng: "easy", fin: "helppo" },
+      { eng: "difficult", fin: "vaikea" }
+    ],
+    expert: [
+      { eng: "generation", fin: "sukupolvi" },
+      { eng: "ancestor", fin: "esi-isä" },
+      { eng: "descendant", fin: "jälkeläinen" },
+      { eng: "heritage", fin: "perintö" },
+      { eng: "civilization", fin: "sivistys" },
+      { eng: "architecture", fin: "arkkitehtuuri" },
+      { eng: "philosophy", fin: "filosofia" },
+      { eng: "tradition", fin: "perinne" },
+      { eng: "responsibility", fin: "vastuu" },
+      { eng: "community", fin: "yhteisö" },
+      { eng: "society", fin: "yhteiskunta" },
+      { eng: "politics", fin: "politiikka" },
+      { eng: "government", fin: "hallitus" },
+      { eng: "freedom", fin: "vapaus" },
+      { eng: "justice", fin: "oikeudenmukaisuus" },
+      { eng: "equality", fin: "tasa-arvo" },
+      { eng: "environment", fin: "ympäristö" },
+      { eng: "pollution", fin: "saastuminen" },
+      { eng: "sustainability", fin: "kestävyys" },
+      { eng: "energy", fin: "energia" },
+      { eng: "electricity", fin: "sähkö" },
+      { eng: "invention", fin: "keksintö" },
+      { eng: "discovery", fin: "löytö" },
+      { eng: "knowledge", fin: "tieto" },
+      { eng: "wisdom", fin: "viisaus" },
+      { eng: "education", fin: "koulutus" },
+      { eng: "university", fin: "yliopisto" },
+      { eng: "research", fin: "tutkimus" },
+      { eng: "medicine", fin: "lääketiede" },
+      { eng: "disease", fin: "sairaus" },
+      { eng: "health", fin: "terveys" },
+      { eng: "treatment", fin: "hoito" },
+      { eng: "science", fin: "tiede" },
+      { eng: "experiment", fin: "koe" },
+      { eng: "result", fin: "tulos" },
+      { eng: "machine", fin: "kone" },
+      { eng: "technology", fin: "teknologia" },
+      { eng: "industry", fin: "teollisuus" },
+      { eng: "economy", fin: "talous" },
+      { eng: "business", fin: "liiketoiminta" },
+      { eng: "company", fin: "yritys" },
+      { eng: "market", fin: "markkinat" },
+      { eng: "customer", fin: "asiakas" },
+      { eng: "service", fin: "palvelu" },
+      { eng: "product", fin: "tuote" },
+      { eng: "price", fin: "hinta" },
+      { eng: "value", fin: "arvo" },
+      { eng: "competition", fin: "kilpailu" },
+      { eng: "success", fin: "menestys" },
+      { eng: "failure", fin: "epäonnistuminen" },
+      { eng: "opportunity", fin: "mahdollisuus" },
+      { eng: "challenge", fin: "haaste" },
+      { eng: "future", fin: "tulevaisuus" },
+      { eng: "past", fin: "mennyt" },
+      { eng: "present", fin: "nykyhetki" },
+      { eng: "history", fin: "historia" },
+      { eng: "culture", fin: "kulttuuri" },
+      { eng: "literature", fin: "kirjallisuus" },
+      { eng: "art", fin: "taide" },
+      { eng: "painting", fin: "maalaus" },
+      { eng: "sculpture", fin: "veistos" },
+      { eng: "music", fin: "musiikki" },
+      { eng: "poetry", fin: "runous" },
+      { eng: "novel", fin: "romaani" },
+      { eng: "theater", fin: "teatteri" },
+      { eng: "cinema", fin: "elokuva" },
+      { eng: "religion", fin: "uskonto" },
+      { eng: "belief", fin: "usko" },
+      { eng: "faith", fin: "usko" },
+      { eng: "hope", fin: "toivo" },
+      { eng: "love", fin: "rakkaus" },
+      { eng: "friendship", fin: "ystävyys" },
+      { eng: "marriage", fin: "avioliitto" },
+      { eng: "family", fin: "perhe" },
+      { eng: "society", fin: "yhteiskunta" },
+      { eng: "individual", fin: "yksilö" },
+      { eng: "personality", fin: "persoonallisuus" },
+      { eng: "character", fin: "luonne" },
+      { eng: "emotion", fin: "tunne" },
+      { eng: "intelligence", fin: "älykkyys" },
+      { eng: "imagination", fin: "mielikuvitus" },
+      { eng: "memory", fin: "muisti" },
+      { eng: "dream", fin: "uni / unelma" },
+      { eng: "goal", fin: "tavoite" },
+      { eng: "decision", fin: "päätös" },
+      { eng: "choice", fin: "valinta" },
+      { eng: "plan", fin: "suunnitelma" },
+      { eng: "change", fin: "muutos" },
+      { eng: "development", fin: "kehitys" },
+      { eng: "progress", fin: "edistys" }
     ]
   }
 };
@@ -204,7 +372,6 @@ app.post('/speakbase', async (req, res) => {
 });
 
 // ===== Word list & quiz endpoints =====
-// ===== Word list & quiz endpoints =====
 app.get('/wordlist/:week/:level', (req, res) => {
   const { week, level } = req.params;
   const data = wordLists[`week${week}`]?.[level];
@@ -212,19 +379,19 @@ app.get('/wordlist/:week/:level', (req, res) => {
   res.json(data);
 });
 
+// ===== Quiz endpoint =====
 app.get('/quiz/:week/:level', (req, res) => {
   const { week, level } = req.params;
   const data = wordLists[`week${week}`]?.[level];
   if (!data) return res.status(404).json({ error: "Quiz data not found" });
 
-  // return 5 random words, not just 1
-  const quizSample = [];
-  for (let i = 0; i < 5; i++) {
-    const randomWord = data[Math.floor(Math.random() * data.length)];
-    quizSample.push(randomWord);
-  }
+  // Pick 5 random words
+  const sample = [...data]
+    .sort(() => 0.5 - Math.random())
+    .slice(0, 5)
+    .map(item => ({ eng: item.eng })); // 👈 Only return ENG word
 
-  res.json(quizSample);
+  res.json(sample);
 });
 
 // ===== Healthcheck endpoint =====
