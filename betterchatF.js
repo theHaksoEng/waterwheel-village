@@ -385,13 +385,14 @@ app.get('/quiz/:week/:level', (req, res) => {
   const data = wordLists[`week${week}`]?.[level];
   if (!data) return res.status(404).json({ error: "Quiz data not found" });
 
-  // Pick 5 random words
-  const sample = [...data]
-    .sort(() => 0.5 - Math.random())
-    .slice(0, 5)
-    .map(item => ({ eng: item.eng })); // 👈 Only return ENG word
+  // Shuffle and pick 5 words
+  const shuffled = [...data].sort(() => 0.5 - Math.random());
+  const quizQuestions = shuffled.slice(0, 5).map(item => ({
+    fin: item.fin,    // show Finnish as the question
+    eng: item.eng     // expected English answer
+  }));
 
-  res.json(sample);
+  res.json(quizQuestions);
 });
 
 // ===== Healthcheck endpoint =====
