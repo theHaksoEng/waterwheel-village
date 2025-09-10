@@ -304,10 +304,26 @@ app.post('/chat', async (req, res) => {
     }
     let character = sessionData.character;
 
+    // === Welcome Message ===
     if (isWelcomeMessage && !sessionData.studentName) {
       const welcomeMsg = "Welcome to Waterwheel Village, friends! I'm Mr. McArthur. What's your name? Are you a beginner, intermediate, or expert student?";
       await storeChatHistory(sessionId, [{ role: 'assistant', content: welcomeMsg }]);
-      return res.json({ text: welcomeMsg, character: 'mcarthur', voiceId: voices.mcarthur });
+      return res.json({
+        text: welcomeMsg,
+        character: 'mcarthur',
+        voiceId: voices.mcarthur,
+        level: sessionData.studentLevel
+      });
+    }
+
+    // === Detect Level from User Input ===
+    if (sanitizedText) {
+      const lower = sanitizedText.toLowerCase();
+      if (!sessionData.studentLevel) {
+        if (lower.includes("beginner")) sessionData.studentLevel = "beginner";
+        else if (lower.includes("intermediate")) sessionData.studentLevel = "intermediate";
+        else if (lower.includes("expert")) sessionData.studentLevel = "expert";
+      }
     }
 
     let messages = await getChatHistory(sessionId);
@@ -328,10 +344,13 @@ app.post('/chat', async (req, res) => {
     const responseText = response?.data?.text?.trim?.() || '';
     let detectedCharacter = detectCharacter(responseText, sessionData.character || "mcarthur");
     sessionData.character = detectedCharacter;
+
+    // Save updated session (now with studentLevel if set)
     await setSession(sessionId, sessionData);
 
     console.log("=== RAW TEXT ===", responseText);
     console.log("=== DETECTED CHARACTER ===", detectedCharacter);
+    console.log("=== LEVEL ===", sessionData.studentLevel);
 
     messages.push({ role: 'assistant', content: responseText });
     await storeChatHistory(sessionId, messages);
@@ -345,7 +364,13 @@ app.post('/chat', async (req, res) => {
 
   } catch (error) {
     console.error('Error in /chat:', error.response?.data || error.message);
-    return res.json({ text: "Thanks! Let’s begin with a short exercise: tell me 3 things about yourself.", character: 'mcarthur', voiceId: voices.mcarthur, note: 'fallback-error' });
+    return res.json({
+      text: "Thanks! Let’s begin with a short exercise: tell me 3 things about yourself.",
+      character: 'mcarthur',
+      voiceId: voices.mcarthur,
+      note: 'fallback-error',
+      level: null
+    });
   }
 });
 
