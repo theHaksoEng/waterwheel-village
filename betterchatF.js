@@ -16,6 +16,22 @@ app.options('*', cors(corsOptions));
 app.use(cors());
 app.use(express.json());
 
+// === Load wordlists.json dynamically ===
+const fs = require("fs");
+const path = require("path");
+
+const wordlistsPath = path.join(__dirname, "data", "wordlists.json");
+let wordlists = {};
+
+try {
+  const fileContent = fs.readFileSync(wordlistsPath, "utf-8");
+  wordlists = JSON.parse(fileContent);
+  console.log("✅ Wordlists loaded successfully. Levels available:", Object.keys(wordlists));
+} catch (err) {
+  console.error("❌ Failed to load wordlists.json", err);
+}
+
+
 // ===== Simple in-memory storage =====
 const sessions = new Map();
 const histories = new Map();
