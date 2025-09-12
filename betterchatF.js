@@ -57,6 +57,7 @@ const voices = {
 };
 
 // ===== Word lists for 1000 Words program =====
+/*
 const wordLists = {
   week1: {
     beginner: [
@@ -282,6 +283,7 @@ const wordLists = {
     ]
   }
 };
+*/
 
 // ===== Helper: normalize & detect character =====
 function normalize(text) {
@@ -305,7 +307,7 @@ function detectCharacter(text, fallback = "mcarthur") {
 
 // ===== /chat endpoint =====
 app.post('/chat', async (req, res) => {
-  const { text: rawText, sessionId: providedSessionId } = req.body || {};
+  const { text: rawText, sessionId: providedSessionId, isVoice } = req.body || {};
   const sessionId = providedSessionId || uuidv4();
   const sanitizedText = rawText ? String(rawText).trim() : '';
   const isWelcomeMessage = !sanitizedText;
@@ -320,32 +322,21 @@ app.post('/chat', async (req, res) => {
     }
     let character = sessionData.character;
 
-    // === Welcome Message ===
     if (isWelcomeMessage && !sessionData.studentName) {
       const welcomeMsg = "Welcome to Waterwheel Village, friends! I'm Mr. McArthur. What's your name? Are you a beginner, intermediate, or expert student?";
       await storeChatHistory(sessionId, [{ role: 'assistant', content: welcomeMsg }]);
-      return res.json({
-        text: welcomeMsg,
-        character: 'mcarthur',
-        voiceId: voices.mcarthur,
-        level: sessionData.studentLevel
-      });
-    }
-
-    // === Detect Level from User Input ===
-    if (sanitizedText) {
-      const lower = sanitizedText.toLowerCase();
-      if (!sessionData.studentLevel) {
-        if (lower.includes("beginner")) sessionData.studentLevel = "beginner";
-        else if (lower.includes("intermediate")) sessionData.studentLevel = "intermediate";
-        else if (lower.includes("expert")) sessionData.studentLevel = "expert";
-      }
+      return res.json({ text: welcomeMsg, character: 'mcarthur', voiceId: voices.mcarthur });
     }
 
     let messages = await getChatHistory(sessionId);
     if (sanitizedText) messages.push({ role: 'user', content: sanitizedText });
 
-    const systemPrompt = `You are ${character} in Waterwheel Village. You are a kind ESL teacher. Be brief, encouraging, and correct mistakes gently. Always ask one short follow-up question.`;
+    // 🎤 Adjust the system prompt if user is speaking
+    let systemPrompt = `You are ${character} in Waterwheel Village. You are a kind ESL teacher. Be brief, encouraging, and correct mistakes gently. Always ask one short follow-up question.`;
+    if (isVoice) {
+      systemPrompt += " The student is speaking, so do NOT correct punctuation like commas or periods. Focus only on grammar and word choice.";
+    }
+
     const outboundMessages = [{ role: 'system', content: systemPrompt }, ...messages];
 
     const key = process.env.CHATBASE_API_KEY;
@@ -360,13 +351,7 @@ app.post('/chat', async (req, res) => {
     const responseText = response?.data?.text?.trim?.() || '';
     let detectedCharacter = detectCharacter(responseText, sessionData.character || "mcarthur");
     sessionData.character = detectedCharacter;
-
-    // Save updated session (now with studentLevel if set)
     await setSession(sessionId, sessionData);
-
-    console.log("=== RAW TEXT ===", responseText);
-    console.log("=== DETECTED CHARACTER ===", detectedCharacter);
-    console.log("=== LEVEL ===", sessionData.studentLevel);
 
     messages.push({ role: 'assistant', content: responseText });
     await storeChatHistory(sessionId, messages);
@@ -384,8 +369,7 @@ app.post('/chat', async (req, res) => {
       text: "Thanks! Let’s begin with a short exercise: tell me 3 things about yourself.",
       character: 'mcarthur',
       voiceId: voices.mcarthur,
-      note: 'fallback-error',
-      level: null
+      note: 'fallback-error'
     });
   }
 });
