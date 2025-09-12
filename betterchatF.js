@@ -18,9 +18,8 @@ app.options('*', cors(corsOptions));
 app.use(cors());
 app.use(express.json());
 
-// === Trial mode config ===
-const TRIAL_MODE = true;   // toggle false for full version
-const TRIAL_LIMIT = 10;    // max user messages
+// ===== Trial Mode =====
+const TRIAL_MODE = process.env.TRIAL_MODE === "true";
 
 // === Load wordlists.json dynamically ===
 const wordlistsPath = path.join(__dirname, "data", "wordlists.json");
@@ -29,16 +28,6 @@ let wordlists = {};
 try {
   const fileContent = fs.readFileSync(wordlistsPath, "utf-8");
   wordlists = JSON.parse(fileContent);
-
-  if (TRIAL_MODE) {
-    // shorten lists in trial mode
-    for (const weekKey of Object.keys(wordlists)) {
-      for (const levelKey of Object.keys(wordlists[weekKey])) {
-        wordlists[weekKey][levelKey] = wordlists[weekKey][levelKey].slice(0, 5);
-      }
-    }
-  }
-
   console.log("✅ Wordlists loaded successfully. Levels available:", Object.keys(wordlists));
 } catch (err) {
   console.error("❌ Failed to load wordlists.json", err);
@@ -47,6 +36,7 @@ try {
 // ===== Simple in-memory storage =====
 const sessions = new Map();
 const histories = new Map();
+const messageCounts = new Map(); // track trial messages
 
 async function getSession(sessionId) { return sessions.get(sessionId); }
 async function setSession(sessionId, data) { sessions.set(sessionId, data); }
@@ -69,9 +59,6 @@ const voices = {
 };
 
 // ===== Helper: normalize & detect character =====
-function normalize(text) {
-  return text.toLowerCase().replace(/[^a-z\s]/g, " ").replace(/\s+/g, " ").trim();
-}
 function detectCharacter(text, fallback = "mcarthur") {
   if (!text) return fallback;
   const lower = text.toLowerCase();
@@ -105,6 +92,21 @@ app.post('/chat', async (req, res) => {
     }
     let character = sessionData.character;
 
+    // ===== Trial Mode message limit =====
+    if (TRIAL_MODE) {
+      const count = (messageCounts.get(sessionId) || 0) + 1;
+      messageCounts.set(sessionId, count);
+      if (count > 10) {
+        return res.json({
+          text: "⚠️ Trial limit reached. Please sign up to continue.",
+          character: 'mcarthur',
+          voiceId: voices.mcarthur,
+          level: sessionData.studentLevel || null,
+          trialEnded: true
+        });
+      }
+    }
+
     // === Welcome ===
     if (isWelcomeMessage && !sessionData.studentName) {
       const welcomeMsg = "Welcome to Waterwheel Village, friends! I'm Mr. McArthur. What's your name? Are you a beginner, intermediate, or expert student?";
@@ -119,37 +121,18 @@ app.post('/chat', async (req, res) => {
 
       // detect student level
       const lowered = sanitizedText.toLowerCase();
-      if (lowered.includes("beginner")) {
-        sessionData.studentLevel = "beginner";
-      } else if (lowered.includes("intermediate")) {
-        sessionData.studentLevel = "intermediate";
-      } else if (lowered.includes("expert")) {
-        sessionData.studentLevel = "expert";
-      }
+      if (lowered.includes("beginner")) sessionData.studentLevel = "beginner";
+      else if (lowered.includes("intermediate")) sessionData.studentLevel = "intermediate";
+      else if (lowered.includes("expert")) sessionData.studentLevel = "expert";
+
       await setSession(sessionId, sessionData);
     }
 
-    // === Trial message limit ===
-    if (TRIAL_MODE) {
-      const userMessages = messages.filter(m => m.role === 'user').length;
-      if (userMessages >= TRIAL_LIMIT) {
-        const lockMsg = "🔒 Thanks for trying the Waterwheel Village demo! You’ve reached the free trial limit. Please sign up to continue learning.";
-        messages.push({ role: 'assistant', content: lockMsg });
-        await storeChatHistory(sessionId, messages);
-        return res.json({
-          text: lockMsg,
-          character: 'mcarthur',
-          voiceId: voices.mcarthur,
-          level: sessionData?.studentLevel || null,
-          trialEnded: true
-        });
-      }
-    }
-
     // === Build system prompt ===
-    const systemPrompt = `You are ${character} in Waterwheel Village. You are a kind ESL teacher. Be brief, encouraging, and correct mistakes gently. 
-Always ask one short follow-up question.${isVoice ? " The student is speaking, so ignore punctuation corrections (commas, periods)." : ""}`;
-
+    let systemPrompt = `You are ${character} in Waterwheel Village. You are a kind ESL teacher. Be brief, encouraging, and correct mistakes gently. Always ask one short follow-up question.`;
+    if (isVoice) {
+      systemPrompt += " The student is speaking by voice, so ignore punctuation corrections (commas, periods). Focus only on words and grammar.";
+    }
     const outboundMessages = [{ role: 'system', content: systemPrompt }, ...messages];
 
     // === Send to Chatbase ===
@@ -180,12 +163,12 @@ Always ask one short follow-up question.${isVoice ? " The student is speaking, s
 
   } catch (error) {
     console.error('Error in /chat:', error.response?.data || error.message);
-    return res.json({ 
-      text: "Thanks! Let’s begin with a short exercise: tell me 3 things about yourself.", 
-      character: 'mcarthur', 
-      voiceId: voices.mcarthur, 
-      level: sessionData?.studentLevel || null, 
-      note: 'fallback-error' 
+    return res.json({
+      text: "Thanks! Let’s begin with a short exercise: tell me 3 things about yourself.",
+      character: 'mcarthur',
+      voiceId: voices.mcarthur,
+      level: sessionData?.studentLevel || null,
+      note: 'fallback-error'
     });
   }
 });
@@ -216,9 +199,13 @@ app.post('/speakbase', async (req, res) => {
 app.get("/wordlist/:week/:level", (req, res) => {
   const { week, level } = req.params;
   try {
-    const words = wordlists[`week${week}`]?.[level];
+    let words = wordlists[`week${week}`]?.[level];
     if (!words) {
       return res.status(404).json({ error: "No words found for this week/level." });
+    }
+    // 🚫 Trial mode: limit to 10 words
+    if (TRIAL_MODE) {
+      words = words.slice(0, 10);
     }
     res.json(words);
   } catch (err) {
@@ -231,11 +218,11 @@ app.get("/wordlist/:week/:level", (req, res) => {
 app.get("/quiz/:week/:level", (req, res) => {
   const { week, level } = req.params;
   try {
-    const words = wordlists[`week${week}`]?.[level];
+    let words = wordlists[`week${week}`]?.[level];
     if (!words) {
       return res.status(404).json({ error: "No quiz words found for this week/level." });
     }
-    // Pick up to 3 random words for trial mode, else 5
+    // 🚫 Trial mode: only 3 quiz questions, else 5
     const quizSize = TRIAL_MODE ? 3 : 5;
     const shuffled = [...words].sort(() => 0.5 - Math.random());
     res.json(shuffled.slice(0, quizSize));
@@ -251,4 +238,3 @@ app.get('/health', (req, res) => { res.json({ ok: true, status: "Waterwheel back
 // ===== Start server =====
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-
