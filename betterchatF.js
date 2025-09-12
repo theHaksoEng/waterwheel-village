@@ -7,22 +7,38 @@ const cors = require('cors');
 const fs = require("fs");
 const path = require("path");
 
-// ===== CORS =====
 const corsOptions = {
   origin: '*',
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 };
+
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
+app.use(cors());
 app.use(express.json());
+
+// === Trial mode config ===
+const TRIAL_MODE = true;   // toggle false for full version
+const TRIAL_LIMIT = 10;    // max user messages
 
 // === Load wordlists.json dynamically ===
 const wordlistsPath = path.join(__dirname, "data", "wordlists.json");
 let wordlists = {};
+
 try {
   const fileContent = fs.readFileSync(wordlistsPath, "utf-8");
   wordlists = JSON.parse(fileContent);
+
+  if (TRIAL_MODE) {
+    // shorten lists in trial mode
+    for (const weekKey of Object.keys(wordlists)) {
+      for (const levelKey of Object.keys(wordlists[weekKey])) {
+        wordlists[weekKey][levelKey] = wordlists[weekKey][levelKey].slice(0, 5);
+      }
+    }
+  }
+
   console.log("✅ Wordlists loaded successfully. Levels available:", Object.keys(wordlists));
 } catch (err) {
   console.error("❌ Failed to load wordlists.json", err);
@@ -53,19 +69,22 @@ const voices = {
 };
 
 // ===== Helper: normalize & detect character =====
+function normalize(text) {
+  return text.toLowerCase().replace(/[^a-z\s]/g, " ").replace(/\s+/g, " ").trim();
+}
 function detectCharacter(text, fallback = "mcarthur") {
   if (!text) return fallback;
   const lower = text.toLowerCase();
-  if (/(^|\s)(i am|my name is)\s+nadia/.test(lower) || /nadia[:,]?/.test(lower)) return "nadia";
-  if (/(^|\s)(i am|my name is)\s+fatima/.test(lower) || /fatima[:,]?/.test(lower)) return "fatima";
-  if (/(^|\s)(i am|my name is)\s+anika/.test(lower) || /anika[:,]?/.test(lower)) return "anika";
-  if (/(^|\s)(i am|my name is)\s+liang/.test(lower) || /liang[:,]?/.test(lower)) return "liang";
-  if (/(^|\s)(i am|my name is)\s+johannes/.test(lower) || /johannes[:,]?/.test(lower)) return "johannes";
-  if (/(^|\s)(i am|my name is)\s+aleksanderi/.test(lower) || /aleksanderi[:,]?/.test(lower)) return "aleksanderi";
-  if (/(^|\s)(i am|my name is)\s+sophia/.test(lower) || /sophia[:,]?/.test(lower)) return "sophia";
-  if (/(^|\s)(i am|my name is)\s+kwame/.test(lower) || /kwame[:,]?/.test(lower)) return "kwame";
-  if (/(^|\s)(i am|my name is)\s+ibrahim/.test(lower) || /ibrahim[:,]?/.test(lower)) return "ibrahim";
-  if (/(^|\s)(i am|my name is)\s+mcarthur/.test(lower) || /mcarthur[:,]?/.test(lower)) return "mcarthur";
+  if (/nadia/.test(lower)) return "nadia";
+  if (/fatima/.test(lower)) return "fatima";
+  if (/anika/.test(lower)) return "anika";
+  if (/liang/.test(lower)) return "liang";
+  if (/johannes/.test(lower)) return "johannes";
+  if (/aleksanderi/.test(lower)) return "aleksanderi";
+  if (/sophia/.test(lower)) return "sophia";
+  if (/kwame/.test(lower)) return "kwame";
+  if (/ibrahim/.test(lower)) return "ibrahim";
+  if (/mcarthur/.test(lower)) return "mcarthur";
   return fallback;
 }
 
@@ -90,12 +109,7 @@ app.post('/chat', async (req, res) => {
     if (isWelcomeMessage && !sessionData.studentName) {
       const welcomeMsg = "Welcome to Waterwheel Village, friends! I'm Mr. McArthur. What's your name? Are you a beginner, intermediate, or expert student?";
       await storeChatHistory(sessionId, [{ role: 'assistant', content: welcomeMsg }]);
-      return res.json({ 
-        text: welcomeMsg, 
-        character: 'mcarthur', 
-        voiceId: voices.mcarthur, 
-        level: sessionData.studentLevel // stays null until detected
-      });
+      return res.json({ text: welcomeMsg, character: 'mcarthur', voiceId: voices.mcarthur, level: null });
     }
 
     // === Save user input ===
@@ -115,17 +129,33 @@ app.post('/chat', async (req, res) => {
       await setSession(sessionId, sessionData);
     }
 
-    // === Build system prompt ===
-    let systemPrompt = `You are ${character} in Waterwheel Village. You are a kind ESL teacher. Be brief, encouraging, and correct mistakes gently. 
-Always ask one short follow-up question.`;
-    if (isVoice) {
-      systemPrompt += " The student is speaking by voice, so do not correct punctuation (commas, periods). Focus only on words and grammar.";
+    // === Trial message limit ===
+    if (TRIAL_MODE) {
+      const userMessages = messages.filter(m => m.role === 'user').length;
+      if (userMessages >= TRIAL_LIMIT) {
+        const lockMsg = "🔒 Thanks for trying the Waterwheel Village demo! You’ve reached the free trial limit. Please sign up to continue learning.";
+        messages.push({ role: 'assistant', content: lockMsg });
+        await storeChatHistory(sessionId, messages);
+        return res.json({
+          text: lockMsg,
+          character: 'mcarthur',
+          voiceId: voices.mcarthur,
+          level: sessionData?.studentLevel || null,
+          trialEnded: true
+        });
+      }
     }
+
+    // === Build system prompt ===
+    const systemPrompt = `You are ${character} in Waterwheel Village. You are a kind ESL teacher. Be brief, encouraging, and correct mistakes gently. 
+Always ask one short follow-up question.${isVoice ? " The student is speaking, so ignore punctuation corrections (commas, periods)." : ""}`;
+
     const outboundMessages = [{ role: 'system', content: systemPrompt }, ...messages];
 
     // === Send to Chatbase ===
     const key = process.env.CHATBASE_API_KEY;
     const CHATBOT_ID = process.env.CHATBASE_CHATBOT_ID;
+
     const response = await axios.post(
       'https://www.chatbase.co/api/v1/chat',
       { chatbotId: CHATBOT_ID, conversationId: sessionId, messages: outboundMessages },
@@ -205,15 +235,17 @@ app.get("/quiz/:week/:level", (req, res) => {
     if (!words) {
       return res.status(404).json({ error: "No quiz words found for this week/level." });
     }
+    // Pick up to 3 random words for trial mode, else 5
+    const quizSize = TRIAL_MODE ? 3 : 5;
     const shuffled = [...words].sort(() => 0.5 - Math.random());
-    res.json(shuffled.slice(0, 5));
+    res.json(shuffled.slice(0, quizSize));
   } catch (err) {
     console.error("❌ Error serving quiz:", err);
     res.status(500).json({ error: "Failed to load quiz" });
   }
 });
 
-// ===== Healthcheck =====
+// ===== Healthcheck endpoint =====
 app.get('/health', (req, res) => { res.json({ ok: true, status: "Waterwheel backend alive" }); });
 
 // ===== Start server =====
