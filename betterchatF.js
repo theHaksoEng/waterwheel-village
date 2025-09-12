@@ -355,6 +355,19 @@ app.post('/chat', async (req, res) => {
 
     messages.push({ role: 'assistant', content: responseText });
     await storeChatHistory(sessionId, messages);
+    // detect level keywords in user input
+if (sanitizedText) {
+  const lowered = sanitizedText.toLowerCase();
+  if (lowered.includes("beginner")) {
+    sessionData.studentLevel = "beginner";
+  } else if (lowered.includes("intermediate")) {
+    sessionData.studentLevel = "intermediate";
+  } else if (lowered.includes("expert")) {
+    sessionData.studentLevel = "expert";
+  }
+  await setSession(sessionId, sessionData);
+}
+
 
     return res.json({
       text: responseText,
