@@ -21,16 +21,19 @@ app.use(express.json());
 // ===== Trial Mode =====
 const TRIAL_MODE = process.env.TRIAL_MODE === "true";
 
-// === Load wordlists.json dynamically ===
-const wordlistsPath = path.join(__dirname, "data", "wordlists.json");
+// === Load wordlists dynamically ===
+const wordlistsPath = TRIAL_MODE
+  ? path.join(__dirname, "data", "trialWordlists.json")
+  : path.join(__dirname, "data", "wordlists.json");
+
 let wordlists = {};
 
 try {
   const fileContent = fs.readFileSync(wordlistsPath, "utf-8");
   wordlists = JSON.parse(fileContent);
-  console.log("✅ Wordlists loaded successfully. Levels available:", Object.keys(wordlists));
+  console.log(`✅ ${TRIAL_MODE ? "Trial" : "Full"} wordlists loaded. Levels available:`, Object.keys(wordlists));
 } catch (err) {
-  console.error("❌ Failed to load wordlists.json", err);
+  console.error("❌ Failed to load wordlists file", err);
 }
 
 // ===== Simple in-memory storage =====
