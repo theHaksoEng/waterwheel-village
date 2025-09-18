@@ -15,6 +15,7 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
+app.use(cors());
 app.use(express.json());
 
 // ===== Trial Mode =====
@@ -38,7 +39,12 @@ try {
 // ===== Simple in-memory storage =====
 const sessions = new Map();
 const histories = new Map();
-const messageCounts = new Map();
+const messageCounts = new Map(); // track trial messages
+
+async function getSession(sessionId) { return sessions.get(sessionId); }
+async function setSession(sessionId, data) { sessions.set(sessionId, data); }
+async function getChatHistory(sessionId) { return histories.get(sessionId) || []; }
+async function storeChatHistory(sessionId, messages) { histories.set(sessionId, messages); }
 
 // ===== Character → ElevenLabs Voice mapping =====
 const voices = {
@@ -55,6 +61,7 @@ const voices = {
   default: "fEVT2ExfHe1MyjuiIiU9"
 };
 
+// ===== Helper: normalize & detect character =====
 function detectCharacter(text, fallback = "mcarthur") {
   if (!text) return fallback;
   const lower = text.toLowerCase();
@@ -73,15 +80,7 @@ function detectCharacter(text, fallback = "mcarthur") {
 
 // ===== /chat endpoint =====
 app.post('/chat', async (req, res) => {
-  const {
-    text: rawText,
-    sessionId: providedSessionId,
-    isVoice,
-    overrideCharacter,
-    overrideVoiceId,
-    clearScreen
-  } = req.body || {};
-
+  const { text: rawText, sessionId: providedSessionId, isVoice } = req.body || {};
   const sessionId = providedSessionId || uuidv4();
   const sanitizedText = rawText ? String(rawText).trim() : '';
   const isWelcomeMessage = !sanitizedText;
@@ -89,24 +88,21 @@ app.post('/chat', async (req, res) => {
   try {
     if (!sessionId) return res.status(400).json({ error: 'Session ID is required' });
 
-    let sessionData = sessions.get(sessionId);
+    let sessionData = await getSession(sessionId);
     if (!sessionData) {
       sessionData = { character: 'mcarthur', studentName: null, studentLevel: null };
-      sessions.set(sessionId, sessionData);
+      await setSession(sessionId, sessionData);
     }
-
-    // Force override on restart
-    if (overrideCharacter) sessionData.character = overrideCharacter;
     let character = sessionData.character;
 
-    // === Trial mode ===
+    // ===== Trial Mode message limit =====
     if (TRIAL_MODE) {
       const count = (messageCounts.get(sessionId) || 0) + 1;
       messageCounts.set(sessionId, count);
       if (count > 10) {
         return res.json({
           text: "⚠️ Trial limit reached. Please sign up to continue.",
-          character: "mcarthur",
+          character: 'mcarthur',
           voiceId: voices.mcarthur,
           level: sessionData.studentLevel || null,
           trialEnded: true
@@ -114,71 +110,54 @@ app.post('/chat', async (req, res) => {
       }
     }
 
-    // === Restart lesson request ===
-    if (clearScreen) {
-      return res.json({
-        text: "Welcome to Waterwheel Village, friends! I'm Mr. McArthur. What's your name? Are you a beginner, intermediate, or expert student?",
-        character: "mcarthur",
-        voiceId: overrideVoiceId || voices.mcarthur,
-        level: null,
-        clearScreen: true
-      });
-    }
-
     // === Welcome ===
     if (isWelcomeMessage && !sessionData.studentName) {
       const welcomeMsg = "Welcome to Waterwheel Village, friends! I'm Mr. McArthur. What's your name? Are you a beginner, intermediate, or expert student?";
-      histories.set(sessionId, [{ role: 'assistant', content: welcomeMsg }]);
+      await storeChatHistory(sessionId, [{ role: 'assistant', content: welcomeMsg }]);
       return res.json({ text: welcomeMsg, character: 'mcarthur', voiceId: voices.mcarthur, level: null });
     }
 
     // === Save user input ===
-    let messages = histories.get(sessionId) || [];
+    let messages = await getChatHistory(sessionId);
     if (sanitizedText) {
       messages.push({ role: 'user', content: sanitizedText });
 
+      // detect student level
       const lowered = sanitizedText.toLowerCase();
       if (lowered.includes("beginner")) sessionData.studentLevel = "beginner";
       else if (lowered.includes("intermediate")) sessionData.studentLevel = "intermediate";
       else if (lowered.includes("expert")) sessionData.studentLevel = "expert";
 
-      sessions.set(sessionId, sessionData);
+      await setSession(sessionId, sessionData);
     }
 
-    // === System prompt ===
+    // === Build system prompt ===
     let systemPrompt = `You are ${character} in Waterwheel Village. You are a kind ESL teacher. Be brief, encouraging, and correct mistakes gently. Always ask one short follow-up question.`;
     if (isVoice) {
       systemPrompt += " The student is speaking by voice, so ignore punctuation corrections (commas, periods). Focus only on words and grammar.";
     }
-
     const outboundMessages = [{ role: 'system', content: systemPrompt }, ...messages];
 
-    // === Call Chatbase ===
+    // === Send to Chatbase ===
+    const key = process.env.CHATBASE_API_KEY;
+    const CHATBOT_ID = process.env.CHATBASE_CHATBOT_ID;
+
     const response = await axios.post(
       'https://www.chatbase.co/api/v1/chat',
-      {
-        chatbotId: process.env.CHATBASE_CHATBOT_ID,
-        conversationId: sessionId,
-        messages: outboundMessages
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.CHATBASE_API_KEY}`,
-          "Content-Type": "application/json"
-        },
-        timeout: 30000
-      }
+      { chatbotId: CHATBOT_ID, conversationId: sessionId, messages: outboundMessages },
+      { headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }, timeout: 30000 }
     );
 
     const responseText = response?.data?.text?.trim?.() || '';
     let detectedCharacter = detectCharacter(responseText, sessionData.character || "mcarthur");
     sessionData.character = detectedCharacter;
-    sessions.set(sessionId, sessionData);
+    await setSession(sessionId, sessionData);
 
+    // store history
     messages.push({ role: 'assistant', content: responseText });
-    histories.set(sessionId, messages);
+    await storeChatHistory(sessionId, messages);
 
-    res.json({
+    return res.json({
       text: responseText,
       character: detectedCharacter,
       voiceId: voices[detectedCharacter] || voices.mcarthur,
@@ -187,11 +166,11 @@ app.post('/chat', async (req, res) => {
 
   } catch (error) {
     console.error('Error in /chat:', error.response?.data || error.message);
-    res.json({
+    return res.json({
       text: "Thanks! Let’s begin with a short exercise: tell me 3 things about yourself.",
       character: 'mcarthur',
       voiceId: voices.mcarthur,
-      level: null,
+      level: sessionData?.studentLevel || null,
       note: 'fallback-error'
     });
   }
@@ -205,17 +184,13 @@ app.post('/speakbase', async (req, res) => {
 
     const finalVoiceId = voiceId || voices[character] || voices.default;
 
+    // 🔹 Convert commas into pauses for natural speech
+    const processedText = text.replace(/,/g, " ...");
+
     const response = await axios.post(
       `https://api.elevenlabs.io/v1/text-to-speech/${finalVoiceId}`,
-      { text: text.replace(/,/g, " ...") }, // add pause for commas
-      {
-        headers: {
-          "Accept": "audio/mpeg",
-          "Content-Type": "application/json",
-          "xi-api-key": process.env.ELEVENLABS_API_KEY
-        },
-        responseType: "arraybuffer"
-      }
+      { text: processedText, voice_settings: { stability: 0.3, similarity_boost: 0.8 } },
+      { headers: { "Accept": "audio/mpeg", "Content-Type": "application/json", "xi-api-key": process.env.ELEVENLABS_API_KEY }, responseType: "arraybuffer" }
     );
 
     res.setHeader("Content-Type", "audio/mpeg");
@@ -226,37 +201,48 @@ app.post('/speakbase', async (req, res) => {
   }
 });
 
-// ===== Wordlist & Quiz =====
+// ===== Wordlist endpoint =====
 app.get("/wordlist/:week/:level", (req, res) => {
   const { week, level } = req.params;
   try {
-    let words = wordlists[`week${week}`]?.[level];
-    if (!words) return res.status(404).json({ error: "No words found" });
-    if (TRIAL_MODE) words = words.slice(0, 10);
+    // 🔹 Support both "week1" and "1" style keys
+    let words = (wordlists[`week${week}`] || wordlists[week])?.[level];
+    if (!words) {
+      return res.status(404).json({ error: "No words found for this week/level." });
+    }
+    // 🚫 Trial mode: limit to 10 words
+    if (TRIAL_MODE) {
+      words = words.slice(0, 10);
+    }
     res.json(words);
   } catch (err) {
+    console.error("❌ Error serving wordlist:", err);
     res.status(500).json({ error: "Failed to load word list" });
   }
 });
 
+// ===== Quiz endpoint =====
 app.get("/quiz/:week/:level", (req, res) => {
   const { week, level } = req.params;
   try {
-    let words = wordlists[`week${week}`]?.[level];
-    if (!words) return res.status(404).json({ error: "No quiz words found" });
+    // 🔹 Support both "week1" and "1" style keys
+    let words = (wordlists[`week${week}`] || wordlists[week])?.[level];
+    if (!words) {
+      return res.status(404).json({ error: "No quiz words found for this week/level." });
+    }
+    // 🚫 Trial mode: only 3 quiz questions, else 5
     const quizSize = TRIAL_MODE ? 3 : 5;
     const shuffled = [...words].sort(() => 0.5 - Math.random());
     res.json(shuffled.slice(0, quizSize));
   } catch (err) {
+    console.error("❌ Error serving quiz:", err);
     res.status(500).json({ error: "Failed to load quiz" });
   }
 });
 
-// ===== Healthcheck =====
-app.get('/health', (req, res) => {
-  res.json({ ok: true, status: "Waterwheel backend alive" });
-});
+// ===== Healthcheck endpoint =====
+app.get('/health', (req, res) => { res.json({ ok: true, status: "Waterwheel backend alive" }); });
 
+// ===== Start server =====
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-
