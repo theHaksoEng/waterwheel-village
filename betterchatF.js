@@ -205,12 +205,17 @@ app.post('/speakbase', async (req, res) => {
 app.get("/wordlist/:week/:level", (req, res) => {
   const { week, level } = req.params;
   try {
-    // 🔹 Support both "week1" and "1" style keys
-    let words = (wordlists[`week${week}`] || wordlists[week])?.[level];
+    // Handle both formats: { "1": {...} } and { "week1": {...} }
+    const key1 = `week${week}`;
+    const key2 = week;
+
+    let words = wordlists[key1]?.[level] || wordlists[key2]?.[level];
+
     if (!words) {
+      console.warn(`❌ No words for week=${week}, level=${level}`);
       return res.status(404).json({ error: "No words found for this week/level." });
     }
-    // 🚫 Trial mode: limit to 10 words
+
     if (TRIAL_MODE) {
       words = words.slice(0, 10);
     }
@@ -225,12 +230,16 @@ app.get("/wordlist/:week/:level", (req, res) => {
 app.get("/quiz/:week/:level", (req, res) => {
   const { week, level } = req.params;
   try {
-    // 🔹 Support both "week1" and "1" style keys
-    let words = (wordlists[`week${week}`] || wordlists[week])?.[level];
+    const key1 = `week${week}`;
+    const key2 = week;
+
+    let words = wordlists[key1]?.[level] || wordlists[key2]?.[level];
+
     if (!words) {
+      console.warn(`❌ No quiz words for week=${week}, level=${level}`);
       return res.status(404).json({ error: "No quiz words found for this week/level." });
     }
-    // 🚫 Trial mode: only 3 quiz questions, else 5
+
     const quizSize = TRIAL_MODE ? 3 : 5;
     const shuffled = [...words].sort(() => 0.5 - Math.random());
     res.json(shuffled.slice(0, quizSize));
