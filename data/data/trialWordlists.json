@@ -1,0 +1,19 @@
+{
+  "week1": {
+    "beginner": [
+      { "eng": "cat", "fin": "kissa" },
+      { "eng": "dog", "fin": "koira" },
+      { "eng": "milk", "fin": "maito" }
+    ],
+    "intermediate": [
+      { "eng": "uncle", "fin": "setä" },
+      { "eng": "aunt", "fin": "täti" },
+      { "eng": "neighbour", "fin": "naapuri" }
+    ],
+    "expert": [
+      { "eng": "heritage", "fin": "perintö" },
+      { "eng": "civilization", "fin": "sivistys" },
+      { "eng": "responsibility", "fin": "vastuu" }
+    ]
+  }
+}
