@@ -116,7 +116,7 @@ app.post('/chat', async (req, res) => {
     if (isWelcomeMessage) {
       if (!sessionData.studentName && history.length === 0) {
         // 👉 First-time visitor
-        const welcomeMsg = "Welcome to Waterwheel Village, friends! I'm Mr. McArthur. What's your name? Are you a beginner, intermediate, or expert student?";
+        const welcomeMsg = "Welcome to Waterwheel Village,friends! I'm Mr. McArthur. What's your name? Are you a beginner, intermediate, or expert student?";
         await storeChatHistory(sessionId, [{ role: 'assistant', content: welcomeMsg }]);
         return res.json({ text: welcomeMsg, character: 'mcarthur', voiceId: voices.mcarthur, level: null });
       } else {
