@@ -27,7 +27,6 @@ const wordlistsPath = TRIAL_MODE
   : path.join(__dirname, "data", "wordlists.json");
 
 let wordlists = {};
-
 try {
   const fileContent = fs.readFileSync(wordlistsPath, "utf-8");
   wordlists = JSON.parse(fileContent);
@@ -39,14 +38,9 @@ try {
 // ===== Simple in-memory storage =====
 const sessions = new Map();
 const histories = new Map();
-const messageCounts = new Map(); // track trial messages
+const messageCounts = new Map();
 
-async function getSession(sessionId) { return sessions.get(sessionId); }
-async function setSession(sessionId, data) { sessions.set(sessionId, data); }
-async function getChatHistory(sessionId) { return histories.get(sessionId) || []; }
-async function storeChatHistory(sessionId, messages) { histories.set(sessionId, messages); }
-
-// ===== Character → ElevenLabs Voice mapping =====
+// ===== Voices =====
 const voices = {
   mcarthur: "fEVT2ExfHe1MyjuiIiU9",
   nadia: "a1KZUXKFVFDOb33I1uqr",
@@ -61,7 +55,7 @@ const voices = {
   default: "fEVT2ExfHe1MyjuiIiU9"
 };
 
-// ===== Helper: normalize & detect character =====
+// ===== Character detection =====
 function detectCharacter(text, fallback = "mcarthur") {
   if (!text) return fallback;
   const lower = text.toLowerCase();
@@ -88,14 +82,14 @@ app.post('/chat', async (req, res) => {
   try {
     if (!sessionId) return res.status(400).json({ error: 'Session ID is required' });
 
-    let sessionData = await getSession(sessionId);
+    let sessionData = sessions.get(sessionId);
     if (!sessionData) {
       sessionData = { character: 'mcarthur', studentName: null, studentLevel: null };
-      await setSession(sessionId, sessionData);
+      sessions.set(sessionId, sessionData);
     }
     let character = sessionData.character;
 
-    // ===== Trial Mode message limit =====
+    // ===== Trial Mode limit =====
     if (TRIAL_MODE) {
       const count = (messageCounts.get(sessionId) || 0) + 1;
       messageCounts.set(sessionId, count);
@@ -110,25 +104,15 @@ app.post('/chat', async (req, res) => {
       }
     }
 
-    // === Welcome for new OR returning sessions ===
-    const history = await getChatHistory(sessionId);
-
-    if (isWelcomeMessage) {
-      if (!sessionData.studentName && history.length === 0) {
-        // 👉 First-time visitor
-        const welcomeMsg = "Welcome to Waterwheel Village,friends! I'm Mr. McArthur. What's your name? Are you a beginner, intermediate, or expert student?";
-        await storeChatHistory(sessionId, [{ role: 'assistant', content: welcomeMsg }]);
-        return res.json({ text: welcomeMsg, character: 'mcarthur', voiceId: voices.mcarthur, level: null });
-      } else {
-        // 👉 Returning visitor
-        const returnMsg = "Welcome back! Where were we? Let’s continue our lesson from here.";
-        await storeChatHistory(sessionId, [...history, { role: 'assistant', content: returnMsg }]);
-        return res.json({ text: returnMsg, character: 'mcarthur', voiceId: voices.mcarthur, level: sessionData.studentLevel || null });
-      }
+    // === Welcome ===
+    if (isWelcomeMessage && !sessionData.studentName) {
+      const welcomeMsg = "Welcome to Waterwheel Village, friends! I'm Mr. McArthur. What's your name? Are you a beginner, intermediate, or expert student?";
+      histories.set(sessionId, [{ role: 'assistant', content: welcomeMsg }]);
+      return res.json({ text: welcomeMsg, character: 'mcarthur', voiceId: voices.mcarthur, level: null });
     }
 
     // === Save user input ===
-    let messages = [...history];
+    let messages = histories.get(sessionId) || [];
     if (sanitizedText) {
       messages.push({ role: 'user', content: sanitizedText });
 
@@ -138,14 +122,25 @@ app.post('/chat', async (req, res) => {
       else if (lowered.includes("intermediate")) sessionData.studentLevel = "intermediate";
       else if (lowered.includes("expert")) sessionData.studentLevel = "expert";
 
-      await setSession(sessionId, sessionData);
+      sessions.set(sessionId, sessionData);
     }
 
     // === Build system prompt ===
     let systemPrompt = `You are ${character} in Waterwheel Village. You are a kind ESL teacher. Be brief, encouraging, and correct mistakes gently. Always ask one short follow-up question.`;
     if (isVoice) {
-      systemPrompt += " The student is speaking by voice, so ignore punctuation corrections (commas, periods). Focus only on words and grammar.";
+      systemPrompt += " The student is speaking by voice, so ignore punctuation corrections. Focus only on words and grammar.";
     }
+
+    // === Character override if student explicitly asks ===
+    const villagerMatch = sanitizedText.match(/\b(anika|nadia|fatima|liang|johannes|aleksanderi|sophia|kwame|ibrahim|mcarthur)\b/i);
+    if (villagerMatch) {
+      const villager = villagerMatch[1].toLowerCase();
+      sessionData.character = villager;
+      sessions.set(sessionId, sessionData);
+
+      systemPrompt = `You are ${villager} from Waterwheel Village. Speak directly in first person ("I"). Do NOT say "let me bring" — you are already here. Be warm, encouraging, and keep replies short.`;
+    }
+
     const outboundMessages = [{ role: 'system', content: systemPrompt }, ...messages];
 
     // === Send to Chatbase ===
@@ -159,13 +154,13 @@ app.post('/chat', async (req, res) => {
     );
 
     const responseText = response?.data?.text?.trim?.() || '';
-    let detectedCharacter = detectCharacter(responseText, sessionData.character || "mcarthur");
+    let detectedCharacter = sessionData.character || detectCharacter(responseText, "mcarthur");
     sessionData.character = detectedCharacter;
-    await setSession(sessionId, sessionData);
+    sessions.set(sessionId, sessionData);
 
     // store history
     messages.push({ role: 'assistant', content: responseText });
-    await storeChatHistory(sessionId, messages);
+    histories.set(sessionId, messages);
 
     return res.json({
       text: responseText,
@@ -180,12 +175,11 @@ app.post('/chat', async (req, res) => {
       text: "Thanks! Let’s begin with a short exercise: tell me 3 things about yourself.",
       character: 'mcarthur',
       voiceId: voices.mcarthur,
-      level: sessionData?.studentLevel || null,
+      level: sessions.get(sessionId)?.studentLevel || null,
       note: 'fallback-error'
     });
   }
 });
-
 
 // ===== /speakbase endpoint =====
 app.post('/speakbase', async (req, res) => {
@@ -195,8 +189,8 @@ app.post('/speakbase', async (req, res) => {
 
     const finalVoiceId = voiceId || voices[character] || voices.default;
 
-    // 🔹 Convert commas into pauses for natural speech
-    const processedText = text.replace(/,/g, " ...");
+    // convert commas to slight pauses
+    const processedText = text.replace(/,/g, " …");
 
     const response = await axios.post(
       `https://api.elevenlabs.io/v1/text-to-speech/${finalVoiceId}`,
@@ -216,23 +210,14 @@ app.post('/speakbase', async (req, res) => {
 app.get("/wordlist/:week/:level", (req, res) => {
   const { week, level } = req.params;
   try {
-    // Handle both formats: { "1": {...} } and { "week1": {...} }
     const key1 = `week${week}`;
     const key2 = week;
-
     let words = wordlists[key1]?.[level] || wordlists[key2]?.[level];
 
-    if (!words) {
-      console.warn(`❌ No words for week=${week}, level=${level}`);
-      return res.status(404).json({ error: "No words found for this week/level." });
-    }
-
-    if (TRIAL_MODE) {
-      words = words.slice(0, 10);
-    }
+    if (!words) return res.status(404).json({ error: "No words found" });
+    if (TRIAL_MODE) words = words.slice(0, 10);
     res.json(words);
   } catch (err) {
-    console.error("❌ Error serving wordlist:", err);
     res.status(500).json({ error: "Failed to load word list" });
   }
 });
@@ -243,55 +228,20 @@ app.get("/quiz/:week/:level", (req, res) => {
   try {
     const key1 = `week${week}`;
     const key2 = week;
-
     let words = wordlists[key1]?.[level] || wordlists[key2]?.[level];
 
-    if (!words) {
-      console.warn(`❌ No quiz words for week=${week}, level=${level}`);
-      return res.status(404).json({ error: "No quiz words found for this week/level." });
-    }
+    if (!words) return res.status(404).json({ error: "No quiz words found" });
 
     const quizSize = TRIAL_MODE ? 3 : 5;
     const shuffled = [...words].sort(() => 0.5 - Math.random());
     res.json(shuffled.slice(0, quizSize));
   } catch (err) {
-    console.error("❌ Error serving quiz:", err);
     res.status(500).json({ error: "Failed to load quiz" });
   }
 });
 
-// ===== End Lesson endpoint =====
-app.post('/endlesson', async (req, res) => {
-  const { sessionId } = req.body || {};
-  if (!sessionId) return res.status(400).json({ error: "Session ID required" });
-
-  try {
-    const history = await getChatHistory(sessionId);
-    const sessionData = await getSession(sessionId);
-
-    // Store in-memory "archive" (could later be a DB)
-    if (!global.lessonArchive) global.lessonArchive = [];
-    global.lessonArchive.push({
-      sessionId,
-      history,
-      sessionData,
-      endedAt: new Date().toISOString()
-    });
-
-    // Reset session so the next lesson starts fresh
-    sessions.delete(sessionId);
-    histories.delete(sessionId);
-    messageCounts.delete(sessionId);
-
-    return res.json({ success: true, message: "Lesson ended and stored", archiveSize: global.lessonArchive.length });
-  } catch (err) {
-    console.error("❌ Error ending lesson:", err);
-    res.status(500).json({ error: "Failed to end lesson" });
-  }
-});
-
-// ===== Healthcheck endpoint =====
-app.get('/health', (req, res) => { res.json({ ok: true, status: "Waterwheel backend alive" }); });
+// ===== Healthcheck =====
+app.get('/health', (req, res) => res.json({ ok: true, status: "Waterwheel backend alive" }));
 
 // ===== Start server =====
 const PORT = process.env.PORT || 3000;
