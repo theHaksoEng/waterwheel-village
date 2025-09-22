@@ -110,15 +110,25 @@ app.post('/chat', async (req, res) => {
       }
     }
 
-    // === Welcome ===
-    if (isWelcomeMessage && !sessionData.studentName) {
-      const welcomeMsg = "Welcome to Waterwheel Village, friends! I'm Mr. McArthur. What's your name? Are you a beginner, intermediate, or expert student?";
-      await storeChatHistory(sessionId, [{ role: 'assistant', content: welcomeMsg }]);
-      return res.json({ text: welcomeMsg, character: 'mcarthur', voiceId: voices.mcarthur, level: null });
+    // === Welcome for new OR returning sessions ===
+    const history = await getChatHistory(sessionId);
+
+    if (isWelcomeMessage) {
+      if (!sessionData.studentName && history.length === 0) {
+        // 👉 First-time visitor
+        const welcomeMsg = "Welcome to Waterwheel Village, friends! I'm Mr. McArthur. What's your name? Are you a beginner, intermediate, or expert student?";
+        await storeChatHistory(sessionId, [{ role: 'assistant', content: welcomeMsg }]);
+        return res.json({ text: welcomeMsg, character: 'mcarthur', voiceId: voices.mcarthur, level: null });
+      } else {
+        // 👉 Returning visitor
+        const returnMsg = "Welcome back! Where were we? Let’s continue our lesson from here.";
+        await storeChatHistory(sessionId, [...history, { role: 'assistant', content: returnMsg }]);
+        return res.json({ text: returnMsg, character: 'mcarthur', voiceId: voices.mcarthur, level: sessionData.studentLevel || null });
+      }
     }
 
     // === Save user input ===
-    let messages = await getChatHistory(sessionId);
+    let messages = [...history];
     if (sanitizedText) {
       messages.push({ role: 'user', content: sanitizedText });
 
@@ -175,6 +185,7 @@ app.post('/chat', async (req, res) => {
     });
   }
 });
+
 
 // ===== /speakbase endpoint =====
 app.post('/speakbase', async (req, res) => {
@@ -246,6 +257,36 @@ app.get("/quiz/:week/:level", (req, res) => {
   } catch (err) {
     console.error("❌ Error serving quiz:", err);
     res.status(500).json({ error: "Failed to load quiz" });
+  }
+});
+
+// ===== End Lesson endpoint =====
+app.post('/endlesson', async (req, res) => {
+  const { sessionId } = req.body || {};
+  if (!sessionId) return res.status(400).json({ error: "Session ID required" });
+
+  try {
+    const history = await getChatHistory(sessionId);
+    const sessionData = await getSession(sessionId);
+
+    // Store in-memory "archive" (could later be a DB)
+    if (!global.lessonArchive) global.lessonArchive = [];
+    global.lessonArchive.push({
+      sessionId,
+      history,
+      sessionData,
+      endedAt: new Date().toISOString()
+    });
+
+    // Reset session so the next lesson starts fresh
+    sessions.delete(sessionId);
+    histories.delete(sessionId);
+    messageCounts.delete(sessionId);
+
+    return res.json({ success: true, message: "Lesson ended and stored", archiveSize: global.lessonArchive.length });
+  } catch (err) {
+    console.error("❌ Error ending lesson:", err);
+    res.status(500).json({ error: "Failed to end lesson" });
   }
 });
 
