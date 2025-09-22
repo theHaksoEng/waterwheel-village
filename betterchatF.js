@@ -243,6 +243,63 @@ app.get("/quiz/:week/:level", (req, res) => {
 // ===== Healthcheck =====
 app.get('/health', (req, res) => res.json({ ok: true, status: "Waterwheel backend alive" }));
 
+const lessonsDir = path.join(__dirname, "data", "lessons");
+
+// Make sure lessons directory exists
+if (!fs.existsSync(lessonsDir)) {
+  fs.mkdirSync(lessonsDir, { recursive: true });
+}
+
+// ===== End Lesson =====
+app.post("/endlesson", async (req, res) => {
+  try {
+    const { sessionId, unit, chapter, learnedWords } = req.body;
+    if (!sessionId) return res.status(400).json({ error: "Session ID required" });
+
+    const history = await getChatHistory(sessionId);
+    const lessonData = {
+      studentId: sessionId,
+      unit: unit || 1,
+      chapter: chapter || 1,
+      learnedWords: learnedWords || [],
+      chatHistory: history || [],
+      lastUpdated: new Date().toISOString()
+    };
+
+    const filePath = path.join(lessonsDir, `lesson-${sessionId}.json`);
+    fs.writeFileSync(filePath, JSON.stringify(lessonData, null, 2));
+
+    res.json({
+      message: "✅ Lesson ended and stored!",
+      fileUrl: `/lessons/lesson-${sessionId}.json`
+    });
+  } catch (err) {
+    console.error("❌ Error ending lesson:", err);
+    res.status(500).json({ error: "Failed to end lesson" });
+  }
+});
+
+// ===== Resume Lesson =====
+app.get("/resume/:sessionId", (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const filePath = path.join(lessonsDir, `lesson-${sessionId}.json`);
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: "No saved lesson found" });
+    }
+
+    const data = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+    res.json(data);
+  } catch (err) {
+    console.error("❌ Error resuming lesson:", err);
+    res.status(500).json({ error: "Failed to resume lesson" });
+  }
+});
+
+// ===== Serve saved lessons as downloadable files =====
+app.use("/lessons", express.static(lessonsDir));
+
 // ===== Start server =====
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
