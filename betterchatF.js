@@ -11,18 +11,26 @@ const bodyParser = require("body-parser");
 const fs = require("fs");
 const path = require("path");
 const { v4: uuidv4 } = require("uuid");
-const Redis = require("ioredis");
 const fetch = (...args) => import("node-fetch").then(({ default: f }) => f(...args));
 
+// === Express setup ===
 const app = express();
 const PORT = process.env.PORT || 3000;
-
-// === Middleware ===
 app.use(cors());
 app.use(bodyParser.json());
 
 // === Redis Setup ===
-const redis = new Redis(process.env.REDIS_URL || "redis://localhost:6379");
+let redis;
+const Redis = require("ioredis");
+if (process.env.REDIS_URL && process.env.REDIS_URL.includes("upstash")) {
+  redis = new Redis(process.env.REDIS_URL, {
+    tls: { rejectUnauthorized: false },
+  });
+  console.log("✅ Using Upstash Redis");
+} else {
+  redis = new Redis("redis://localhost:6379");
+  console.log("✅ Using local Redis");
+}
 
 // === Wordlists ===
 const wordlistsPath = path.join(__dirname, "wordlists.json");
@@ -35,7 +43,7 @@ try {
   console.error("❌ Failed to load wordlists file", err);
 }
 
-// === Voice mapping ===
+// === Voices ===
 const voices = {
   mcarthur: process.env.VOICE_MCARTHUR,
   nadia: process.env.VOICE_NADIA,
@@ -47,7 +55,7 @@ const voices = {
   sophia: process.env.VOICE_SOPHIA,
   kwame: process.env.VOICE_KWAME,
   ibrahim: process.env.VOICE_IBRAHIM,
-  default: process.env.VOICE_MCARTHUR
+  default: process.env.VOICE_MCARTHUR,
 };
 
 // === Character detection ===
@@ -74,13 +82,13 @@ app.post("/chat", async (req, res) => {
   const sanitizedText = rawText ? String(rawText).trim() : "";
 
   try {
-    // Load session from Redis
+    // Load session
     let sessionData = JSON.parse(await redis.get(`session:${sessionId}`)) || {
       character: "mcarthur",
-      studentLevel: null
+      studentLevel: null,
     };
 
-    // If no input → Welcome
+    // Welcome if no input
     if (!sanitizedText) {
       const welcomeMsg =
         "Welcome to Waterwheel Village, friends! I'm Mr. McArthur. What's your name? Are you a beginner, intermediate, or expert student?";
@@ -88,7 +96,7 @@ app.post("/chat", async (req, res) => {
       return res.json({ text: welcomeMsg, character: "mcarthur", voiceId: voices.mcarthur });
     }
 
-    // Save user input into history
+    // Save input
     let messages = JSON.parse(await redis.get(`history:${sessionId}`)) || [];
     messages.push({ role: "user", content: sanitizedText });
 
@@ -107,27 +115,24 @@ app.post("/chat", async (req, res) => {
     }
     const outboundMessages = [{ role: "system", content: systemPrompt }, ...messages];
 
-    // === Call Chatbase ===
+    // === Chatbase ===
     const chatbaseRes = await fetch("https://www.chatbase.co/api/v1/chat", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${process.env.CHATBASE_API_KEY}`,
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
       },
       body: JSON.stringify({
         chatbotId: process.env.CHATBASE_CHATBOT_ID,
         conversationId: sessionId,
-        messages: outboundMessages
+        messages: outboundMessages,
       }),
-      timeout: 30000
+      timeout: 30000,
     });
     const cbData = await chatbaseRes.json();
-    console.log("🔎 Chatbase raw response:", cbData);
+    const responseText = cbData?.text?.trim?.() || "Let's keep going!";
 
-    // Handle both possible formats
-    const responseText = (cbData?.text || cbData?.output || "").trim() || "Let's keep going!";
-
-    // Detect speaking character
+    // Detect character
     let detectedCharacter = detectCharacter(responseText, sessionData.character || "mcarthur");
     sessionData.character = detectedCharacter;
     await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
@@ -140,7 +145,7 @@ app.post("/chat", async (req, res) => {
       text: responseText,
       character: detectedCharacter,
       voiceId: voices[detectedCharacter] || voices.mcarthur,
-      level: sessionData.studentLevel
+      level: sessionData.studentLevel,
     });
   } catch (err) {
     console.error("❌ /chat error:", err);
@@ -149,7 +154,7 @@ app.post("/chat", async (req, res) => {
       character: "mcarthur",
       voiceId: voices.mcarthur,
       level: null,
-      note: "fallback-error"
+      note: "fallback-error",
     });
   }
 });
@@ -161,20 +166,19 @@ app.post("/speakbase", async (req, res) => {
     if (!text) return res.status(400).json({ error: "Text is required" });
     const finalVoiceId = voiceId || voices[character] || voices.default;
 
-    // Shorter pause
-    const processedText = text.replace(/,/g, " ..");
+    const processedText = text.replace(/,/g, " ...");
 
     const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${finalVoiceId}`, {
       method: "POST",
       headers: {
         Accept: "audio/mpeg",
         "Content-Type": "application/json",
-        "xi-api-key": process.env.ELEVENLABS_API_KEY
+        "xi-api-key": process.env.ELEVENLABS_API_KEY,
       },
       body: JSON.stringify({
         text: processedText,
-        voice_settings: { stability: 0.3, similarity_boost: 0.8 }
-      })
+        voice_settings: { stability: 0.3, similarity_boost: 0.8 },
+      }),
     });
 
     if (!response.ok) {
@@ -216,8 +220,8 @@ app.get("/story/:unit/:chapter", (req, res) => {
       "1": "🌾 In Waterwheel Village, the morning sun rises over the mill...",
       "2": "🍞 At the bakery, the smell of fresh bread fills the air...",
       "3": "🥕 At the market, farmers bring carrots, potatoes, and apples...",
-      "4": "🏡 In the evening, families gather around the table..."
-    }
+      "4": "🏡 In the evening, families gather around the table...",
+    },
   };
   if (stories[unit] && stories[unit][chapter]) {
     return res.json({ story: stories[unit][chapter] });
@@ -225,7 +229,7 @@ app.get("/story/:unit/:chapter", (req, res) => {
   res.json({ error: "No story found" });
 });
 
-// === End + Resume lesson endpoints ===
+// === End + Resume lesson ===
 app.post("/endlesson", async (req, res) => {
   const { sessionId, unit, chapter, learnedWords } = req.body;
   if (!sessionId) return res.status(400).json({ error: "Missing sessionId" });
