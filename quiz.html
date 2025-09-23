@@ -6,35 +6,32 @@
   <style>
     body { font-family: Arial, sans-serif; margin: 2rem; background: #f4f4f9; }
     h1 { color: #333; }
-    .question-box { background: white; padding: 1rem; margin-bottom: 1rem;
-      border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-    button { margin: 0.5rem 0; padding: 0.5rem 1rem; border: none;
-      border-radius: 5px; cursor: pointer; }
+    .question-box { background: white; padding: 1rem; margin-bottom: 1rem; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+    button { margin: 0.5rem 0; padding: 0.5rem 1rem; border: none; border-radius: 5px; cursor: pointer; }
     .correct { background-color: #4CAF50; color: white; }
     .wrong { background-color: #f44336; color: white; }
     .option { background-color: #ddd; }
-    #submitBtn { background: #2196F3; color:white; font-weight:bold; margin-top:20px; }
-    #results { margin-top:20px; font-size:18px; font-weight:bold; }
+    #results { margin-top: 1rem; font-weight: bold; }
   </style>
 </head>
 <body>
   <h1>Food & Drink Quiz 🍎</h1>
   <div id="quiz-container">Loading quiz...</div>
-  <button id="submitBtn">✅ Submit Quiz</button>
+  <button id="submit-quiz">✅ Submit Quiz</button>
   <div id="results"></div>
 
   <script>
-    let quizData = [];
+    let currentQuiz = [];
 
     async function loadQuiz() {
       const res = await fetch("http://localhost:3000/quiz/month1/food_drink");
       const data = await res.json();
-      quizData = data.quiz;
+      currentQuiz = data.quiz;
 
       const container = document.getElementById("quiz-container");
       container.innerHTML = "";
 
-      quizData.forEach((q, index) => {
+      data.quiz.forEach((q, index) => {
         const box = document.createElement("div");
         box.className = "question-box";
 
@@ -42,55 +39,41 @@
         question.textContent = `Q${index + 1}: ${q.question}`;
         box.appendChild(question);
 
-        if (q.type === "write" || q.type === "blank") {
-          const input = document.createElement("input");
-          input.type = "text";
-          input.id = `answer-${index}`;
-          box.appendChild(input);
+        // Multiple choice options
+        const options = [q.answer];
+        while (options.length < 4) {
+          const randomWord = data.quiz[Math.floor(Math.random() * data.quiz.length)].answer;
+          if (!options.includes(randomWord)) options.push(randomWord);
         }
+        options.sort(() => Math.random() - 0.5);
 
-        if (q.type === "multiple") {
-          q.options.forEach(opt => {
-            const label = document.createElement("label");
-            const radio = document.createElement("input");
-            radio.type = "radio";
-            radio.name = `q${index}`;
-            radio.value = opt;
-            label.appendChild(radio);
-            label.appendChild(document.createTextNode(" " + opt));
-            box.appendChild(label);
-            box.appendChild(document.createElement("br"));
-          });
-        }
+        options.forEach(opt => {
+          const label = document.createElement("label");
+          label.innerHTML = `
+            <input type="radio" name="q${index}" value="${opt}"> ${opt}
+          `;
+          box.appendChild(label);
+          box.appendChild(document.createElement("br"));
+        });
 
         container.appendChild(box);
       });
     }
 
-    // === Handle Submit Quiz ===
-    document.getElementById("submitBtn").addEventListener("click", () => {
+    function checkAnswers() {
       let score = 0;
-      let resultsText = "";
-
-      quizData.forEach((q, i) => {
-        let userAnswer = "";
-        if (q.type === "multiple") {
-          userAnswer = document.querySelector(`input[name="q${i}"]:checked`)?.value || "";
-        } else {
-          userAnswer = document.getElementById(`answer-${i}`).value.trim();
-        }
-
-        if (userAnswer.toLowerCase() === q.answer.toLowerCase()) {
+      currentQuiz.forEach((q, i) => {
+        const selected = document.querySelector(`input[name="q${i}"]:checked`);
+        if (selected && selected.value === q.answer) {
           score++;
-          resultsText += `Q${i+1}: ✅ Correct! (${q.question})\n`;
-        } else {
-          resultsText += `Q${i+1}: ❌ Wrong. Your answer: "${userAnswer}" | Correct: "${q.answer}"\n`;
         }
       });
 
       const resultsDiv = document.getElementById("results");
-      resultsDiv.textContent = `You scored ${score}/${quizData.length}\n\n${resultsText}`;
-    });
+      resultsDiv.textContent = `You scored ${score} out of ${currentQuiz.length}`;
+    }
+
+    document.getElementById("submit-quiz").addEventListener("click", checkAnswers);
 
     loadQuiz();
   </script>
