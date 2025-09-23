@@ -1,150 +1,211 @@
 // betterchatF.js
-// === Waterwheel Village Backend ===
+// === Waterwheel Village Backend (CommonJS) ===
+
+// ✅ Load env first
+const dotenv = require("dotenv");
+dotenv.config();
 
 const express = require("express");
+const cors = require("cors");
+const bodyParser = require("body-parser");
 const fs = require("fs");
 const path = require("path");
-const bodyParser = require("body-parser");
-const cors = require("cors");
-require("dotenv").config(); // Load ELEVEN_API_KEY from .env
+const { v4: uuidv4 } = require("uuid");
+const Redis = require("ioredis");
+const fetch = (...args) => import("node-fetch").then(({ default: f }) => f(...args));
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
+// === Middleware ===
 app.use(cors());
 app.use(bodyParser.json());
 
-// === Load wordlists ===
-const wordlistPath = path.join(__dirname, "wordlist.json");
-const trialWordlistPath = path.join(__dirname, "trialwordlist.json");
+// === Redis Setup ===
+const redis = new Redis(process.env.REDIS_URL || "redis://localhost:6379");
 
+// === Wordlists ===
+const wordlistsPath = path.join(__dirname, "wordlists.json");
 let wordlists = {};
-let trialWordlists = {};
-
 try {
-  if (fs.existsSync(wordlistPath)) {
-    wordlists = JSON.parse(fs.readFileSync(wordlistPath, "utf8"));
-    console.log("✅ Full wordlists loaded. Levels available:", Object.keys(wordlists));
-  }
-  if (fs.existsSync(trialWordlistPath)) {
-    trialWordlists = JSON.parse(fs.readFileSync(trialWordlistPath, "utf8"));
-    console.log("✅ Trial wordlists loaded.");
-  }
+  const fileContent = fs.readFileSync(wordlistsPath, "utf-8");
+  wordlists = JSON.parse(fileContent);
+  console.log("✅ Wordlists loaded:", Object.keys(wordlists));
 } catch (err) {
-  console.error("❌ Error loading wordlists:", err);
+  console.error("❌ Failed to load wordlists file", err);
 }
 
-// === In-memory lessons ===
-let savedLessons = {};
+// === Voice mapping ===
+const voices = {
+  mcarthur: process.env.VOICE_MCARTHUR,
+  nadia: process.env.VOICE_NADIA,
+  fatima: process.env.VOICE_FATIMA,
+  anika: process.env.VOICE_ANIKA,
+  liang: process.env.VOICE_LIANG,
+  johannes: process.env.VOICE_JOHANNES,
+  aleksanderi: process.env.VOICE_ALEKSANDERI,
+  sophia: process.env.VOICE_SOPHIA,
+  kwame: process.env.VOICE_KWAME,
+  ibrahim: process.env.VOICE_IBRAHIM,
+  default: process.env.VOICE_MCARTHUR
+};
+
+// === Character detection ===
+function detectCharacter(text, fallback = "mcarthur") {
+  if (!text) return fallback;
+  const lower = text.toLowerCase();
+  if (lower.includes("nadia")) return "nadia";
+  if (lower.includes("fatima")) return "fatima";
+  if (lower.includes("anika")) return "anika";
+  if (lower.includes("liang")) return "liang";
+  if (lower.includes("johannes")) return "johannes";
+  if (lower.includes("aleksander")) return "aleksanderi";
+  if (lower.includes("sophia")) return "sophia";
+  if (lower.includes("kwame")) return "kwame";
+  if (lower.includes("ibrahim")) return "ibrahim";
+  if (lower.includes("mcarthur")) return "mcarthur";
+  return fallback;
+}
 
 // === CHAT endpoint ===
 app.post("/chat", async (req, res) => {
-  const { text, sessionId, overrideCharacter, overrideVoiceId } = req.body;
+  const { text: rawText, sessionId: providedSessionId, isVoice } = req.body || {};
+  const sessionId = providedSessionId || uuidv4();
+  const sanitizedText = rawText ? String(rawText).trim() : "";
 
-  let reply = "";
-  if (!text || text.trim() === "") {
-    reply =
-      "Welcome to Waterwheel Village, friends! I'm Mr. McArthur. What's your name? Are you a beginner, intermediate, or expert student?";
-  } else {
-    reply = `You said: "${text}". Great! Let's keep practicing.`;
+  try {
+    // Load session from Redis
+    let sessionData = JSON.parse(await redis.get(`session:${sessionId}`)) || {
+      character: "mcarthur",
+      studentLevel: null
+    };
+
+    // If no input → Welcome
+    if (!sanitizedText) {
+      const welcomeMsg =
+        "Welcome to Waterwheel Village, friends! I'm Mr. McArthur. What's your name? Are you a beginner, intermediate, or expert student?";
+      await redis.set(`history:${sessionId}`, JSON.stringify([{ role: "assistant", content: welcomeMsg }]));
+      return res.json({ text: welcomeMsg, character: "mcarthur", voiceId: voices.mcarthur });
+    }
+
+    // Save user input into history
+    let messages = JSON.parse(await redis.get(`history:${sessionId}`)) || [];
+    messages.push({ role: "user", content: sanitizedText });
+
+    // Detect level
+    const lowered = sanitizedText.toLowerCase();
+    if (lowered.includes("beginner")) sessionData.studentLevel = "beginner";
+    else if (lowered.includes("intermediate")) sessionData.studentLevel = "intermediate";
+    else if (lowered.includes("expert")) sessionData.studentLevel = "expert";
+
+    await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
+
+    // Build system prompt
+    let systemPrompt = `You are ${sessionData.character} in Waterwheel Village. Be a kind ESL teacher. Be brief, encouraging, correct gently. Always ask one short follow-up.`;
+    if (isVoice) {
+      systemPrompt += " Student is speaking by voice, ignore punctuation corrections.";
+    }
+    const outboundMessages = [{ role: "system", content: systemPrompt }, ...messages];
+
+    // === Call Chatbase ===
+    const chatbaseRes = await fetch("https://www.chatbase.co/api/v1/chat", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.CHATBASE_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        chatbotId: process.env.CHATBASE_CHATBOT_ID,
+        conversationId: sessionId,
+        messages: outboundMessages
+      }),
+      timeout: 30000
+    });
+    const cbData = await chatbaseRes.json();
+    console.log("🔎 Chatbase raw response:", cbData);
+
+    // Handle both possible formats
+    const responseText = (cbData?.text || cbData?.output || "").trim() || "Let's keep going!";
+
+    // Detect speaking character
+    let detectedCharacter = detectCharacter(responseText, sessionData.character || "mcarthur");
+    sessionData.character = detectedCharacter;
+    await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
+
+    // Save history
+    messages.push({ role: "assistant", content: responseText });
+    await redis.set(`history:${sessionId}`, JSON.stringify(messages));
+
+    res.json({
+      text: responseText,
+      character: detectedCharacter,
+      voiceId: voices[detectedCharacter] || voices.mcarthur,
+      level: sessionData.studentLevel
+    });
+  } catch (err) {
+    console.error("❌ /chat error:", err);
+    res.json({
+      text: "Thanks! Let’s begin with a short exercise: tell me 3 things about yourself.",
+      character: "mcarthur",
+      voiceId: voices.mcarthur,
+      level: null,
+      note: "fallback-error"
+    });
   }
-
-  res.json({
-    text: reply,
-    character: overrideCharacter || "mcarthur",
-    voiceId: overrideVoiceId || "Pt5YrLNyu6d2s3s4CVMg",
-  });
 });
 
-// === SPEAK endpoint (ElevenLabs) ===
+// === SPEAK endpoint ===
 app.post("/speakbase", async (req, res) => {
   try {
-    const { text, voiceId } = req.body;
+    const { text, voiceId, character } = req.body;
+    if (!text) return res.status(400).json({ error: "Text is required" });
+    const finalVoiceId = voiceId || voices[character] || voices.default;
 
-    if (!process.env.ELEVEN_API_KEY) {
-      console.error("❌ ELEVEN_API_KEY missing in .env");
-      return res.status(500).json({ error: "Missing ElevenLabs API key" });
-    }
+    // Shorter pause
+    const processedText = text.replace(/,/g, " ..");
 
-    const response = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
-      {
-        method: "POST",
-        headers: {
-          Accept: "audio/mpeg",
-          "xi-api-key": process.env.ELEVEN_API_KEY,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          text,
-          model_id: "eleven_multilingual_v2",
-          voice_settings: { stability: 0.4, similarity_boost: 0.8 },
-        }),
-      }
-    );
+    const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${finalVoiceId}`, {
+      method: "POST",
+      headers: {
+        Accept: "audio/mpeg",
+        "Content-Type": "application/json",
+        "xi-api-key": process.env.ELEVENLABS_API_KEY
+      },
+      body: JSON.stringify({
+        text: processedText,
+        voice_settings: { stability: 0.3, similarity_boost: 0.8 }
+      })
+    });
 
     if (!response.ok) {
-      const errTxt = await response.text();
-      console.error("❌ ElevenLabs error:", errTxt);
-      return res.status(500).json({ error: "ElevenLabs request failed" });
+      throw new Error(`ElevenLabs error: ${response.statusText}`);
     }
 
-    const audioBuffer = await response.arrayBuffer();
+    const buffer = await response.arrayBuffer();
     res.setHeader("Content-Type", "audio/mpeg");
-    res.send(Buffer.from(audioBuffer));
+    res.send(Buffer.from(buffer));
   } catch (err) {
-    console.error("❌ Speak error:", err);
-    res.status(500).json({ error: "Speak failed" });
+    console.error("❌ /speakbase error:", err);
+    res.status(500).json({ error: "Failed to generate speech" });
   }
-});
-
-// === End lesson ===
-app.post("/endlesson", (req, res) => {
-  const { sessionId, unit, chapter, learnedWords } = req.body;
-  if (!sessionId) {
-    return res.status(400).json({ error: "Missing sessionId" });
-  }
-  savedLessons[sessionId] = {
-    unit,
-    chapter,
-    learnedWords,
-    timestamp: Date.now(),
-  };
-  res.json({ message: "📕 Lesson ended and stored!", fileUrl: null });
-});
-
-// === Resume lesson ===
-app.get("/resume/:sessionId", (req, res) => {
-  const { sessionId } = req.params;
-  if (!savedLessons[sessionId]) {
-    return res.json({ error: "No saved lesson found." });
-  }
-  res.json({ progress: savedLessons[sessionId] });
 });
 
 // === Wordlist endpoint ===
-app.get("/wordlist/:unit/:level", (req, res) => {
-  const { unit, level } = req.params;
-
-  let list = (wordlists[unit] && wordlists[unit][level]) || [];
-  if (list.length === 0 && trialWordlists[unit] && trialWordlists[unit][level]) {
-    list = trialWordlists[unit][level];
-  }
-
-  if (!list || list.length === 0) {
-    return res.json({ error: "No words found" });
-  }
-  res.json(list);
+app.get("/wordlist/:week/:level", async (req, res) => {
+  const { week, level } = req.params;
+  const key = `week${week}`;
+  let words = wordlists[key]?.[level] || [];
+  if (!words.length) return res.status(404).json({ error: "No words found" });
+  res.json(words);
 });
 
 // === Quiz endpoint ===
-app.get("/quiz/:unit/:level", (req, res) => {
-  const { unit, level } = req.params;
-  let list = (wordlists[unit] && wordlists[unit][level]) || [];
-  if (!list || list.length === 0) {
-    return res.json({ error: "No quiz words found" });
-  }
-  res.json(list);
+app.get("/quiz/:week/:level", async (req, res) => {
+  const { week, level } = req.params;
+  const key = `week${week}`;
+  let words = wordlists[key]?.[level] || [];
+  if (!words.length) return res.status(404).json({ error: "No quiz words found" });
+  res.json(words.sort(() => 0.5 - Math.random()).slice(0, 5));
 });
 
 // === Story endpoint ===
@@ -152,26 +213,35 @@ app.get("/story/:unit/:chapter", (req, res) => {
   const { unit, chapter } = req.params;
   const stories = {
     "1": {
-      "1": "🌾 In Waterwheel Village, the morning sun rises over the mill. Villagers greet each other with warm hellos as they begin their day.",
-      "2": "🍞 At the bakery, the smell of fresh bread fills the air. Children count coins to buy a small loaf.",
-      "3": "🥕 At the market, farmers bring carrots, potatoes, and apples. Villagers practice numbers and greetings as they trade.",
-      "4": "🏡 In the evening, families gather around the table, sharing food and simple phrases like 'please' and 'thank you.'",
-    },
-    "2": {
-      "1": "👨‍👩‍👧 Families in the village live in wooden houses near the river. Parents teach children the names of rooms and furniture.",
-      "2": "🪑 Sophia the teacher shows her students how to say 'chair', 'table', and 'bed' in English.",
-      "3": "😊 At night, villagers talk about their feelings — happy, sad, tired — and comfort each other.",
-      "4": "🧹 Families share chores: cleaning, cooking, and fetching water. Each task brings new words to learn.",
-    },
+      "1": "🌾 In Waterwheel Village, the morning sun rises over the mill...",
+      "2": "🍞 At the bakery, the smell of fresh bread fills the air...",
+      "3": "🥕 At the market, farmers bring carrots, potatoes, and apples...",
+      "4": "🏡 In the evening, families gather around the table..."
+    }
   };
-
   if (stories[unit] && stories[unit][chapter]) {
     return res.json({ story: stories[unit][chapter] });
   }
   res.json({ error: "No story found" });
 });
 
-// === Start server ===
-app.listen(PORT, () => {
-  console.log(`✅ Backend running on port ${PORT}`);
+// === End + Resume lesson endpoints ===
+app.post("/endlesson", async (req, res) => {
+  const { sessionId, unit, chapter, learnedWords } = req.body;
+  if (!sessionId) return res.status(400).json({ error: "Missing sessionId" });
+  await redis.set(`lesson:${sessionId}`, JSON.stringify({ unit, chapter, learnedWords, timestamp: Date.now() }));
+  res.json({ message: "📕 Lesson ended and stored!" });
 });
+
+app.get("/resume/:sessionId", async (req, res) => {
+  const { sessionId } = req.params;
+  const data = await redis.get(`lesson:${sessionId}`);
+  if (!data) return res.json({ error: "No saved lesson found." });
+  res.json({ progress: JSON.parse(data) });
+});
+
+// === Health check ===
+app.get("/health", (req, res) => res.json({ ok: true, status: "Waterwheel backend alive" }));
+
+// === Start server ===
+app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
