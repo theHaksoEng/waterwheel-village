@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Waterwheel Village Quiz</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 2rem; background: #f4f4f9; }
+    h1 { color: #333; }
+    .question-box { background: white; padding: 1rem; margin-bottom: 1rem; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+    button { margin: 0.5rem 0; padding: 0.5rem 1rem; border: none; border-radius: 5px; cursor: pointer; }
+    .correct { background-color: #4CAF50; color: white; }
+    .wrong { background-color: #f44336; color: white; }
+    .option { background-color: #ddd; }
+  </style>
+</head>
+<body>
+  <h1>Food & Drink Quiz 🍎</h1>
+  <div id="quiz-container">Loading quiz...</div>
+
+  <script>
+    async function loadQuiz() {
+      const res = await fetch("http://localhost:3000/quiz/month1/food_drink");
+      const data = await res.json();
+      const container = document.getElementById("quiz-container");
+      container.innerHTML = "";
+
+      data.quiz.forEach((q, index) => {
+        const box = document.createElement("div");
+        box.className = "question-box";
+
+        const question = document.createElement("p");
+        question.textContent = `Q${index + 1}: ${q.question}`;
+        box.appendChild(question);
+
+        // Generate multiple choice options
+        const options = [q.answer];
+        while (options.length < 4) {
+          const randomWord = data.quiz[Math.floor(Math.random() * data.quiz.length)].answer;
+          if (!options.includes(randomWord)) options.push(randomWord);
+        }
+        options.sort(() => Math.random() - 0.5);
+
+        options.forEach(opt => {
+          const btn = document.createElement("button");
+          btn.textContent = opt;
+          btn.className = "option";
+          btn.onclick = () => {
+            if (opt === q.answer) {
+              btn.className = "correct";
+              alert("✅ Correct!");
+            } else {
+              btn.className = "wrong";
+              alert(`❌ Wrong. Correct answer: ${q.answer}`);
+            }
+          };
+          box.appendChild(btn);
+        });
+
+        container.appendChild(box);
+      });
+    }
+
+    loadQuiz();
+  </script>
+</body>
+</html>

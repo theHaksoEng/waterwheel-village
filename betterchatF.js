@@ -39,7 +39,6 @@ console.log("✅ Using Redis at:", redisUrl);
   }
 })();
 
-
 // === Connection Test ===
 (async () => {
   try {
@@ -50,16 +49,55 @@ console.log("✅ Using Redis at:", redisUrl);
   }
 })();
 
-// === Wordlists ===
-const wordlistsPath = path.join(__dirname, "wordlists.json");
-let wordlists = {};
-try {
-  const fileContent = fs.readFileSync(wordlistsPath, "utf-8");
-  wordlists = JSON.parse(fileContent);
-  console.log("✅ Wordlists loaded:", Object.keys(wordlists));
-} catch (err) {
-  console.error("❌ Failed to load wordlists file", err);
+// === Load monthly wordlists ===
+const monthlyWordlists = {};
+
+function loadMonthlyWordlists() {
+  const wordlistsDir = path.join(__dirname, "wordlists", "monthly");
+  try {
+    const files = fs.readdirSync(wordlistsDir);
+    for (const file of files) {
+      if (file.endsWith(".json")) {
+        const content = fs.readFileSync(path.join(wordlistsDir, file), "utf8");
+        const parsed = JSON.parse(content);
+
+        // normalize key (month1, month2, etc)
+        const key = parsed.month
+          ? `month${parsed.month}`
+          : path.basename(file, ".json");
+
+        monthlyWordlists[key] = parsed;
+      }
+    }
+    console.log("✅ Monthly wordlists loaded:", Object.keys(monthlyWordlists));
+  } catch (err) {
+    console.error("❌ Failed to load monthly wordlists:", err);
+  }
 }
+
+// Load once at startup
+loadMonthlyWordlists();
+
+// === Wordlist endpoints (monthly) ===
+app.get("/wordlist/:month", (req, res) => {
+  const { month } = req.params; // e.g. "month1"
+  if (monthlyWordlists[month]) {
+    res.json(monthlyWordlists[month]);
+  } else {
+    res.status(404).json({ error: `Wordlist for ${month} not found` });
+  }
+});
+
+app.get("/wordlist/:month/:chapter", (req, res) => {
+  const { month, chapter } = req.params;
+  const monthData = monthlyWordlists[month];
+
+  if (monthData && monthData.chapters && monthData.chapters[chapter]) {
+    res.json(monthData.chapters[chapter]);
+  } else {
+    res.status(404).json({ error: `Chapter '${chapter}' not found in ${month}` });
+  }
+});
 
 // === Voices ===
 const voices = {
@@ -221,13 +259,108 @@ app.get("/wordlist/:week/:level", async (req, res) => {
   res.json(words);
 });
 
-// === Quiz endpoint ===
-app.get("/quiz/:week/:level", async (req, res) => {
-  const { week, level } = req.params;
-  const key = `week${week}`;
-  let words = wordlists[key]?.[level] || [];
-  if (!words.length) return res.status(404).json({ error: "No quiz words found" });
-  res.json(words.sort(() => 0.5 - Math.random()).slice(0, 5));
+// === Quiz endpoint (monthly wordlists with types) ===
+app.get("/quiz/:month/:chapter", (req, res) => {
+  const { month, chapter } = req.params;
+  const monthData = monthlyWordlists[month];
+
+  if (!monthData || !monthData.chapters || !monthData.chapters[chapter]) {
+    return res.status(404).json({ error: `No quiz words found for ${chapter} in ${month}` });
+  }
+
+  const { teacher, words } = monthData.chapters[chapter];
+  if (!words || words.length === 0) {
+    return res.status(404).json({ error: `No words found for ${chapter}` });
+  }
+
+  // Shuffle words
+  const shuffled = [...words].sort(() => 0.5 - Math.random());
+
+  // Generate quiz (5 questions)
+  const quiz = shuffled.slice(0, 5).map((w, i) => {
+    const type = i % 3 === 0 ? "multiple" : i % 3 === 1 ? "write" : "blank";
+
+    if (type === "multiple") {
+      // pick 3 random incorrect options
+      const wrong = words
+        .filter(x => x.en !== w.en)
+        .sort(() => 0.5 - Math.random())
+        .slice(0, 3)
+        .map(x => x.en);
+
+      const options = [...wrong, w.en].sort(() => 0.5 - Math.random());
+
+      return {
+        type,
+        question: `Mikä on "${w.fi}" englanniksi?`,
+        options,
+        answer: w.en
+      };
+    }
+
+    if (type === "write") {
+      return {
+        type,
+        question: `Translate to English: "${w.fi}"`,
+        answer: w.en
+      };
+    }
+
+    if (type === "blank") {
+      return {
+        type,
+        question: `Fill in the blank: I like ___ (${w.fi}).`,
+        answer: w.en
+      };
+    }
+  });
+
+  res.json({ teacher, quiz });
+});
+// === Quiz check endpoint ===
+app.post("/quiz/check", (req, res) => {
+  const { month, chapter, answers } = req.body; 
+  // answers should be array of { question, userAnswer }
+
+  if (!month || !chapter || !answers) {
+    return res.status(400).json({ error: "month, chapter, and answers are required" });
+  }
+
+  const monthData = monthlyWordlists[month];
+  if (!monthData || !monthData.chapters || !monthData.chapters[chapter]) {
+    return res.status(404).json({ error: `No wordlist found for ${chapter} in ${month}` });
+  }
+
+  const { words } = monthData.chapters[chapter];
+
+  // Build a quick lookup
+  const wordMap = {};
+  words.forEach(w => {
+    wordMap[w.fi] = w.en.toLowerCase();
+    wordMap[w.en.toLowerCase()] = w.en.toLowerCase(); // accept EN directly too
+  });
+
+  // Score answers
+  const results = answers.map(a => {
+    const correct = wordMap[a.correctKey] || a.answer; // fallback
+    const isCorrect =
+      a.userAnswer && a.userAnswer.trim().toLowerCase() === correct.trim().toLowerCase();
+
+    return {
+      question: a.question,
+      userAnswer: a.userAnswer,
+      correctAnswer: correct,
+      correct: isCorrect
+    };
+  });
+
+  const score = results.filter(r => r.correct).length;
+
+  res.json({
+    score,
+    total: results.length,
+    results
+  });
 });
 
 // === Story endpoint ===
@@ -245,6 +378,33 @@ app.get("/story/:unit/:chapter", (req, res) => {
     return res.json({ story: stories[unit][chapter] });
   }
   res.json({ error: "No story found" });
+});
+// === Serve wordlists ===
+app.get("/wordlist/:month", (req, res) => {
+  const { month } = req.params; // e.g. "month1"
+  if (wordlists[month]) {
+    res.json(wordlists[month]);
+  } else {
+    res.status(404).json({ error: `Wordlist for ${month} not found` });
+  }
+});
+
+app.get("/wordlist/:month/:chapter", (req, res) => {
+  const { month, chapter } = req.params;
+
+  if (
+    wordlists[month] &&
+    wordlists[month].chapters &&
+    wordlists[month].chapters[chapter]
+  ) {
+    const chapterData = wordlists[month].chapters[chapter];
+    res.json({
+      teacher: chapterData.teacher || "mcarthur",
+      words: chapterData.words || []
+    });
+  } else {
+    res.status(404).json({ error: `Chapter '${chapter}' not found in ${month}` });
+  }
 });
 
 // === End + Resume lesson ===
