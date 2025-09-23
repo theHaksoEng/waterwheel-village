@@ -20,17 +20,35 @@ app.use(cors());
 app.use(bodyParser.json());
 
 // === Redis Setup ===
-let redis;
-const Redis = require("ioredis");
-if (process.env.REDIS_URL && process.env.REDIS_URL.includes("upstash")) {
-  redis = new Redis(process.env.REDIS_URL, {
-    tls: { rejectUnauthorized: false },
-  });
-  console.log("✅ Using Upstash Redis");
-} else {
-  redis = new Redis("redis://localhost:6379");
-  console.log("✅ Using local Redis");
-}
+const Redis = require("ioredis"); // 👈 must be here once
+const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
+
+const redis = new Redis(redisUrl, {
+  tls: redisUrl.startsWith("rediss://") ? {} : undefined,
+});
+
+console.log("✅ Using Redis at:", redisUrl);
+
+// === Redis URL + Connection Test ===
+(async () => {
+  try {
+    const pong = await redis.ping();
+    console.log(`✅ Redis URL test success: ${redisUrl} → ${pong}`);
+  } catch (err) {
+    console.error(`❌ Redis URL test failed for ${redisUrl}:`, err.message);
+  }
+})();
+
+
+// === Connection Test ===
+(async () => {
+  try {
+    const pong = await redis.ping();
+    console.log("✅ Redis connected:", pong);
+  } catch (err) {
+    console.error("❌ Redis connection failed:", err.message);
+  }
+})();
 
 // === Wordlists ===
 const wordlistsPath = path.join(__dirname, "wordlists.json");
