@@ -11,20 +11,28 @@
     .correct { background-color: #4CAF50; color: white; }
     .wrong { background-color: #f44336; color: white; }
     .option { background-color: #ddd; }
+    input[type="text"] { padding: 0.4rem; width: 60%; margin-top: 0.5rem; }
+    #result { font-weight: bold; margin-top: 1rem; }
   </style>
 </head>
 <body>
   <h1>Food & Drink Quiz 🍎</h1>
   <div id="quiz-container">Loading quiz...</div>
+  <button id="submit-btn" style="display:none;">✅ Submit Quiz</button>
+  <p id="result"></p>
 
   <script>
+    let currentQuiz = [];
+
     async function loadQuiz() {
       const res = await fetch("http://localhost:3000/quiz/month1/food_drink");
       const data = await res.json();
+      currentQuiz = data.quiz;
+
       const container = document.getElementById("quiz-container");
       container.innerHTML = "";
 
-      data.quiz.forEach((q, index) => {
+      currentQuiz.forEach((q, index) => {
         const box = document.createElement("div");
         box.className = "question-box";
 
@@ -32,33 +40,60 @@
         question.textContent = `Q${index + 1}: ${q.question}`;
         box.appendChild(question);
 
-        // Generate multiple choice options
-        const options = [q.answer];
-        while (options.length < 4) {
-          const randomWord = data.quiz[Math.floor(Math.random() * data.quiz.length)].answer;
-          if (!options.includes(randomWord)) options.push(randomWord);
+        if (q.type === "multiple") {
+          q.options.forEach(opt => {
+            const btn = document.createElement("button");
+            btn.textContent = opt;
+            btn.className = "option";
+            btn.onclick = () => {
+              document.querySelectorAll(`.q${index}`).forEach(b => b.disabled = true);
+              if (opt === q.answer) {
+                btn.className = "correct q" + index;
+              } else {
+                btn.className = "wrong q" + index;
+              }
+            };
+            btn.classList.add("q" + index);
+            box.appendChild(btn);
+          });
         }
-        options.sort(() => Math.random() - 0.5);
 
-        options.forEach(opt => {
-          const btn = document.createElement("button");
-          btn.textContent = opt;
-          btn.className = "option";
-          btn.onclick = () => {
-            if (opt === q.answer) {
-              btn.className = "correct";
-              alert("✅ Correct!");
-            } else {
-              btn.className = "wrong";
-              alert(`❌ Wrong. Correct answer: ${q.answer}`);
-            }
-          };
-          box.appendChild(btn);
-        });
+        if (q.type === "write" || q.type === "blank") {
+          const input = document.createElement("input");
+          input.type = "text";
+          input.id = `answer-${index}`;
+          box.appendChild(input);
+        }
 
         container.appendChild(box);
       });
+
+      document.getElementById("submit-btn").style.display = "inline-block";
     }
+
+    function checkAnswers() {
+      let correctCount = 0;
+
+      currentQuiz.forEach((q, i) => {
+        if (q.type === "multiple") {
+          const chosen = document.querySelector(`.q${i}.correct`);
+          if (chosen) correctCount++;
+        } else {
+          const userAnswer = document.getElementById(`answer-${i}`).value.trim().toLowerCase();
+          if (userAnswer === q.answer.toLowerCase()) {
+            correctCount++;
+            document.getElementById(`answer-${i}`).style.backgroundColor = "#c8e6c9"; // green
+          } else {
+            document.getElementById(`answer-${i}`).style.backgroundColor = "#ffcdd2"; // red
+          }
+        }
+      });
+
+      document.getElementById("result").textContent = 
+        `You got ${correctCount} out of ${currentQuiz.length} correct! 🎉`;
+    }
+
+    document.getElementById("submit-btn").addEventListener("click", checkAnswers);
 
     loadQuiz();
   </script>
