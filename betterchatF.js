@@ -424,6 +424,36 @@ app.get("/resume/:sessionId", async (req, res) => {
 
 // === Health check ===
 app.get("/health", (req, res) => res.json({ ok: true, status: "Waterwheel backend alive" }));
+// === Lesson intros ===
+const lessonIntros = {
+  month1: {
+    greetings_introductions: {
+      teacher: "mcarthur",
+      text: "Hello, friend! My name is Mr. McArthur. Let’s practice greetings and introductions. Try saying: 'Hello, my name is...' "
+    },
+    numbers_days_questions: {
+      teacher: "johannes",
+      text: "I am Johannes. Let’s talk about numbers and days. Can you count to five with me?"
+    },
+    food_drink: {
+      teacher: "fatima",
+      text: "Welcome, dear student! I am Fatima. Today we will enjoy talking about food and drink. Let’s start with simple words like 'soup' and 'bread'."
+    },
+    daily_phrases: {
+      teacher: "anika",
+      text: "Hi, I am Anika! Let’s practice daily phrases together. Start by saying: 'Good morning!'"
+    }
+  }
+};
+
+app.get("/lesson/:month/:chapter", (req, res) => {
+  const { month, chapter } = req.params;
+  const intro = lessonIntros[month]?.[chapter];
+  if (!intro) {
+    return res.status(404).json({ error: "Lesson not found" });
+  }
+  res.json(intro);
+});
 
 // === Start server ===
 app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
