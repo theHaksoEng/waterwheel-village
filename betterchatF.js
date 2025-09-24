@@ -155,12 +155,33 @@ app.post("/chat", async (req, res) => {
 
     await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
 
-    // Build system prompt
-    let systemPrompt = `You are ${sessionData.character} in Waterwheel Village. Be a kind ESL teacher. Be brief, encouraging, correct gently. Always ask one short follow-up.`;
-    if (isVoice) {
-      systemPrompt += " Student is speaking by voice, ignore punctuation corrections.";
+    // Build system prompt with teacher persistence
+let activeCharacter = sessionData.character || "mcarthur";
+
+// If this session has a lesson teacher, lock onto that teacher
+const lessonData = await redis.get(`lesson:${sessionId}`);
+if (lessonData) {
+  try {
+    const parsed = JSON.parse(lessonData);
+    if (parsed.teacher) {
+      activeCharacter = parsed.teacher;
     }
-    const outboundMessages = [{ role: "system", content: systemPrompt }, ...messages];
+  } catch (err) {
+    console.warn("⚠️ Failed to parse lessonData:", err.message);
+  }
+}
+
+sessionData.character = activeCharacter;
+
+let systemPrompt = `You are ${activeCharacter} in Waterwheel Village. 
+Be a kind ESL teacher. Stay in character as ${activeCharacter}, 
+even if the student mentions another name. Be brief, encouraging, 
+correct gently, and always ask one short follow-up.`;
+
+// Special rule: if student is speaking with voice input
+if (isVoice) {
+  systemPrompt += " Do not correct punctuation or capitalization when the student is speaking by voice.";
+}
 
     // === Chatbase ===
     const chatbaseRes = await fetch("https://www.chatbase.co/api/v1/chat", {
@@ -439,8 +460,6 @@ app.get("/lesson/:month/:chapter", async (req, res) => {
 
   res.json({ ...intro, words, sessionId });
 });
-
-
 
 // === Start server ===
 app.listen(PORT, () =>
