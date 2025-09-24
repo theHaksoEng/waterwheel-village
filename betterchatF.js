@@ -234,3 +234,4 @@ app.get("/health", (req, res) => res.json({ ok: true, status: "Waterwheel backen
 
 // === Start server ===
 app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
+
