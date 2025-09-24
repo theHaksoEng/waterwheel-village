@@ -201,50 +201,6 @@ and always ask one short follow-up question.`;
   }
 });
 
-    // === Build system prompt ===
-    let systemPrompt = `You are ${activeCharacter} in Waterwheel Village.
-You must ALWAYS stay in character as ${activeCharacter}.
-Do not switch to other teachers unless the student explicitly requests a different one.
-Be a kind ESL teacher: brief, encouraging, correct gently,
-and always ask one short follow-up question.`;
-
-    if (isVoice) {
-      systemPrompt +=
-        " The student is speaking by voice. Do NOT mention punctuation, commas, periods, or capitalization. Focus only on words and clarity.";
-    }
-
-    // === Vocab integration ===
-    let vocabWords = [];
-    if (sessionData.currentLesson) {
-      const { month, chapter } = sessionData.currentLesson;
-      vocabWords = monthlyWordlists[month]?.chapters?.[chapter]?.words?.map(w => w.en) || [];
-      if (!sessionData.progress[chapter]) sessionData.progress[chapter] = {};
-    }
-
-    if (vocabWords.length > 0) {
-      systemPrompt += ` Encourage the student to use these target words if possible: ${vocabWords.join(", ")}.`;
-    }
-
-    // Call OpenAI (dummy structure shown, replace with real API call)
-    const replyText = `(${activeCharacter} replying...) ${sanitizedText}`; // placeholder
-
-    // Save assistant reply to history
-    messages.push({ role: "assistant", content: replyText });
-
-    await redis.set(`history:${sessionId}`, JSON.stringify(messages));
-    await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
-
-    res.json({
-      text: replyText,
-      character: activeCharacter,
-      voiceId: voices[activeCharacter] || voices.mcarthur,
-    });
-  } catch (err) {
-    console.error("❌ Chat error:", err);
-    res.status(500).json({ error: "Chat failed" });
-  }
-});
-
 // === Speakbase endpoint (for ElevenLabs) ===
 const voices = {
   mcarthur: "fEVT2ExfHe1MyjuiIiU9",
