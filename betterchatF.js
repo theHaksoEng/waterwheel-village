@@ -416,19 +416,36 @@ const lessonIntros = {
   },
 };
 
-app.get("/lesson/:month/:chapter", (req, res) => {
+app.get("/lesson/:month/:chapter", async (req, res) => {
   const { month, chapter } = req.params;
+  const { sessionId } = req.query;
+
   const intro = lessonIntros[month]?.[chapter];
   const monthData = monthlyWordlists[month];
+  const words = monthData?.chapters?.[chapter]?.words || [];
 
   if (!intro) {
     return res.status(404).json({ error: "Lesson not found" });
   }
 
-  // Attach words if available
-  const words = monthData?.chapters?.[chapter]?.words || [];
-  res.json({ ...intro, words });
+  // ✅ If sessionId given, lock teacher into the Redis session
+  if (sessionId) {
+    try {
+      let sessionData = JSON.parse(await redis.get(`session:${sessionId}`)) || {};
+      sessionData.character = intro.teacher; // lock teacher
+      await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
+    } catch (err) {
+      console.error("Failed to set teacher in session:", err);
+    }
+  }
+
+  res.json({
+    teacher: intro.teacher,
+    text: intro.text,
+    words
+  });
 });
+
 
 // === Start server ===
 app.listen(PORT, () =>
