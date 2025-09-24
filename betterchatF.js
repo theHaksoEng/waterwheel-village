@@ -117,10 +117,13 @@ app.get("/lesson/:month/:chapter", async (req, res) => {
 });
 
 // === CHAT endpoint ===
+// === CHAT endpoint ===
 app.post("/chat", async (req, res) => {
   const { text: rawText, sessionId: providedSessionId, isVoice } = req.body || {};
   const sessionId = providedSessionId || uuidv4();
   const sanitizedText = rawText ? String(rawText).trim() : "";
+
+  console.log("📩 Incoming chat request:", { text: sanitizedText, sessionId, isVoice });
 
   try {
     // Load or initialize session
@@ -128,6 +131,7 @@ app.post("/chat", async (req, res) => {
       character: "mcarthur",
       studentLevel: null,
     };
+    console.log("📦 Loaded sessionData:", sessionData);
 
     // Handle first-time welcome if no input
     if (!sanitizedText) {
@@ -137,12 +141,14 @@ app.post("/chat", async (req, res) => {
         `history:${sessionId}`,
         JSON.stringify([{ role: "assistant", content: welcomeMsg }])
       );
+      console.log("👋 Sent welcome message");
       return res.json({ text: welcomeMsg, character: "mcarthur", voiceId: voices.mcarthur });
     }
 
     // Load history and append user input
     let messages = JSON.parse(await redis.get(`history:${sessionId}`)) || [];
     messages.push({ role: "user", content: sanitizedText });
+    console.log("📝 Updated messages:", messages);
 
     // Detect level from user message
     const lowered = sanitizedText.toLowerCase();
@@ -151,6 +157,7 @@ app.post("/chat", async (req, res) => {
     else if (lowered.includes("expert")) sessionData.studentLevel = "expert";
 
     await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
+    console.log("💾 Saved sessionData:", sessionData);
 
     // === Build system prompt with teacher persistence ===
     let activeCharacter = sessionData.character || "mcarthur";
@@ -181,6 +188,8 @@ and always ask one short follow-up question.`;
         " The student is speaking by voice. Do NOT mention punctuation, commas, periods, or capitalization. Focus only on words and clarity.";
     }
 
+    console.log("🛠 Using systemPrompt:", systemPrompt);
+
     // === Call OpenAI with history + system prompt ===
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
@@ -192,6 +201,7 @@ and always ask one short follow-up question.`;
     });
 
     const reply = completion.choices[0].message.content.trim();
+    console.log("💬 OpenAI reply:", reply);
 
     // Save bot reply to history
     messages.push({ role: "assistant", content: reply });
@@ -202,8 +212,11 @@ and always ask one short follow-up question.`;
 
     res.json({ text: reply, character: activeCharacter, voiceId });
   } catch (err) {
-    console.error("❌ Chat error:", err);
-    res.status(500).json({ error: "Chat failed" });
+    console.error("❌ Chat error:", err?.message || err, err?.stack || "");
+    res.status(500).json({
+      error: "Chat failed",
+      details: err?.message || "Unknown error",
+    });
   }
 });
 
@@ -221,7 +234,7 @@ app.post("/speakbase", async (req, res) => {
     const ttsRes = await fetch("https://api.elevenlabs.io/v1/text-to-speech/" + voiceId, {
       method: "POST",
       headers: {
-        "xi-api-key": process.env.ELEVEN_API_KEY,
+        "xi-api-key": process.env.ELEVENLABS_API_KEY,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ text }),
