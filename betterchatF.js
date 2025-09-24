@@ -155,7 +155,7 @@ app.post("/chat", async (req, res) => {
 
     await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
 
-    // Build system prompt with teacher persistence
+// Build system prompt with teacher persistence
 let activeCharacter = sessionData.character || "mcarthur";
 
 // If this session has a lesson teacher, lock onto that teacher
@@ -174,13 +174,14 @@ if (lessonData) {
 sessionData.character = activeCharacter;
 
 let systemPrompt = `You are ${activeCharacter} in Waterwheel Village. 
-Be a kind ESL teacher. Stay in character as ${activeCharacter}, 
-even if the student mentions another name. Be brief, encouraging, 
-correct gently, and always ask one short follow-up.`;
+You must ALWAYS stay in character as ${activeCharacter}. 
+Do not switch to other teachers unless the student explicitly requests a different one. 
+Be a kind ESL teacher: brief, encouraging, correct gently, 
+and always ask one short follow-up question.`;
 
-// Special rule: if student is speaking with voice input
+// Special rule: voice mode
 if (isVoice) {
-  systemPrompt += " Do not correct punctuation or capitalization when the student is speaking by voice.";
+  systemPrompt += " The student is speaking by voice. Do NOT mention punctuation, commas, periods, or capitalization. Focus only on words and clarity.";
 }
 
     // === Chatbase ===
