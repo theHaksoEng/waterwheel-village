@@ -5,6 +5,12 @@
 const dotenv = require("dotenv");
 dotenv.config();
 
+
+// === OpenAI Setup ===
+const OpenAI = require("openai");
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
