@@ -248,9 +248,9 @@ and always ask one short follow-up question.`;
 // === Speakbase endpoint (for ElevenLabs) ===
 const voices = {
   mcarthur: "fEVT2ExfHe1MyjuiIiU9",
-  fatima: "Pt5YrLNyu6d2s3s4CVMg",
-  johannes: "replace-with-ID",
-  anika: "replace-with-ID",
+  fatima: "JMbCR4ujfEfGaawA1YtC",
+  johannes: "JgHmW3ojZwT0NDP5D1JJ",
+  anika: "GCPLhb1XrVwcoKUJYcvz",
 };
 
 app.post("/speakbase", async (req, res) => {
