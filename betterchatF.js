@@ -117,15 +117,13 @@ app.post("/chat", async (req, res) => {
   const sanitizedText = rawText ? String(rawText).trim() : "";
 
   try {
-    // Load session or init
+    // Load or initialize session
     let sessionData = JSON.parse(await redis.get(`session:${sessionId}`)) || {
       character: "mcarthur",
       studentLevel: null,
-      currentLesson: null,
-      progress: {},
     };
 
-    // Handle no input = welcome
+    // Handle first-time welcome if no input
     if (!sanitizedText) {
       const welcomeMsg =
         "Welcome to Waterwheel Village, friends! I'm Mr. McArthur. What's your name? Are you a beginner, intermediate, or expert student?";
@@ -136,23 +134,72 @@ app.post("/chat", async (req, res) => {
       return res.json({ text: welcomeMsg, character: "mcarthur", voiceId: voices.mcarthur });
     }
 
-    // Save user input into history
+    // Load history and append user input
     let messages = JSON.parse(await redis.get(`history:${sessionId}`)) || [];
     messages.push({ role: "user", content: sanitizedText });
 
-    // Detect level from user self-report
+    // Detect level from user message
     const lowered = sanitizedText.toLowerCase();
     if (lowered.includes("beginner")) sessionData.studentLevel = "beginner";
     else if (lowered.includes("intermediate")) sessionData.studentLevel = "intermediate";
     else if (lowered.includes("expert")) sessionData.studentLevel = "expert";
 
-    // === Teacher persistence ===
+    await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
+
+    // === Build system prompt with teacher persistence ===
     let activeCharacter = sessionData.character || "mcarthur";
-    if (sessionData.currentLesson && sessionData.currentLesson.month) {
-      const lessonIntro = lessonIntros[sessionData.currentLesson.month]?.[sessionData.currentLesson.chapter];
-      if (lessonIntro?.teacher) activeCharacter = lessonIntro.teacher;
+
+    // Check if lesson lock exists
+    const lessonData = await redis.get(`lesson:${sessionId}`);
+    if (lessonData) {
+      try {
+        const parsed = JSON.parse(lessonData);
+        if (parsed.teacher) {
+          activeCharacter = parsed.teacher;
+        }
+      } catch (err) {
+        console.warn("⚠️ Failed to parse lessonData:", err.message);
+      }
     }
     sessionData.character = activeCharacter;
+
+    let systemPrompt = `You are ${activeCharacter} in Waterwheel Village. 
+You must ALWAYS stay in character as ${activeCharacter}. 
+Do not switch to other teachers unless the student explicitly requests a different one. 
+Be a kind ESL teacher: brief, encouraging, correct gently, 
+and always ask one short follow-up question.`;
+
+    // Special rule: voice input
+    if (isVoice) {
+      systemPrompt +=
+        " The student is speaking by voice. Do NOT mention punctuation, commas, periods, or capitalization. Focus only on words and clarity.";
+    }
+
+    // === Call OpenAI with history + system prompt ===
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: systemPrompt },
+        ...messages,
+      ],
+      temperature: 0.7,
+    });
+
+    const reply = completion.choices[0].message.content.trim();
+
+    // Save bot reply to history
+    messages.push({ role: "assistant", content: reply });
+    await redis.set(`history:${sessionId}`, JSON.stringify(messages));
+
+    // Voice ID mapping
+    const voiceId = voices[activeCharacter] || voices.mcarthur;
+
+    res.json({ text: reply, character: activeCharacter, voiceId });
+  } catch (err) {
+    console.error("❌ Chat error:", err);
+    res.status(500).json({ error: "Chat failed" });
+  }
+});
 
     // === Build system prompt ===
     let systemPrompt = `You are ${activeCharacter} in Waterwheel Village.
