@@ -416,35 +416,30 @@ const lessonIntros = {
   },
 };
 
+// === Lesson Intros with teacher lock ===
 app.get("/lesson/:month/:chapter", async (req, res) => {
   const { month, chapter } = req.params;
-  const { sessionId } = req.query;
-
   const intro = lessonIntros[month]?.[chapter];
+
+  if (!intro) return res.status(404).json({ error: "Lesson not found" });
+
+  // Use sessionId if provided, else generate new one
+  const sessionId = req.query.sessionId || uuidv4();
+
+  // Save teacher + lesson into Redis
+  const sessionData = {
+    character: intro.teacher,
+    currentLesson: { month, chapter },
+  };
+  await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
+
+  // Attach words from wordlist (if available)
   const monthData = monthlyWordlists[month];
   const words = monthData?.chapters?.[chapter]?.words || [];
 
-  if (!intro) {
-    return res.status(404).json({ error: "Lesson not found" });
-  }
-
-  // ✅ If sessionId given, lock teacher into the Redis session
-  if (sessionId) {
-    try {
-      let sessionData = JSON.parse(await redis.get(`session:${sessionId}`)) || {};
-      sessionData.character = intro.teacher; // lock teacher
-      await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
-    } catch (err) {
-      console.error("Failed to set teacher in session:", err);
-    }
-  }
-
-  res.json({
-    teacher: intro.teacher,
-    text: intro.text,
-    words
-  });
+  res.json({ ...intro, words, sessionId });
 });
+
 
 
 // === Start server ===
