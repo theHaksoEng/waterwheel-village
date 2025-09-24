@@ -78,15 +78,6 @@ function loadMonthlyWordlists() {
 // Load once at startup
 loadMonthlyWordlists();
 
-// === Wordlist endpoints (monthly) ===
-app.get("/wordlist/:month", (req, res) => {
-  const { month } = req.params; // e.g. "month1"
-  if (monthlyWordlists[month]) {
-    res.json(monthlyWordlists[month]);
-  } else {
-    res.status(404).json({ error: `Wordlist for ${month} not found` });
-  }
-});
 
 app.get("/wordlist/:month/:chapter", (req, res) => {
   const { month, chapter } = req.params;
@@ -379,39 +370,15 @@ app.get("/story/:unit/:chapter", (req, res) => {
   }
   res.json({ error: "No story found" });
 });
-// === Serve wordlists ===
-app.get("/wordlist/:month", (req, res) => {
-  const { month } = req.params; // e.g. "month1"
-  if (wordlists[month]) {
-    res.json(wordlists[month]);
-  } else {
-    res.status(404).json({ error: `Wordlist for ${month} not found` });
-  }
-});
-
-app.get("/wordlist/:month/:chapter", (req, res) => {
-  const { month, chapter } = req.params;
-
-  if (
-    wordlists[month] &&
-    wordlists[month].chapters &&
-    wordlists[month].chapters[chapter]
-  ) {
-    const chapterData = wordlists[month].chapters[chapter];
-    res.json({
-      teacher: chapterData.teacher || "mcarthur",
-      words: chapterData.words || []
-    });
-  } else {
-    res.status(404).json({ error: `Chapter '${chapter}' not found in ${month}` });
-  }
-});
 
 // === End + Resume lesson ===
 app.post("/endlesson", async (req, res) => {
   const { sessionId, unit, chapter, learnedWords } = req.body;
   if (!sessionId) return res.status(400).json({ error: "Missing sessionId" });
-  await redis.set(`lesson:${sessionId}`, JSON.stringify({ unit, chapter, learnedWords, timestamp: Date.now() }));
+  await redis.set(
+    `lesson:${sessionId}`,
+    JSON.stringify({ unit, chapter, learnedWords, timestamp: Date.now() })
+  );
   res.json({ message: "📕 Lesson ended and stored!" });
 });
 
@@ -423,37 +390,47 @@ app.get("/resume/:sessionId", async (req, res) => {
 });
 
 // === Health check ===
-app.get("/health", (req, res) => res.json({ ok: true, status: "Waterwheel backend alive" }));
+app.get("/health", (req, res) =>
+  res.json({ ok: true, status: "Waterwheel backend alive" })
+);
+
 // === Lesson intros ===
 const lessonIntros = {
   month1: {
     greetings_introductions: {
       teacher: "mcarthur",
-      text: "Hello, friend! My name is Mr. McArthur. Let’s practice greetings and introductions. Try saying: 'Hello, my name is...' "
+      text: "Hello, friend! My name is Mr. McArthur. Let’s practice greetings and introductions. Try saying: 'Hello, my name is...' ",
     },
     numbers_days_questions: {
       teacher: "johannes",
-      text: "I am Johannes. Let’s talk about numbers and days. Can you count to five with me?"
+      text: "I am Johannes. Let’s talk about numbers and days. Can you count to five with me?",
     },
     food_drink: {
       teacher: "fatima",
-      text: "Welcome, dear student! I am Fatima. Today we will enjoy talking about food and drink. Let’s start with simple words like 'soup' and 'bread'."
+      text: "Welcome, dear student! I am Fatima. Today we will enjoy talking about food and drink. Let’s start with simple words like 'soup' and 'bread'.",
     },
     daily_phrases: {
       teacher: "anika",
-      text: "Hi, I am Anika! Let’s practice daily phrases together. Start by saying: 'Good morning!'"
-    }
-  }
+      text: "Hi, I am Anika! Let’s practice daily phrases together. Start by saying: 'Good morning!'",
+    },
+  },
 };
 
 app.get("/lesson/:month/:chapter", (req, res) => {
   const { month, chapter } = req.params;
   const intro = lessonIntros[month]?.[chapter];
+  const monthData = monthlyWordlists[month];
+
   if (!intro) {
     return res.status(404).json({ error: "Lesson not found" });
   }
-  res.json(intro);
+
+  // Attach words if available
+  const words = monthData?.chapters?.[chapter]?.words || [];
+  res.json({ ...intro, words });
 });
 
 // === Start server ===
-app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
+app.listen(PORT, () =>
+  console.log(`✅ Server running on port ${PORT}`)
+);
