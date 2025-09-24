@@ -11,27 +11,44 @@
     .correct { background-color: #4CAF50; color: white; }
     .wrong { background-color: #f44336; color: white; }
     .option { background-color: #ddd; }
+    #bookContents { border:1px solid #ccc; border-radius:8px; padding:15px; background:#fff; margin-bottom:20px; }
   </style>
 </head>
 <body>
-  <h1>Food & Drink Quiz 🍎</h1>
-  <div id="quiz-container">Loading quiz...</div>
+  <h1>📚 Waterwheel Village Quiz</h1>
 
-  <button id="submitQuizBtn">✅ Submit Quiz</button>
+  <!-- Book Contents -->
+  <div id="bookContents">
+    <h3>Contents – Pick a Chapter</h3>
+    <p>Select a chapter to load its quiz:</p>
+    <ul>
+      <li><button onclick="loadQuiz('month1','greetings_introductions')">👨 Greetings & Introductions (McArthur)</button></li>
+      <li><button onclick="loadQuiz('month1','numbers_days_questions')">👴 Numbers, Days & Questions (Johannes)</button></li>
+      <li><button onclick="loadQuiz('month1','food_drink')">👩 Food & Drink (Fatima)</button></li>
+      <li><button onclick="loadQuiz('month1','daily_phrases')">👩 Daily Phrases (Anika)</button></li>
+    </ul>
+  </div>
+
+  <div id="quiz-container">Pick a chapter above to start the quiz...</div>
+
+  <button id="submitQuizBtn" style="display:none;">✅ Submit Quiz</button>
   <div id="results"></div>
   <h2 id="score"></h2>
 
   <script>
     let quizData = []; // global to store quiz
 
-    async function loadQuiz() {
-      const res = await fetch("http://localhost:3000/quiz/month1/food_drink");
+    async function loadQuiz(month, chapter) {
+      const res = await fetch(`http://localhost:3000/quiz/${month}/${chapter}`);
       const data = await res.json();
       quizData = data.quiz; // save quiz globally
-      const container = document.getElementById("quiz-container");
-      container.innerHTML = "";
 
-      data.quiz.forEach((q, index) => {
+      const container = document.getElementById("quiz-container");
+      container.innerHTML = `<h2>📖 ${chapter.replace("_"," ")} Quiz</h2>`;
+      document.getElementById("results").innerHTML = "";
+      document.getElementById("score").textContent = "";
+
+      quizData.forEach((q, index) => {
         const box = document.createElement("div");
         box.className = "question-box";
 
@@ -42,7 +59,7 @@
         // Generate multiple choice options
         const options = [q.answer];
         while (options.length < 4) {
-          const randomWord = data.quiz[Math.floor(Math.random() * data.quiz.length)].answer;
+          const randomWord = quizData[Math.floor(Math.random() * quizData.length)].answer;
           if (!options.includes(randomWord)) options.push(randomWord);
         }
         options.sort(() => Math.random() - 0.5);
@@ -61,6 +78,8 @@
 
         container.appendChild(box);
       });
+
+      document.getElementById("submitQuizBtn").style.display = "inline-block";
     }
 
     function submitQuiz() {
@@ -88,11 +107,6 @@
     }
 
     document.getElementById("submitQuizBtn").addEventListener("click", submitQuiz);
-
-    loadQuiz();
   </script>
 </body>
 </html>
-
-
-
