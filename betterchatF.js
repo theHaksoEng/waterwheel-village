@@ -9,8 +9,7 @@ dotenv.config();
 // === OpenAI Setup ===
 const OpenAI = require("openai");
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+apiKey: process.env.OPENAI_API_KEY,});
 const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
@@ -94,7 +93,7 @@ const lessonIntros = {
       teacher: "anika",
       text: "Hi, I am Anika! Let’s practice daily phrases together. Start by saying: 'Good morning!'"
     },
-    farmer_chat: { // Added a new lesson type for Abraham
+    farmer_chat: { 
       teacher: "abraham",
       text: "Greetings, Matthew! I am Abraham, the farmer. I grow many fruits and vegetables, and I would love to talk about food with you. What would you like to discuss?"
     }
@@ -144,17 +143,29 @@ app.post("/chat", async (req, res) => {
     let sessionData = JSON.parse(await redis.get(`session:${sessionId}`)) || {
       character: "mcarthur",
       studentLevel: null,
+      currentLesson: null, // Ensure this key exists
     };
     console.log("📦 Loaded sessionData:", sessionData);
+
+    // NEW: Check for active lesson and use that character
+    if (sessionData.currentLesson) {
+      const lesson = lessonIntros[sessionData.currentLesson.month]?.[sessionData.currentLesson.chapter];
+      if (lesson) {
+        sessionData.character = lesson.teacher;
+      }
+    }
 
     // Handle character change requests
     const requestedCharacter = findCharacter(sanitizedText);
     if (requestedCharacter && requestedCharacter !== sessionData.character) {
       sessionData.character = requestedCharacter;
+      // Clear current lesson if we are switching characters mid-session
+      sessionData.currentLesson = null;
       await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
       console.log("🔄 Switched to new character:", requestedCharacter);
+      
       const newIntro = lessonIntros.month1[`${requestedCharacter}_chat`] || lessonIntros.month1.greetings_introductions;
-      return res.json({ text: `Hello, friend! Let me introduce you to ${requestedCharacter.charAt(0).toUpperCase() + requestedCharacter.slice(1)}.`, character: "mcarthur", voiceId: voices.mcarthur });
+      return res.json({ text: newIntro.text, character: requestedCharacter, voiceId: voices[requestedCharacter] });
     }
 
     // Handle first-time welcome if no input
