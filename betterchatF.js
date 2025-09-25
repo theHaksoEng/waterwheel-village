@@ -93,6 +93,10 @@ const lessonIntros = {
     daily_phrases: {
       teacher: "anika",
       text: "Hi, I am Anika! Let’s practice daily phrases together. Start by saying: 'Good morning!'"
+    },
+    farmer_chat: { // Added a new lesson type for Abraham
+      teacher: "abraham",
+      text: "Greetings, Matthew! I am Abraham, the farmer. I grow many fruits and vegetables, and I would love to talk about food with you. What would you like to discuss?"
     }
   }
 };
@@ -116,7 +120,17 @@ app.get("/lesson/:month/:chapter", async (req, res) => {
   res.json({ ...intro, words, sessionId });
 });
 
-// === CHAT endpoint ===
+// Helper function to find a character
+const findCharacter = (text) => {
+  const lowered = text.toLowerCase();
+  if (lowered.includes("abraham")) return "abraham";
+  if (lowered.includes("johannes")) return "johannes";
+  if (lowered.includes("fatima")) return "fatima";
+  if (lowered.includes("anika")) return "anika";
+  if (lowered.includes("mcarthur")) return "mcarthur";
+  return null;
+};
+
 // === CHAT endpoint ===
 app.post("/chat", async (req, res) => {
   const { text: rawText, sessionId: providedSessionId, isVoice } = req.body || {};
@@ -133,10 +147,20 @@ app.post("/chat", async (req, res) => {
     };
     console.log("📦 Loaded sessionData:", sessionData);
 
+    // Handle character change requests
+    const requestedCharacter = findCharacter(sanitizedText);
+    if (requestedCharacter && requestedCharacter !== sessionData.character) {
+      sessionData.character = requestedCharacter;
+      await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
+      console.log("🔄 Switched to new character:", requestedCharacter);
+      const newIntro = lessonIntros.month1[`${requestedCharacter}_chat`] || lessonIntros.month1.greetings_introductions;
+      return res.json({ text: `Hello, friend! Let me introduce you to ${requestedCharacter.charAt(0).toUpperCase() + requestedCharacter.slice(1)}.`, character: "mcarthur", voiceId: voices.mcarthur });
+    }
+
     // Handle first-time welcome if no input
     if (!sanitizedText) {
       const welcomeMsg =
-        "Welcome to Waterwheel Village, friends! I'm Mr. McArthur. What's your name? Are you a beginner, intermediate, or expert student?";
+        "Welcome to Waterwheel Village, friend! I'm Mr. McArthur. What's your name? Are you a beginner, intermediate, or expert student?";
       await redis.set(
         `history:${sessionId}`,
         JSON.stringify([{ role: "assistant", content: welcomeMsg }])
@@ -160,43 +184,26 @@ app.post("/chat", async (req, res) => {
     console.log("💾 Saved sessionData:", sessionData);
 
    // === Build system prompt with teacher persistence ===
-let activeCharacter = sessionData.character || "mcarthur";
+   let activeCharacter = sessionData.character || "mcarthur";
+   
+   // --- IMPROVED prompt logic ---
+   let systemPrompt = `You are an ESL (English as a Second Language) teacher in Waterwheel Village.
+   You must act as the character "${activeCharacter}" and always stay in character.
+   Your teaching style is kind, friendly, and very encouraging.
+   You correct grammar and vocabulary **implicitly** by rephrasing the student's message correctly within your own reply. Do not point out mistakes directly.
+   After your response, **always** ask one, very short follow-up question to keep the conversation going.`;
 
-// Check if lesson lock exists
-const lessonData = await redis.get(`lesson:${sessionId}`);
-if (lessonData) {
-  try {
-    const parsed = JSON.parse(lessonData);
-    if (parsed.teacher) {
-      activeCharacter = parsed.teacher;
-    }
-  } catch (err) {
-    console.warn("⚠️ Failed to parse lessonData:", err.message);
-  }
-}
-sessionData.character = activeCharacter;
-
-// --- FIXED prompt logic ---
-let systemPrompt = `You are ${activeCharacter} in Waterwheel Village.
-You must ALWAYS stay in character as ${activeCharacter}.
-Be a kind ESL teacher: brief, encouraging, correct gently,
-and always ask one short follow-up question.`;
-
-// Voice input → NO punctuation/capitalization corrections
-if (isVoice) {
-  systemPrompt += `
-The student is speaking by voice. 
-Do NOT mention punctuation, commas, periods, or capitalization. 
-Only help with word choice, clarity, and simple grammar. 
-Focus on vocabulary and short, natural sentences.`;
-} else {
-  // Text input → very light corrections, avoid nitpicking punctuation
-  systemPrompt += `
-The student is typing. 
-Correct only when it helps understanding (word order, missing words, tense).
-Do NOT over-correct punctuation (commas, periods, question marks).
-Keep corrections gentle and natural.`;
-}
+   // Voice input → NO punctuation/capitalization corrections
+   if (isVoice) {
+     systemPrompt += `
+   The student is speaking by voice. Do NOT mention punctuation, commas, or capitalization.
+   Just focus on vocabulary and gentle grammar correction by example.`;
+   } else {
+     // Text input → very light corrections, avoid nitpicking punctuation
+     systemPrompt += `
+   The student is typing. Correct by example, focusing on word choice, word order, and simple grammar.
+   Do NOT mention or explicitly correct punctuation (commas, periods, question marks).`;
+   }
 
     console.log("🛠 Using systemPrompt:", systemPrompt);
 
@@ -236,6 +243,7 @@ const voices = {
   fatima: "JMbCR4ujfEfGaawA1YtC",
   johannes: "JgHmW3ojZwT0NDP5D1JJ",
   anika: "GCPLhb1XrVwcoKUJYcvz",
+  abraham: "JgHmW3ojZwT0NDP5D1JJ", // Re-using Johannes's voice for Abraham
 };
 
 app.post("/speakbase", async (req, res) => {
@@ -263,4 +271,3 @@ app.get("/health", (req, res) => res.json({ ok: true, status: "Waterwheel backen
 
 // === Start server ===
 app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
-
