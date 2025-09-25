@@ -159,34 +159,44 @@ app.post("/chat", async (req, res) => {
     await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
     console.log("💾 Saved sessionData:", sessionData);
 
-    // === Build system prompt with teacher persistence ===
-    let activeCharacter = sessionData.character || "mcarthur";
+   // === Build system prompt with teacher persistence ===
+let activeCharacter = sessionData.character || "mcarthur";
 
-    // Check if lesson lock exists
-    const lessonData = await redis.get(`lesson:${sessionId}`);
-    if (lessonData) {
-      try {
-        const parsed = JSON.parse(lessonData);
-        if (parsed.teacher) {
-          activeCharacter = parsed.teacher;
-        }
-      } catch (err) {
-        console.warn("⚠️ Failed to parse lessonData:", err.message);
-      }
+// Check if lesson lock exists
+const lessonData = await redis.get(`lesson:${sessionId}`);
+if (lessonData) {
+  try {
+    const parsed = JSON.parse(lessonData);
+    if (parsed.teacher) {
+      activeCharacter = parsed.teacher;
     }
-    sessionData.character = activeCharacter;
+  } catch (err) {
+    console.warn("⚠️ Failed to parse lessonData:", err.message);
+  }
+}
+sessionData.character = activeCharacter;
 
-    let systemPrompt = `You are ${activeCharacter} in Waterwheel Village. 
-You must ALWAYS stay in character as ${activeCharacter}. 
-Do not switch to other teachers unless the student explicitly requests a different one. 
-Be a kind ESL teacher: brief, encouraging, correct gently, 
+// --- FIXED prompt logic ---
+let systemPrompt = `You are ${activeCharacter} in Waterwheel Village.
+You must ALWAYS stay in character as ${activeCharacter}.
+Be a kind ESL teacher: brief, encouraging, correct gently,
 and always ask one short follow-up question.`;
 
-    // Special rule: voice input
-    if (isVoice) {
-      systemPrompt +=
-        " The student is speaking by voice. Do NOT mention punctuation, commas, periods, or capitalization. Focus only on words and clarity.";
-    }
+// Voice input → NO punctuation/capitalization corrections
+if (isVoice) {
+  systemPrompt += `
+The student is speaking by voice. 
+Do NOT mention punctuation, commas, periods, or capitalization. 
+Only help with word choice, clarity, and simple grammar. 
+Focus on vocabulary and short, natural sentences.`;
+} else {
+  // Text input → very light corrections, avoid nitpicking punctuation
+  systemPrompt += `
+The student is typing. 
+Correct only when it helps understanding (word order, missing words, tense).
+Do NOT over-correct punctuation (commas, periods, question marks).
+Keep corrections gentle and natural.`;
+}
 
     console.log("🛠 Using systemPrompt:", systemPrompt);
 
