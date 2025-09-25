@@ -116,7 +116,10 @@ app.get("/lesson/:month/:chapter", async (req, res) => {
   const monthData = monthlyWordlists[month];
   const words = monthData?.chapters?.[chapter]?.words || [];
 
-  res.json({ ...intro, words, sessionId });
+  // NEW: Add voiceId to the lesson intro response
+  const voiceId = voices[intro.teacher] || voices.mcarthur;
+
+  res.json({ ...intro, words, sessionId, voiceId });
 });
 
 // Helper function to find a character
