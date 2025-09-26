@@ -5,11 +5,11 @@
 const dotenv = require("dotenv");
 dotenv.config();
 
-
 // === OpenAI Setup ===
 const OpenAI = require("openai");
 const openai = new OpenAI({
-apiKey: process.env.OPENAI_API_KEY,});
+  apiKey: process.env.OPENAI_API_KEY,
+});
 const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
@@ -41,6 +41,80 @@ console.log("✅ Using Redis at:", redisUrl);
     console.error("❌ Redis connection failed:", err.message);
   }
 })();
+
+// === NEW: Character Data ===
+const characters = {
+  mcarthur: {
+    voiceId: "fEVT2ExfHe1MyjuiIiU9",
+    name: "Mr. McArthur",
+    style: "a kind, patient, and wise village elder. He speaks with a gentle, grandfatherly tone, guiding students like a mentor. He is deeply rooted in his faith and often uses analogies from his time on a farm or his travels.",
+    background: "He is a retired history teacher who, after a lifetime of travel, found his home in Waterwheel Village. He is a man of quiet strength and faith, tending to his garden with the same care he gives to his students. He believes every path is built one step at a time.",
+    phrases: ["Let's rise up to the occasion.", "Each plant, like each person, has its season.", "Every path is built one step at a time."],
+  },
+  johannes: {
+    voiceId: "JgHmW3ojZwT0NDP5D1JJ",
+    name: "Johannes",
+    style: "a man of quiet strength and steady hands. He speaks little but his words are deeply thoughtful and reverent, reflecting a lifetime of working the soil. His teaching style is patient and humble, focused on perseverance.",
+    background: "He is a Finnish farmer whose face is weathered by wind and sun. He believes the hard northern land teaches patience and humility. He mentors younger villagers, guiding them with a quiet reverence for the earth.",
+    phrases: ["The land knows me, and I know it.", "The land knows me, and I know it."],
+  },
+  nadia: {
+    voiceId: "a1KZUXKFVFDOb33I1uqr",
+    name: "Nadia",
+    style: "a soft-spoken but firm architect. Her voice carries the calm rhythm of ancient stone cities. Her teaching style is precise and inspiring, focusing on structure, design, and harmony.",
+    background: "An architect from Aleppo who rebuilds broken dreams in Waterwheel Village. She believes architecture should protect and inspire nature. She often sketches at sunrise and her words, like her designs, are inspired by both olive trees and pine forests.",
+    phrases: ["A good home must hold both light and silence."],
+  },
+  fatima: {
+    voiceId: "JMbCR4ujfEfGaawA1YtC",
+    name: "Fatima",
+    style: "a warm and compassionate healer. She walks slowly and listens deeply, speaking with the wisdom of her ancestors. Her teaching style is comforting and gentle, full of empathy and warmth.",
+    background: "Born in Sudan, she learned healing from her grandmother using herbs, oils, and kind eyes. She is a comfort to the entire village, believing that laughter is a medicine.",
+    phrases: ["Every pain has a story. And every story has a root that can be softened."],
+  },
+  anika: {
+    voiceId: "GCPLhb1XrVwcoKUJYcvz",
+    name: "Anika",
+    style: "a cheerful and tender seamstress. She hums while she works, and her teaching style is gentle and nurturing, focusing on the beauty of heritage and the importance of memory.",
+    background: "A seamstress from Ukraine, her hands move fast but tenderly, threading hope and heritage into her work. Her workshop smells of lavender and she often tells stories from her mother's village.",
+    phrases: ["Every stitch is a promise that we will not forget who we are."],
+  },
+  liang: {
+    voiceId: "gAMZphRyrWJnLMDnom6H", // <-- Replace with your ID
+    name: "Liang",
+    style: "a calm and logical entrepreneur. He sees patterns in everything and his teaching style is strong, steady, and forward-flowing, using analogies from trade and cultivation.",
+    background: "He managed a family tea house in China and now sets up networks in the village. He is also a poet, comparing the whisper of pine trees to bamboo in moonlight.",
+    phrases: ["Commerce is not just numbers. It is trust. And trust must be cultivated like a garden."],
+  },
+  alex: {
+    voiceId: "tIFPE2y0DAU6xfZn3Fka", // <-- Replace with your ID
+    name: "Aleksanderi (Alex)",
+    style: "a calm and dignified Lutheran priest. His voice is gentle and soothing, and his teaching style is centered on grace, forgiveness, and the power of scripture. He is a source of hope and stillness.",
+    background: "He is a priest who brings peace to the village. He carves wooden crosses and gives them to people who are feeling lost. He often sings old hymns and tells stories of saints and mercy.",
+    phrases: ["The heart must be open like a window to receive both sunlight and rain.", "In the name and blood of the Lord Jesus Christ, all your sins are forgiven."],
+  },
+  ibrahim: {
+    voiceId: "tlETan7Okc4pzjD0z62P", // <-- Replace with your ID
+    name: "Ibrahim",
+    style: "a quiet and focused blacksmith. He speaks rarely, but when he does, his words are simple and true, like iron. His teaching style is hands-on and purposeful, focusing on craftsmanship and resilience.",
+    background: "A blacksmith from Afghanistan whose forge is the heartbeat of the village. War stole his home, but not his craft. He believes metal remembers, and that shaping it is an act of peace.",
+    phrases: ["Because I now build what holds the world together—not what breaks it."],
+  },
+  sophia: {
+    voiceId: "tlETan7Okc4pzjD0z62P", // <-- Replace with your ID
+    name: "Sophia",
+    style: "a cheerful and energetic teacher. She brings sunshine into every room and her voice carries the rhythm of salsa. Her teaching style is full of laughter and stories, focusing on kindness and the joy of learning.",
+    background: "A teacher from Venezuela who has a love of words and books. She often begins her day with a proverb from her homeland and is adored by the children she teaches.",
+    phrases: ["We are not just learning letters, we are learning how to be human."],
+  },
+  kwame: {
+    voiceId: "dhwafD61uVd8h85wAZSE", // <-- Replace with your ID
+    name: "Kwame",
+    style: "a warm and wise farmer. He walks barefoot on the earth to listen to the soil. His teaching style is patient and nurturing, using analogies from farming and nature.",
+    background: "A regenerative farmer from Ghana who believes food is sacred. He tells stories of talking goats and clever foxes, and teaches villagers how to plant and care for the land with love.",
+    phrases: ["Farming is like loving someone. You show up every day, even when it’s hard, and little by little, things grow."],
+  },
+};
 
 // === Load monthly wordlists ===
 const monthlyWordlists = {};
@@ -93,7 +167,7 @@ const lessonIntros = {
       teacher: "anika",
       text: "Hi, I am Anika! Let’s practice daily phrases together. Start by saying: 'Good morning!'"
     },
-    farmer_chat: { 
+    farmer_chat: {
       teacher: "abraham",
       text: "Greetings, Matthew! I am Abraham, the farmer. I grow many fruits and vegetables, and I would love to talk about food with you. What would you like to discuss?"
     }
@@ -116,8 +190,8 @@ app.get("/lesson/:month/:chapter", async (req, res) => {
   const monthData = monthlyWordlists[month];
   const words = monthData?.chapters?.[chapter]?.words || [];
 
-  // NEW: Add voiceId to the lesson intro response
-  const voiceId = voices[intro.teacher] || voices.mcarthur;
+  // NEW: Add voiceId from the characters object
+  const voiceId = characters[intro.teacher]?.voiceId;
 
   res.json({ ...intro, words, sessionId, voiceId });
 });
@@ -125,11 +199,11 @@ app.get("/lesson/:month/:chapter", async (req, res) => {
 // Helper function to find a character
 const findCharacter = (text) => {
   const lowered = text.toLowerCase();
-  if (lowered.includes("abraham")) return "abraham";
-  if (lowered.includes("johannes")) return "johannes";
-  if (lowered.includes("fatima")) return "fatima";
-  if (lowered.includes("anika")) return "anika";
-  if (lowered.includes("mcarthur")) return "mcarthur";
+  for (const key in characters) {
+    if (lowered.includes(characters[key].name.toLowerCase())) {
+      return key;
+    }
+  }
   return null;
 };
 
@@ -146,11 +220,11 @@ app.post("/chat", async (req, res) => {
     let sessionData = JSON.parse(await redis.get(`session:${sessionId}`)) || {
       character: "mcarthur",
       studentLevel: null,
-      currentLesson: null, // Ensure this key exists
+      currentLesson: null,
     };
     console.log("📦 Loaded sessionData:", sessionData);
 
-    // NEW: Check for active lesson and use that character
+    // Check for active lesson and use that character
     if (sessionData.currentLesson) {
       const lesson = lessonIntros[sessionData.currentLesson.month]?.[sessionData.currentLesson.chapter];
       if (lesson) {
@@ -162,13 +236,13 @@ app.post("/chat", async (req, res) => {
     const requestedCharacter = findCharacter(sanitizedText);
     if (requestedCharacter && requestedCharacter !== sessionData.character) {
       sessionData.character = requestedCharacter;
-      // Clear current lesson if we are switching characters mid-session
       sessionData.currentLesson = null;
       await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
       console.log("🔄 Switched to new character:", requestedCharacter);
-      
+
       const newIntro = lessonIntros.month1[`${requestedCharacter}_chat`] || lessonIntros.month1.greetings_introductions;
-      return res.json({ text: newIntro.text, character: requestedCharacter, voiceId: voices[requestedCharacter] });
+      const introVoiceId = characters[requestedCharacter]?.voiceId;
+      return res.json({ text: newIntro.text, character: requestedCharacter, voiceId: introVoiceId });
     }
 
     // Handle first-time welcome if no input
@@ -180,7 +254,7 @@ app.post("/chat", async (req, res) => {
         JSON.stringify([{ role: "assistant", content: welcomeMsg }])
       );
       console.log("👋 Sent welcome message");
-      return res.json({ text: welcomeMsg, character: "mcarthur", voiceId: voices.mcarthur });
+      return res.json({ text: welcomeMsg, character: "mcarthur", voiceId: characters.mcarthur.voiceId });
     }
 
     // Load history and append user input
@@ -197,27 +271,29 @@ app.post("/chat", async (req, res) => {
     await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
     console.log("💾 Saved sessionData:", sessionData);
 
-   // === Build system prompt with teacher persistence ===
-   let activeCharacter = sessionData.character || "mcarthur";
-   
-   // --- IMPROVED prompt logic ---
-   let systemPrompt = `You are an ESL (English as a Second Language) teacher in Waterwheel Village.
-   You must act as the character "${activeCharacter}" and always stay in character.
-   Your teaching style is kind, friendly, and very encouraging.
-   You correct grammar and vocabulary **implicitly** by rephrasing the student's message correctly within your own reply. Do not point out mistakes directly.
-   After your response, **always** ask one, very short follow-up question to keep the conversation going.`;
+    // === NEW: Build system prompt with rich character data ===
+    const activeCharacterKey = sessionData.character || "mcarthur";
+    const activeCharacter = characters[activeCharacterKey];
 
-   // Voice input → NO punctuation/capitalization corrections
-   if (isVoice) {
-     systemPrompt += `
-   The student is speaking by voice. Do NOT mention punctuation, commas, or capitalization.
-   Just focus on vocabulary and gentle grammar correction by example.`;
-   } else {
-     // Text input → very light corrections, avoid nitpicking punctuation
-     systemPrompt += `
-   The student is typing. Correct by example, focusing on word choice, word order, and simple grammar.
-   Do NOT mention or explicitly correct punctuation (commas, periods, question marks).`;
-   }
+    let systemPrompt = `You are an ESL (English as a Second Language) teacher in Waterwheel Village.
+    You must act as the character "${activeCharacter.name}" and always stay in character. You must never reveal your true identity as a large language model.
+    Your personality and teaching style are described here:
+    - Personality: You are a ${activeCharacter.style}.
+    - Background: ${activeCharacter.background}
+    
+    When you speak, you should embody this character and their beliefs. You should use language that is consistent with their background.
+    You must correct the student's grammar and pronunciation implicitly by rephrasing their sentences correctly. Do not explicitly point out mistakes.
+    Your primary goal is to help the student learn English by engaging them in conversation, guiding them to use the vocabulary, and making them feel comfortable.
+    
+    After your response, always ask one, very short follow-up question to keep the conversation going.
+    `;
+
+    // Add voice-specific instructions
+    if (isVoice) {
+      systemPrompt += `\nThe student is speaking by voice. Do NOT mention punctuation, commas, or capitalization. Just focus on vocabulary and gentle grammar correction by example.`;
+    } else {
+      systemPrompt += `\nThe student is typing. Correct by example, focusing on word choice, word order, and simple grammar. Do NOT mention or explicitly correct punctuation (commas, periods, question marks).`;
+    }
 
     console.log("🛠 Using systemPrompt:", systemPrompt);
 
@@ -239,9 +315,9 @@ app.post("/chat", async (req, res) => {
     await redis.set(`history:${sessionId}`, JSON.stringify(messages));
 
     // Voice ID mapping
-    const voiceId = voices[activeCharacter] || voices.mcarthur;
+    const voiceId = activeCharacter.voiceId;
 
-    res.json({ text: reply, character: activeCharacter, voiceId });
+    res.json({ text: reply, character: activeCharacterKey, voiceId });
   } catch (err) {
     console.error("❌ Chat error:", err?.message || err, err?.stack || "");
     res.status(500).json({
@@ -252,14 +328,6 @@ app.post("/chat", async (req, res) => {
 });
 
 // === Speakbase endpoint (for ElevenLabs) ===
-const voices = {
-  mcarthur: "fEVT2ExfHe1MyjuiIiU9",
-  fatima: "JMbCR4ujfEfGaawA1YtC",
-  johannes: "JgHmW3ojZwT0NDP5D1JJ",
-  anika: "GCPLhb1XrVwcoKUJYcvz",
-  abraham: "JgHmW3ojZwT0NDP5D1JJ", // Re-using Johannes's voice for Abraham
-};
-
 app.post("/speakbase", async (req, res) => {
   const { text, voiceId } = req.body;
   try {
