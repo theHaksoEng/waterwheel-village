@@ -52,63 +52,63 @@ const characters = {
     phrases: ["Let's rise up to the occasion.", "Each plant, like each person, has its season.", "Every path is built one step at a time."],
   },
   johannes: {
-    voiceId: "vB2Yw60u1d165rS2y6sS",
+    voiceId: "JgHmW3ojZwT0NDP5D1JJ",
     name: "Johannes",
     style: "a man of quiet strength and steady hands. He speaks little but his words are deeply thoughtful and reverent, reflecting a lifetime of working the soil. His teaching style is patient and humble, focused on perseverance.",
     background: "He is a Finnish farmer whose face is weathered by wind and sun. He believes the hard northern land teaches patience and humility. He mentors younger villagers, guiding them with a quiet reverence for the earth.",
     phrases: ["The land knows me, and I know it.", "The land knows me, and I know it."],
   },
   nadia: {
-    voiceId: "6rB9y0L7o36m8a6yXwM3",
+    voiceId: "a1KZUXKFVFDOb33I1uqr",
     name: "Nadia",
     style: "a soft-spoken but firm architect. Her voice carries the calm rhythm of ancient stone cities. Her teaching style is precise and inspiring, focusing on structure, design, and harmony.",
     background: "An architect from Aleppo who rebuilds broken dreams in Waterwheel Village. She believes architecture should protect and inspire nature. She often sketches at sunrise and her words, like her designs, are inspired by both olive trees and pine forests.",
     phrases: ["A good home must hold both light and silence."],
   },
   fatima: {
-    voiceId: "Pt5YrLNyu6d2s3s4CVMg",
+    voiceId: "JMbCR4ujfEfGaawA1YtC",
     name: "Fatima",
     style: "a warm and compassionate healer. She walks slowly and listens deeply, speaking with the wisdom of her ancestors. Her teaching style is comforting and gentle, full of empathy and warmth.",
     background: "Born in Sudan, she learned healing from her grandmother using herbs, oils, and kind eyes. She is a comfort to the entire village, believing that laughter is a medicine.",
     phrases: ["Every pain has a story. And every story has a root that can be softened."],
   },
   anika: {
-    voiceId: "vA57v3d9S5h5k8r4o2v3",
+    voiceId: "GCPLhb1XrVwcoKUJYcvz",
     name: "Anika",
     style: "a cheerful and tender seamstress. She hums while she works, and her teaching style is gentle and nurturing, focusing on the beauty of heritage and the importance of memory.",
     background: "A seamstress from Ukraine, her hands move fast but tenderly, threading hope and heritage into her work. Her workshop smells of lavender and she often tells stories from her mother's village.",
     phrases: ["Every stitch is a promise that we will not forget who we are."],
   },
   liang: {
-    voiceId: "Your-Liang-Voice-ID", // <-- Replace with your ID
+    voiceId: "gAMZphRyrWJnLMDnom6H", // <-- Replace with your ID
     name: "Liang",
     style: "a calm and logical entrepreneur. He sees patterns in everything and his teaching style is strong, steady, and forward-flowing, using analogies from trade and cultivation.",
     background: "He managed a family tea house in China and now sets up networks in the village. He is also a poet, comparing the whisper of pine trees to bamboo in moonlight.",
     phrases: ["Commerce is not just numbers. It is trust. And trust must be cultivated like a garden."],
   },
   alex: {
-    voiceId: "Your-Alex-Voice-ID", // <-- Replace with your ID
+    voiceId: "tIFPE2y0DAU6xfZn3Fka", // <-- Replace with your ID
     name: "Aleksanderi (Alex)",
     style: "a calm and dignified Lutheran priest. His voice is gentle and soothing, and his teaching style is centered on grace, forgiveness, and the power of scripture. He is a source of hope and stillness.",
     background: "He is a priest who brings peace to the village. He carves wooden crosses and gives them to people who are feeling lost. He often sings old hymns and tells stories of saints and mercy.",
     phrases: ["The heart must be open like a window to receive both sunlight and rain.", "In the name and blood of the Lord Jesus Christ, all your sins are forgiven."],
   },
   ibrahim: {
-    voiceId: "Your-Ibrahim-Voice-ID", // <-- Replace with your ID
+    voiceId: "tlETan7Okc4pzjD0z62P", // <-- Replace with your ID
     name: "Ibrahim",
     style: "a quiet and focused blacksmith. He speaks rarely, but when he does, his words are simple and true, like iron. His teaching style is hands-on and purposeful, focusing on craftsmanship and resilience.",
     background: "A blacksmith from Afghanistan whose forge is the heartbeat of the village. War stole his home, but not his craft. He believes metal remembers, and that shaping it is an act of peace.",
     phrases: ["Because I now build what holds the world together—not what breaks it."],
   },
   sophia: {
-    voiceId: "Your-Sophia-Voice-ID", // <-- Replace with your ID
+    voiceId: "0q9TlrIoQJIdxZP9oZh7", // <-- Replace with your ID
     name: "Sophia",
     style: "a cheerful and energetic teacher. She brings sunshine into every room and her voice carries the rhythm of salsa. Her teaching style is full of laughter and stories, focusing on kindness and the joy of learning.",
     background: "A teacher from Venezuela who has a love of words and books. She often begins her day with a proverb from her homeland and is adored by the children she teaches.",
     phrases: ["We are not just learning letters, we are learning how to be human."],
   },
   kwame: {
-    voiceId: "Your-Kwame-Voice-ID", // <-- Replace with your ID
+    voiceId: "dhwafD61uVd8h85wAZSE", // <-- Replace with your ID
     name: "Kwame",
     style: "a warm and wise farmer. He walks barefoot on the earth to listen to the soil. His teaching style is patient and nurturing, using analogies from farming and nature.",
     background: "A regenerative farmer from Ghana who believes food is sacred. He tells stories of talking goats and clever foxes, and teaches villagers how to plant and care for the land with love.",
