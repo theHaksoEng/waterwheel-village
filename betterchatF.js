@@ -279,8 +279,7 @@ app.post("/chat", async (req, res) => {
     }
 
     // === NEW: Check for weather question ===
-    const weatherRegex = /(weather|temperature|forecast|fine|sunny|rainy|cloudy|snowy).*(in|at|around|for)?\s+([a-zA-Z\s]+)/i;
-    const match = sanitizedText.match(weatherRegex);
+const weatherRegex = /(weather|temperature|forecast|fine|sunny|rainy|cloudy|snowy).*(in|at|around|for)?\s+([a-zA-Z\s,]+)$/i;    const match = sanitizedText.match(weatherRegex);
 
     if (match) {
         const city = match[3].trim();
