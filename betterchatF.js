@@ -42,7 +42,10 @@ console.log("✅ Using Redis at:", redisUrl);
   }
 })();
 
-// === NEW: Character Data ===
+// === NEW: WeatherAPI Setup ===
+const WEATHERAPI_KEY = process.env.WEATHERAPI_KEY;
+
+// === Character Data ===
 const characters = {
   mcarthur: {
     voiceId: "fEVT2ExfHe1MyjuiIiU9",
@@ -207,6 +210,22 @@ const findCharacter = (text) => {
   return null;
 };
 
+// === NEW: Weather API Function ===
+async function getWeather(city) {
+  try {
+    const response = await fetch(`http://api.weatherapi.com/v1/current.json?key=${WEATHERAPI_KEY}&q=${city}&aqi=no`);
+    const data = await response.json();
+    if (response.status !== 200) {
+      console.error("❌ Weather API error:", data.error.message);
+      return null;
+    }
+    return data;
+  } catch (error) {
+    console.error("❌ Failed to fetch weather data:", error);
+    return null;
+  }
+}
+
 // === CHAT endpoint ===
 app.post("/chat", async (req, res) => {
   const { text: rawText, sessionId: providedSessionId, isVoice } = req.body || {};
@@ -257,6 +276,38 @@ app.post("/chat", async (req, res) => {
       );
       console.log("👋 Sent welcome message");
       return res.json({ text: welcomeMsg, character: "mcarthur", voiceId: characters.mcarthur.voiceId });
+    }
+
+    // === NEW: Check for weather question ===
+    const weatherRegex = /(weather|temperature|forecast|fine|sunny|rainy|cloudy|snowy).*(in|at|around|for)?\s+([a-zA-Z\s]+)/i;
+    const match = sanitizedText.match(weatherRegex);
+
+    if (match) {
+        const city = match[3].trim();
+        const weatherData = await getWeather(city);
+        if (weatherData) {
+            const tempC = weatherData.current.temp_c;
+            const condition = weatherData.current.condition.text.toLowerCase();
+            const character = characters[sessionData.character];
+            
+            let weatherReply = "";
+
+            if (sessionData.character === 'johannes') {
+                weatherReply = `The soil is always talking, but for a real report on ${city}, I see the sky is ${condition} and the temperature is around ${tempC} degrees Celsius. That's a day for working in the fields.`;
+            } else if (sessionData.character === 'mcarthur') {
+                weatherReply = `That's an interesting question! I see that in ${city}, the weather is ${condition} and it's about ${tempC} degrees Celsius. A beautiful day to be outside.`;
+            } else {
+                weatherReply = `Okay! It looks like in ${city} the weather is ${condition} and the temperature is ${tempC} degrees Celsius. That's good to know.`;
+            }
+
+            // Save the weather reply to history
+            const messages = JSON.parse(await redis.get(`history:${sessionId}`)) || [];
+            messages.push({ role: "user", content: sanitizedText });
+            messages.push({ role: "assistant", content: weatherReply });
+            await redis.set(`history:${sessionId}`, JSON.stringify(messages));
+
+            return res.json({ text: weatherReply, character: sessionData.character, voiceId: characters[sessionData.character].voiceId });
+        }
     }
 
     // Load history and append user input
