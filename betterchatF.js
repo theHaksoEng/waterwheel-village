@@ -239,11 +239,12 @@ app.post("/chat", async (req, res) => {
   try {
     // Load or initialize session
     let sessionData = JSON.parse(await redis.get(`session:${sessionId}`)) || {
-      character: "mcarthur",
-      studentLevel: null,
-      currentLesson: null,
-      isWeatherQuery: false, // NEW: Add a state variable for weather
-    };
+  character: "mcarthur",
+  studentLevel: null,
+  currentLesson: null,
+  isWeatherQuery: false,
+  learnedWords: [], // NEW: Initialize the learned words counter
+};
     console.log("📦 Loaded sessionData:", sessionData);
 
     // Check for active lesson and use that character
@@ -281,7 +282,33 @@ app.post("/chat", async (req, res) => {
       console.log("👋 Sent welcome message");
       return res.json({ text: welcomeMsg, character: "mcarthur", voiceId: characters.mcarthur.voiceId });
     }
+// === NEW: Word Counting Logic ===
+    if (sessionData.currentLesson && sanitizedText) {
+      const { month, chapter } = sessionData.currentLesson;
+      const lessonWords = lessonIntros[month]?.[chapter]?.wordlist || [];
+      const userWords = sanitizedText.toLowerCase().split(/\s+/); // Split user message into an array of words
 
+      let newWordsLearned = 0;
+      let newWords = [];
+
+      // Check each lesson word against the user's words
+      for (const lessonWord of lessonWords) {
+        if (userWords.includes(lessonWord.toLowerCase())) {
+          // Check if the word is not already in our learned words list
+          if (!sessionData.learnedWords.includes(lessonWord.toLowerCase())) {
+            sessionData.learnedWords.push(lessonWord.toLowerCase());
+            newWords.push(lessonWord);
+            newWordsLearned++;
+          }
+        }
+      }
+      
+      // OPTIONAL: You can add a prompt to the student if they have learned a new word
+      // For now, we will just log it.
+      if (newWordsLearned > 0) {
+        console.log(`🎉 Student learned ${newWordsLearned} new words: ${newWords.join(', ')}`);
+      }
+    }
     // === NEW: Improved Weather Logic with State ===
     const weatherKeywords = /(weather|temperature|forecast|fine|sunny|rainy|cloudy|snowy)/i;
     const cityRegex = /(in|at|around|for)?\s*([a-zA-Z\s,]+)$/i;
@@ -345,6 +372,8 @@ app.post("/chat", async (req, res) => {
     console.log("📝 Updated messages:", messages);
 
     // Detect level from user message
+    await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
+    console.log("💾 Saved sessionData:", sessionData);
     const lowered = sanitizedText.toLowerCase();
     if (lowered.includes("beginner")) sessionData.studentLevel = "beginner";
     else if (lowered.includes("intermediate")) sessionData.studentLevel = "intermediate";
