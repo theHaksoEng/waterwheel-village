@@ -278,11 +278,20 @@ app.post("/chat", async (req, res) => {
       return res.json({ text: welcomeMsg, character: "mcarthur", voiceId: characters.mcarthur.voiceId });
     }
 
-    // === NEW: Check for weather question ===
-const weatherRegex = /(weather|temperature|forecast|fine|sunny|rainy|cloudy|snowy).*(in|at|around|for)?\s+([a-zA-Z\s,]+)$/i;    const match = sanitizedText.match(weatherRegex);
+    // === NEW: Improved Weather Logic ===
+    const weatherKeywords = /(weather|temperature|forecast|fine|sunny|rainy|cloudy|snowy)/i;
+    const cityRegex = /(in|at|around|for)?\s*([a-zA-Z\s,]+)$/i;
+    
+    // Step 1: Check if the message contains a weather keyword
+    if (weatherKeywords.test(sanitizedText)) {
+      const cityMatch = sanitizedText.match(cityRegex);
+      let city = null;
+      if (cityMatch && cityMatch[2]) {
+        city = cityMatch[2].trim();
+      }
 
-    if (match) {
-        const city = match[3].trim();
+      if (city) {
+        // Step 2: A city was found, so get the weather
         const weatherData = await getWeather(city);
         if (weatherData) {
             const tempC = weatherData.current.temp_c;
@@ -290,7 +299,6 @@ const weatherRegex = /(weather|temperature|forecast|fine|sunny|rainy|cloudy|snow
             const character = characters[sessionData.character];
             
             let weatherReply = "";
-
             if (sessionData.character === 'johannes') {
                 weatherReply = `The soil is always talking, but for a real report on ${city}, I see the sky is ${condition} and the temperature is around ${tempC} degrees Celsius. That's a day for working in the fields.`;
             } else if (sessionData.character === 'mcarthur') {
@@ -307,6 +315,16 @@ const weatherRegex = /(weather|temperature|forecast|fine|sunny|rainy|cloudy|snow
 
             return res.json({ text: weatherReply, character: sessionData.character, voiceId: characters[sessionData.character].voiceId });
         }
+      } else {
+        // Step 3: No city found, so ask the user for one
+        const noCityReply = "I can tell you the weather, but where in the world would you like to know? Please tell me the city.";
+        const messages = JSON.parse(await redis.get(`history:${sessionId}`)) || [];
+        messages.push({ role: "user", content: sanitizedText });
+        messages.push({ role: "assistant", content: noCityReply });
+        await redis.set(`history:${sessionId}`, JSON.stringify(messages));
+        
+        return res.json({ text: noCityReply, character: sessionData.character, voiceId: characters[sessionData.character].voiceId });
+      }
     }
 
     // Load history and append user input
@@ -378,7 +396,6 @@ const weatherRegex = /(weather|temperature|forecast|fine|sunny|rainy|cloudy|snow
     });
   }
 });
-
 // === Speakbase endpoint (for ElevenLabs) ===
 app.post("/speakbase", async (req, res) => {
   const { text, voiceId } = req.body;
