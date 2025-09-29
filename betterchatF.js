@@ -44,6 +44,8 @@ console.log("✅ Using Redis at:", redisUrl);
 
 // === NEW: WeatherAPI Setup ===
 const WEATHERAPI_KEY = process.env.WEATHERAPI_KEY;
+console.log("Checking the WeatherAPI Key:", WEATHERAPI_KEY); // <-- ADD THIS LINE
+
 
 // === Character Data ===
 const characters = {
