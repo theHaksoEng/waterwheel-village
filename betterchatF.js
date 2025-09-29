@@ -282,12 +282,14 @@ app.post("/chat", async (req, res) => {
 
     // === NEW: Improved Weather Logic with State ===
     const weatherKeywords = /(weather|temperature|forecast|fine|sunny|rainy|cloudy|snowy)/i;
-    const cityRegex = /[a-zA-Z\s,]+/i;
+    const cityRegex = /(in|at|around|for)?\s*([a-zA-Z\s,]+)$/i;
 
     // Check if a weather query is already in progress
     if (sessionData.isWeatherQuery) {
-        const city = sanitizedText.trim();
-        const weatherData = await getWeather(city);
+        // NEW: Clean the city name from extra words/punctuation
+        const cleanedCity = sanitizedText.replace(/,/g, "").trim();
+        
+        const weatherData = await getWeather(cleanedCity);
         
         sessionData.isWeatherQuery = false; // Reset the state after getting the city
         await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
@@ -299,11 +301,11 @@ app.post("/chat", async (req, res) => {
             
             let weatherReply = "";
             if (sessionData.character === 'johannes') {
-                weatherReply = `The soil is always talking, but for a real report on ${city}, I see the sky is ${condition} and the temperature is around ${tempC} degrees Celsius. That's a day for working in the fields.`;
+                weatherReply = `The soil is always talking, but for a real report on ${cleanedCity}, I see the sky is ${condition} and the temperature is around ${tempC} degrees Celsius. That's a day for working in the fields.`;
             } else if (sessionData.character === 'mcarthur') {
-                weatherReply = `That's an interesting question! I see that in ${city}, the weather is ${condition} and it's about ${tempC} degrees Celsius. A beautiful day to be outside.`;
+                weatherReply = `That's an interesting question! I see that in ${cleanedCity}, the weather is ${condition} and it's about ${tempC} degrees Celsius. A beautiful day to be outside.`;
             } else {
-                weatherReply = `Okay! It looks like in ${city} the weather is ${condition} and the temperature is ${tempC} degrees Celsius. That's good to know.`;
+                weatherReply = `Okay! It looks like in ${cleanedCity} the weather is ${condition} and the temperature is ${tempC} degrees Celsius. That's good to know.`;
             }
 
             const messages = JSON.parse(await redis.get(`history:${sessionId}`)) || [];
@@ -312,7 +314,7 @@ app.post("/chat", async (req, res) => {
             await redis.set(`history:${sessionId}`, JSON.stringify(messages));
             return res.json({ text: weatherReply, character: sessionData.character, voiceId: characters[sessionData.character].voiceId });
         } else {
-            const errorReply = `I am sorry, I could not find the weather for "${city}". Is there a different city you would like me to check?`;
+            const errorReply = `I am sorry, I could not find the weather for "${cleanedCity}". Is there a different city you would like me to check?`;
             const messages = JSON.parse(await redis.get(`history:${sessionId}`)) || [];
             messages.push({ role: "user", content: sanitizedText });
             messages.push({ role: "assistant", content: errorReply });
