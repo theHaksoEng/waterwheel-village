@@ -240,6 +240,7 @@ app.post("/chat", async (req, res) => {
       character: "mcarthur",
       studentLevel: null,
       currentLesson: null,
+      isWeatherQuery: false, // NEW: Add a state variable for weather
     };
     console.log("📦 Loaded sessionData:", sessionData);
 
@@ -258,6 +259,7 @@ app.post("/chat", async (req, res) => {
     if (requestedCharacter && requestedCharacterKey !== sessionData.character) {
       sessionData.character = requestedCharacterKey;
       sessionData.currentLesson = null;
+      sessionData.isWeatherQuery = false; // Reset weather state
       await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
       console.log("🔄 Switched to new character:", requestedCharacterKey);
 
@@ -278,21 +280,18 @@ app.post("/chat", async (req, res) => {
       return res.json({ text: welcomeMsg, character: "mcarthur", voiceId: characters.mcarthur.voiceId });
     }
 
-    // === NEW: Improved Weather Logic ===
+    // === NEW: Improved Weather Logic with State ===
     const weatherKeywords = /(weather|temperature|forecast|fine|sunny|rainy|cloudy|snowy)/i;
-    const cityRegex = /(in|at|around|for)?\s*([a-zA-Z\s,]+)$/i;
-    
-    // Step 1: Check if the message contains a weather keyword
-    if (weatherKeywords.test(sanitizedText)) {
-      const cityMatch = sanitizedText.match(cityRegex);
-      let city = null;
-      if (cityMatch && cityMatch[2]) {
-        city = cityMatch[2].trim();
-      }
+    const cityRegex = /[a-zA-Z\s,]+/i;
 
-      if (city) {
-        // Step 2: A city was found, so get the weather
+    // Check if a weather query is already in progress
+    if (sessionData.isWeatherQuery) {
+        const city = sanitizedText.trim();
         const weatherData = await getWeather(city);
+        
+        sessionData.isWeatherQuery = false; // Reset the state after getting the city
+        await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
+        
         if (weatherData) {
             const tempC = weatherData.current.temp_c;
             const condition = weatherData.current.condition.text.toLowerCase();
@@ -307,27 +306,36 @@ app.post("/chat", async (req, res) => {
                 weatherReply = `Okay! It looks like in ${city} the weather is ${condition} and the temperature is ${tempC} degrees Celsius. That's good to know.`;
             }
 
-            // Save the weather reply to history
             const messages = JSON.parse(await redis.get(`history:${sessionId}`)) || [];
             messages.push({ role: "user", content: sanitizedText });
             messages.push({ role: "assistant", content: weatherReply });
             await redis.set(`history:${sessionId}`, JSON.stringify(messages));
-
             return res.json({ text: weatherReply, character: sessionData.character, voiceId: characters[sessionData.character].voiceId });
+        } else {
+            const errorReply = `I am sorry, I could not find the weather for "${city}". Is there a different city you would like me to check?`;
+            const messages = JSON.parse(await redis.get(`history:${sessionId}`)) || [];
+            messages.push({ role: "user", content: sanitizedText });
+            messages.push({ role: "assistant", content: errorReply });
+            await redis.set(`history:${sessionId}`, JSON.stringify(messages));
+            return res.json({ text: errorReply, character: sessionData.character, voiceId: characters[sessionData.character].voiceId });
         }
-      } else {
-        // Step 3: No city found, so ask the user for one
+    }
+
+    // Check if the message contains a weather keyword and set state
+    if (weatherKeywords.test(sanitizedText)) {
+        sessionData.isWeatherQuery = true;
+        await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
         const noCityReply = "I can tell you the weather, but where in the world would you like to know? Please tell me the city.";
+        
         const messages = JSON.parse(await redis.get(`history:${sessionId}`)) || [];
         messages.push({ role: "user", content: sanitizedText });
         messages.push({ role: "assistant", content: noCityReply });
         await redis.set(`history:${sessionId}`, JSON.stringify(messages));
         
         return res.json({ text: noCityReply, character: sessionData.character, voiceId: characters[sessionData.character].voiceId });
-      }
     }
 
-    // Load history and append user input
+    // --- Original OpenAI Logic (if no weather query is detected) ---
     let messages = JSON.parse(await redis.get(`history:${sessionId}`)) || [];
     messages.push({ role: "user", content: sanitizedText });
     console.log("📝 Updated messages:", messages);
