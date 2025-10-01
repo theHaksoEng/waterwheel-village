@@ -44,8 +44,7 @@ console.log("✅ Using Redis at:", redisUrl);
 
 // === NEW: WeatherAPI Setup ===
 const WEATHERAPI_KEY = process.env.WEATHERAPI_KEY;
-console.log("Checking the WeatherAPI Key:", WEATHERAPI_KEY); // <-- ADD THIS LINE
-
+console.log("Checking the WeatherAPI Key:", WEATHERAPI_KEY);
 
 // === Character Data ===
 const characters = {
@@ -186,18 +185,32 @@ app.get("/lesson/:month/:chapter", async (req, res) => {
   if (!intro) return res.status(404).json({ error: "Lesson not found" });
 
   const sessionId = req.query.sessionId || uuidv4();
+  
+  // Get the lesson's full wordlist
+  const monthData = monthlyWordlists[month];
+  const words = monthData?.chapters?.[chapter]?.words || [];
+  const wordlist = words.map(w => w.en.toLowerCase());
+
+  // === NEW: Initialize the session and history for the lesson ===
   const sessionData = {
     character: intro.teacher,
     currentLesson: { month, chapter },
+    learnedWords: [],
+    lessonWordlist: wordlist,
   };
   await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
 
-  const monthData = monthlyWordlists[month];
-  const words = monthData?.chapters?.[chapter]?.words || [];
+  // Also set the initial chat history with the intro message
+  const initialHistory = [{
+    role: "assistant",
+    content: intro.text
+  }];
+  await redis.set(`history:${sessionId}`, JSON.stringify(initialHistory));
 
-  // NEW: Add voiceId from the characters object
+  // Get the character's voice ID
   const voiceId = characters[intro.teacher]?.voiceId;
 
+  // The frontend now gets the intro text, the wordlist, and the session ID
   res.json({ ...intro, words, sessionId, voiceId });
 });
 
@@ -230,11 +243,11 @@ async function getWeather(city) {
 
 // === CHAT endpoint ===
 app.post("/chat", async (req, res) => {
-  const { text: rawText, sessionId: providedSessionId, isVoice } = req.body || {};
+  const { text: rawText, sessionId: providedSessionId, isVoice, name: userNameFromFrontend } = req.body || {};
   const sessionId = providedSessionId || uuidv4();
   const sanitizedText = rawText ? String(rawText).trim() : "";
 
-  console.log("📩 Incoming chat request:", { text: sanitizedText, sessionId, isVoice });
+  console.log("📩 Incoming chat request:", { text: sanitizedText, sessionId, isVoice, name: userNameFromFrontend });
 
   try {
     // Load or initialize session
@@ -242,9 +255,17 @@ app.post("/chat", async (req, res) => {
       character: "mcarthur",
       studentLevel: null,
       currentLesson: null,
-      isWeatherQuery: false, // NEW: Add a state variable for weather
+      isWeatherQuery: false,
+      learnedWords: [],
+      userName: null,
+      lessonWordlist: []
     };
     console.log("📦 Loaded sessionData:", sessionData);
+    
+    // Check for a name provided by the frontend and store it
+    if (userNameFromFrontend && !sessionData.userName) {
+        sessionData.userName = userNameFromFrontend;
+    }
 
     // Check for active lesson and use that character
     if (sessionData.currentLesson) {
@@ -261,7 +282,9 @@ app.post("/chat", async (req, res) => {
     if (requestedCharacter && requestedCharacterKey !== sessionData.character) {
       sessionData.character = requestedCharacterKey;
       sessionData.currentLesson = null;
-      sessionData.isWeatherQuery = false; // Reset weather state
+      sessionData.isWeatherQuery = false;
+      sessionData.learnedWords = [];
+      sessionData.lessonWordlist = [];
       await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
       console.log("🔄 Switched to new character:", requestedCharacterKey);
 
@@ -269,45 +292,27 @@ app.post("/chat", async (req, res) => {
       
       return res.json({ text: introText, character: requestedCharacterKey, voiceId: requestedCharacter.voiceId });
     }
-
-    // Handle first-time welcome if no input
-    if (!sanitizedText) {
-      const welcomeMsg =
-        "Welcome to Waterwheel Village, friend! I'm Mr. McArthur. What's your name? Are you a beginner, intermediate, or expert student?";
-      await redis.set(
-        `history:${sessionId}`,
-        JSON.stringify([{ role: "assistant", content: welcomeMsg }])
-      );
-      console.log("👋 Sent welcome message");
-      return res.json({ text: welcomeMsg, character: "mcarthur", voiceId: characters.mcarthur.voiceId });
-    }
     
-    // === NEW: Word Counting Logic ===
-    if (sessionData.currentLesson && sanitizedText) {
-      const { month, chapter } = sessionData.currentLesson;
-      const lessonWords = lessonIntros[month]?.[chapter]?.wordlist || [];
-      const userWords = sanitizedText.toLowerCase().split(/\s+/);
+    // === Word Counting Logic ===
+    const userWords = sanitizedText.toLowerCase().replace(/[.,!?;:]/g, "").split(/\s+/).filter(word => word.length > 0);
+    let newlyLearned = [];
 
-      let newWordsLearned = 0;
-      let newWords = [];
-
-      for (const lessonWord of lessonWords) {
-        if (userWords.includes(lessonWord.toLowerCase())) {
-          if (!sessionData.learnedWords.includes(lessonWord.toLowerCase())) {
-            sessionData.learnedWords.push(lessonWord.toLowerCase());
-            newWords.push(lessonWord);
-            newWordsLearned++;
-          }
+    if (sessionData.lessonWordlist.length > 0) {
+      const wordsToLearn = sessionData.lessonWordlist.map(word => word.toLowerCase());
+      const wordsRemaining = [];
+      
+      for (const word of wordsToLearn) {
+        if (userWords.includes(word) && !sessionData.learnedWords.includes(word)) {
+          sessionData.learnedWords.push(word);
+          newlyLearned.push(word);
+        } else {
+          wordsRemaining.push(word);
         }
       }
-      
-      if (newWordsLearned > 0) {
-        console.log(`🎉 Student learned ${newWordsLearned} new words: ${newWords.join(', ')}`);
-      }
+      sessionData.lessonWordlist = wordsRemaining;
     }
 
-    // === NEW: Improved Weather Logic with State ===
-    // This regex is now more specific to avoid false positives from words like 'fine'.
+    // === Improved Weather Logic with State ===
     const weatherKeywords = /(weather|temperature|forecast|sunny|rainy|cloudy|snowy)/i;
     
     if (sessionData.isWeatherQuery) {
@@ -417,11 +422,12 @@ app.post("/chat", async (req, res) => {
     // Save bot reply to history
     messages.push({ role: "assistant", content: reply });
     await redis.set(`history:${sessionId}`, JSON.stringify(messages));
+    await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
 
     // Voice ID mapping
     const voiceId = activeCharacter.voiceId;
 
-    res.json({ text: reply, character: activeCharacterKey, voiceId });
+    res.json({ text: reply, character: activeCharacterKey, voiceId, learnedCount: sessionData.learnedWords.length, newlyLearned });
   } catch (err) {
     console.error("❌ Chat error:", err?.message || err, err?.stack || "");
     res.status(500).json({
