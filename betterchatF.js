@@ -524,27 +524,42 @@ After your response, always ask one, very short follow-up question to keep the c
 // === Speakbase endpoint (for ElevenLabs) ===
 app.post("/speakbase", async (req, res) => {
   const { text, voiceId } = req.body || {};
-  const preview = typeof text === "string" ? text.slice(0, 30) : "";
-  console.log(`Speakbase request: voiceId=${voiceId}, text="${preview}..."`);
   try {
-    const ttsRes = await fetch("https://api.elevenlabs.io/v1/text-to-speech/" + voiceId, {
+    if (!process.env.ELEVENLABS_API_KEY) {
+      return res.status(500).json({ error: "Speakbase failed", details: "Missing ELEVENLABS_API_KEY env var" });
+    }
+    if (!voiceId || !text) {
+      return res.status(400).json({ error: "Speakbase failed", details: "Missing voiceId or text" });
+    }
+
+    const ttsRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
       method: "POST",
       headers: {
         "xi-api-key": process.env.ELEVENLABS_API_KEY,
         "Content-Type": "application/json",
+        // Optional but often helpful:
+        "Accept": "audio/mpeg"
       },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({
+        text,
+        // Optional voice settings to reduce 429s / weirdness:
+        model_id: "eleven_multilingual_v2",
+        voice_settings: { stability: 0.5, similarity_boost: 0.75 }
+      }),
     });
+
     if (!ttsRes.ok) {
-      console.error(`Speakbase failed: status=${ttsRes.status}`);
-      throw new Error(`Speakbase failed: ${ttsRes.status}`);
+      const errTxt = await ttsRes.text().catch(() => "");
+      console.error(`❌ Speakbase failed: status=${ttsRes.status}, body=${errTxt}`);
+      return res.status(ttsRes.status).json({ error: "Speakbase failed", details: errTxt || `HTTP ${ttsRes.status}` });
     }
+
     const audioBuffer = await ttsRes.arrayBuffer();
     res.set("Content-Type", "audio/mpeg");
     res.send(Buffer.from(audioBuffer));
   } catch (err) {
-    console.error("❌ Speakbase failed:", err.message);
-    res.status(500).json({ error: "Speakbase failed", details: err.message });
+    console.error("❌ Speakbase failed:", err);
+    res.status(500).json({ error: "Speakbase failed", details: err?.message || "Unknown error" });
   }
 });
 
