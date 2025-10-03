@@ -18,6 +18,8 @@ const fs = require("fs");
 const path = require("path");
 const { v4: uuidv4 } = require("uuid");
 const fetch = (...args) => import("node-fetch").then(({ default: f }) => f(...args));
+const multer = require("multer");
+const upload = multer();
 
 // === Express setup ===
 const app = express();
@@ -560,6 +562,43 @@ app.post("/speakbase", async (req, res) => {
   } catch (err) {
     console.error("❌ Speakbase failed:", err);
     res.status(500).json({ error: "Speakbase failed", details: err?.message || "Unknown error" });
+  }
+});
+// === Server-side Speech-to-Text (OpenAI) ===
+app.post("/stt", upload.single("audio"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No audio uploaded" });
+    }
+    if (!process.env.OPENAI_API_KEY) {
+      return res.status(500).json({ error: "Missing OPENAI_API_KEY" });
+    }
+
+    // Node 18+ has Blob/File available
+    const mime = req.file.mimetype || "audio/webm";
+    const blob = new Blob([req.file.buffer], { type: mime });
+    const file = new File([blob], "speech.webm", { type: mime });
+
+    // Use OpenAI STT (choose one model below)
+    // Fast & cheap:
+    const model = "gpt-4o-mini-transcribe";
+    // Or Whisper:
+    // const model = "whisper-1";
+
+    const result = await openai.audio.transcriptions.create({
+      file,
+      model,
+    });
+
+    // The SDK returns { text: "..." } for both models
+    const text = result?.text || "";
+    if (!text) {
+      return res.status(200).json({ text: "" });
+    }
+    return res.json({ text });
+  } catch (err) {
+    console.error("❌ STT failed:", err);
+    res.status(500).json({ error: "STT failed", details: err?.message || "Unknown error" });
   }
 });
 
