@@ -9,6 +9,8 @@ const OpenAI = require("openai");
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
+
+// === Core libs ===
 const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
@@ -41,7 +43,7 @@ console.log("✅ Using Redis at:", redisUrl);
   }
 })();
 
-// === NEW: WeatherAPI Setup ===
+// === WeatherAPI Setup ===
 const WEATHERAPI_KEY = process.env.WEATHERAPI_KEY;
 console.log("WeatherAPI Key loaded:", WEATHERAPI_KEY ? "Yes" : "No");
 
@@ -119,6 +121,9 @@ const characters = {
   },
 };
 
+// === Lesson Intros (NEW: fix missing import) ===
+const lessonIntros = require("./lessonIntros");
+
 // === Load monthly wordlists ===
 const monthlyWordlists = {};
 function loadMonthlyWordlists() {
@@ -135,7 +140,7 @@ function loadMonthlyWordlists() {
     }
     console.log("✅ Monthly wordlists loaded:", Object.keys(monthlyWordlists));
   } catch (err) {
-    console.error("❌ Failed to load monthly wordlists:", err);
+    console.error("❌ Failed to load monthly wordlists:", err.message);
   }
 }
 loadMonthlyWordlists();
@@ -151,67 +156,73 @@ app.get("/wordlist/:month/:chapter", (req, res) => {
   }
 });
 
-// === Lesson intros with stories ===
-const lessonIntros = {
-  month1: {
-    greetings_introductions: {
-      teacher: "mcarthur",
-      text: "Hello, [name]! I’m Mr. McArthur, the village elder. Welcome to Waterwheel Village, where we learn together like family. Today, we’ll practice greetings and introductions with our friends. Imagine you’re at the village square, meeting new people under the big oak tree. You smile and say, 'Hello, my name is [name]!' Let’s try it together.",
-      story: "Every morning, the villagers gather at the well to greet each other. Old Mrs. Lila waves and says, 'Good morning, how are you?' to everyone. Young Tom, the baker, replies, 'I’m great, thank you!' It’s a warm way to start the day, learning words like 'hello,' 'goodbye,' and 'please.'"
-    },
-    numbers_days_questions: {
-      teacher: "johannes",
-      text: "Hello, [name]! I am Johannes, the farmer. Today, we’ll count the days and ask questions. Let’s count to five as we walk the fields together.",
-      story: "Johannes walks through the village, counting his steps: 'One, two, three, four, five.' On Monday, he asks, 'What day is today?' The children shout, 'Monday!' Numbers and days help us plan our work and rest."
-    },
-    food_drink: {
-      teacher: "fatima",
-      text: "Welcome, [name]! I’m Fatima, the healer. Let’s talk about food and drink today. What’s your favorite meal to share?",
-      story: "At the village feast, Fatima sets out bowls of soup and fresh bread. She asks, 'Would you like some water or juice?' The children learn to say 'soup,' 'bread,' and 'please, can I have more?' as they share the meal."
-    },
-    daily_phrases: {
-      teacher: "anika",
-      text: "Hi, [name]! I’m Anika, the seamstress. Let’s practice daily phrases to use around the village. Try saying, 'Good morning!'",
-      story: "Anika sits by her workshop, sewing and humming. She greets passersby: 'Good morning! How are you?' They reply, 'I’m fine, thank you!' She teaches phrases like 'excuse me,' 'please,' and 'thank you' to make every day kind."
-    },
-    farmer_chat: {
-      teacher: "kwame",
-      text: "Greetings, [name]! I’m Kwame, the farmer. Let’s talk about food and farming. What do you like to eat?",
-      story: "Kwame tends his garden, pulling carrots and tomatoes. He asks the children, 'Do you like vegetables?' They learn words like 'apple,' 'potato,' and 'water' as they help him harvest under the sun."
-    }
-  }
-};
-
-// === Lesson endpoint ===
+// === Lesson endpoint (FIXED: add fallback if intro missing, avoid 404) ===
 app.get("/lesson/:month/:chapter", async (req, res) => {
   const { month, chapter } = req.params;
-  const intro = lessonIntros[month]?.[chapter];
-  if (!intro) return res.status(404).json({ error: "Lesson not found" });
+  console.log(`Fetching lesson: ${month}/${chapter}, query:`, req.query);
+
+  // try to find a proper intro
+  let intro = lessonIntros?.[month]?.[chapter];
+
+  // graceful fallback if no intro found
+  if (!intro) {
+    console.warn(`⚠️ No lessonIntro for ${month}/${chapter}. Using fallback.`);
+    const fallbackTeacher = "mcarthur";
+    intro = {
+      teacher: fallbackTeacher,
+      text: `Welcome, [name]! We’ll explore ${chapter.replace(/_/g, " ")} today.`,
+      story: `Let’s practice together in Waterwheel Village, slowly and clearly.`,
+    };
+  }
 
   const sessionId = req.query.sessionId || uuidv4();
-  
+
   // Load or initialize session
-  let sessionData = JSON.parse(await redis.get(`session:${sessionId}`)) || {
-    character: "mcarthur",
-    currentLesson: null,
-    learnedWords: [],
-    lessonWordlist: [],
-    userName: null
-  };
+  let sessionData;
+  try {
+    const sessionRaw = await redis.get(`session:${sessionId}`);
+    sessionData = sessionRaw
+      ? JSON.parse(sessionRaw)
+      : {
+          character: "mcarthur",
+          currentLesson: null,
+          learnedWords: [],
+          lessonWordlist: [],
+          userName: null,
+        };
+    console.log(`Session loaded: ${sessionId}`, sessionData);
+  } catch (err) {
+    console.error(`Redis error for session:${sessionId}:`, err.message);
+    sessionData = {
+      character: "mcarthur",
+      currentLesson: null,
+      learnedWords: [],
+      lessonWordlist: [],
+      userName: null,
+    };
+  }
 
   // Use student name from query param first, then session, then default to "friend"
-  const studentName = req.query.name ? decodeURIComponent(req.query.name) : (sessionData.userName || "friend");
+  const studentName = req.query.name
+    ? decodeURIComponent(req.query.name)
+    : sessionData.userName || "friend";
   sessionData.userName = studentName;
-  
-  // Get the lesson's full wordlist
+
+  // Get the lesson's full wordlist (handles missing wordlists gracefully)
   const monthData = monthlyWordlists[month];
   const words = monthData?.chapters?.[chapter]?.words || [];
-  const wordlist = words.map(w => w.en.toLowerCase());
+  const wordlist = words.map((w) => String(w.en || "").toLowerCase()).filter(Boolean);
+  console.log(`Wordlist for ${month}/${chapter}:`, wordlist);
 
   // Initialize session data
   sessionData.currentLesson = { month, chapter };
   sessionData.lessonWordlist = wordlist;
-  await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
+  try {
+    await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
+    console.log(`Session saved: ${sessionId}`);
+  } catch (err) {
+    console.error(`Failed to save session:${sessionId}:`, err.message);
+  }
 
   // Mr. McArthur's welcome message (skip for greetings_introductions to avoid redundancy)
   let welcomeText = "";
@@ -219,25 +230,43 @@ app.get("/lesson/:month/:chapter", async (req, res) => {
     welcomeText = `Greetings, ${studentName}! I’m Mr. McArthur, the village elder. Welcome to Waterwheel Village, where we learn together like family. Today, you’ll meet ${characters[intro.teacher].name} to explore ${chapter.replace(/_/g, " ")}. Let’s begin!`;
   }
 
-  // Combine welcome, teacher intro, and story, replacing [name]
-  const teacherText = intro.text.replace(/\[name\]/g, studentName);
-  const storyText = intro.story.replace(/\[name\]/g, studentName);
-  const fullIntroText = welcomeText ? `${welcomeText}\n\n${teacherText}\n\n${storyText}` : `${teacherText}\n\n${storyText}`;
+  // Combine teacher intro and story, replacing [name]
+  const teacherText = (intro.text || "").replace(/\[name\]/g, studentName);
+  const storyText = (intro.story || "").replace(/\[name\]/g, studentName);
+  const lessonText = `${teacherText}\n\n${storyText}`.trim();
 
-  // Initialize chat history with the full intro
-  const initialHistory = [{
-    role: "assistant",
-    content: fullIntroText
-  }];
-  await redis.set(`history:${sessionId}`, JSON.stringify(initialHistory));
+  // Initialize chat history with welcome and lesson as separate entries
+  const initialHistory = [];
+  if (welcomeText) {
+    initialHistory.push({ role: "assistant", content: welcomeText });
+  }
+  if (lessonText) {
+    initialHistory.push({ role: "assistant", content: lessonText });
+  }
+  try {
+    await redis.set(`history:${sessionId}`, JSON.stringify(initialHistory));
+    console.log(`History initialized for ${sessionId}:`, initialHistory);
+  } catch (err) {
+    console.error(`Failed to save history:${sessionId}:`, err.message);
+  }
 
-  // Get the character's voice ID
+  // Voice ID for the chapter teacher
   const voiceId = characters[intro.teacher].voiceId;
 
-  res.json({ text: fullIntroText, words, sessionId, voiceId, character: intro.teacher });
+  // Return response (always succeeds now)
+  const response = {
+    welcomeText,
+    lessonText,
+    words,
+    sessionId,
+    voiceId,
+    character: intro.teacher,
+  };
+  console.log(`Lesson response:`, response);
+  res.json(response);
 });
 
-// Helper function to find a character
+// Helper function to find a character by name inside user text
 const findCharacter = (text) => {
   const lowered = text.toLowerCase();
   for (const key in characters) {
@@ -248,18 +277,23 @@ const findCharacter = (text) => {
   return null;
 };
 
-// === NEW: Weather API Function ===
+// === Weather API Function ===
 async function getWeather(city) {
+  if (!WEATHERAPI_KEY) return null;
   try {
-    const response = await fetch(`http://api.weatherapi.com/v1/current.json?key=${WEATHERAPI_KEY}&q=${city}&aqi=no`);
+    const response = await fetch(
+      `http://api.weatherapi.com/v1/current.json?key=${WEATHERAPI_KEY}&q=${encodeURIComponent(
+        city
+      )}&aqi=no`
+    );
     const data = await response.json();
     if (response.status !== 200) {
-      console.error("❌ Weather API error:", data.error.message);
+      console.error("❌ Weather API error:", data?.error?.message || "Unknown");
       return null;
     }
     return data;
   } catch (error) {
-    console.error("❌ Failed to fetch weather data:", error);
+    console.error("❌ Failed to fetch weather data:", error.message);
     return null;
   }
 }
@@ -274,33 +308,51 @@ app.post("/chat", async (req, res) => {
 
   try {
     // Load or initialize session
-    let sessionData = JSON.parse(await redis.get(`session:${sessionId}`)) || {
-      character: "mcarthur",
-      studentLevel: null,
-      currentLesson: null,
-      isWeatherQuery: false,
-      learnedWords: [],
-      userName: null,
-      lessonWordlist: []
-    };
-    console.log("📦 Loaded sessionData:", sessionData);
-    
+    let sessionData;
+    try {
+      const sessionRaw = await redis.get(`session:${sessionId}`);
+      sessionData = sessionRaw
+        ? JSON.parse(sessionRaw)
+        : {
+            character: "mcarthur",
+            studentLevel: null,
+            currentLesson: null,
+            isWeatherQuery: false,
+            learnedWords: [],
+            userName: null,
+            lessonWordlist: [],
+          };
+      console.log("📦 Loaded sessionData:", sessionData);
+    } catch (err) {
+      console.error(`Redis error for session:${sessionId}:`, err.message);
+      sessionData = {
+        character: "mcarthur",
+        studentLevel: null,
+        currentLesson: null,
+        isWeatherQuery: false,
+        learnedWords: [],
+        userName: null,
+        lessonWordlist: [],
+      };
+    }
+
     // Update name if provided by frontend
     if (userNameFromFrontend && userNameFromFrontend !== sessionData.userName) {
       sessionData.userName = decodeURIComponent(userNameFromFrontend);
     }
 
-    // Check for active lesson and use that character
+    // If there is an active lesson, use that character
     if (sessionData.currentLesson) {
-      const lesson = lessonIntros[sessionData.currentLesson.month]?.[sessionData.currentLesson.chapter];
-      if (lesson) {
+      const { month, chapter } = sessionData.currentLesson;
+      const lesson = lessonIntros?.[month]?.[chapter];
+      if (lesson?.teacher) {
         sessionData.character = lesson.teacher;
       }
     }
 
     // Handle character change requests
     const requestedCharacterKey = findCharacter(sanitizedText);
-    const requestedCharacter = characters[requestedCharacterKey];
+    const requestedCharacter = requestedCharacterKey ? characters[requestedCharacterKey] : null;
 
     if (requestedCharacter && requestedCharacterKey !== sessionData.character) {
       sessionData.character = requestedCharacterKey;
@@ -316,15 +368,15 @@ app.post("/chat", async (req, res) => {
       await redis.set(`history:${sessionId}`, JSON.stringify([{ role: "assistant", content: introText }]));
       return res.json({ text: introText, character: requestedCharacterKey, voiceId: requestedCharacter.voiceId });
     }
-    
+
     // === Word Counting Logic ===
-    const userWords = sanitizedText.toLowerCase().replace(/[^\w\s-]/g, "").split(/\s+/).filter(word => word.length > 0);
+    const userWords = sanitizedText.toLowerCase().replace(/[^\w\s-]/g, "").split(/\s+/).filter((word) => word.length > 0);
     let newlyLearned = [];
 
     if (sessionData.lessonWordlist.length > 0) {
-      const wordsToLearn = sessionData.lessonWordlist.map(word => word.toLowerCase());
+      const wordsToLearn = sessionData.lessonWordlist.map((word) => word.toLowerCase());
       const wordsRemaining = [];
-      
+
       for (const word of wordsToLearn) {
         if (userWords.includes(word) && !sessionData.learnedWords.includes(word)) {
           sessionData.learnedWords.push(word);
@@ -334,7 +386,7 @@ app.post("/chat", async (req, res) => {
         }
       }
       sessionData.lessonWordlist = wordsRemaining;
-      
+
       // Add completion message if all words are learned
       if (sessionData.lessonWordlist.length === 0 && sessionData.learnedWords.length > 0) {
         newlyLearned.push("\n\n🎉 You've learned all the words for this lesson! Great job!");
@@ -343,60 +395,60 @@ app.post("/chat", async (req, res) => {
 
     // === Improved Weather Logic with State ===
     const weatherKeywords = /(weather|temperature|forecast|sunny|rainy|cloudy|snowy)/i;
-    
-    if (sessionData.isWeatherQuery) {
-        const cleanedCity = sanitizedText.replace(/,/g, "").trim();
-        
-        const weatherData = await getWeather(cleanedCity);
-        
-        sessionData.isWeatherQuery = false;
-        await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
-        
-        if (weatherData) {
-            const tempC = weatherData.current.temp_c;
-            const condition = weatherData.current.condition.text.toLowerCase();
-            const character = characters[sessionData.character];
-            
-            let weatherReply = "";
-            if (sessionData.character === 'johannes') {
-                weatherReply = `The soil is always talking, but for a real report on ${cleanedCity}, I see the sky is ${condition} and the temperature is around ${tempC} degrees Celsius. That's a day for working in the fields.`;
-            } else if (sessionData.character === 'mcarthur') {
-                weatherReply = `In ${cleanedCity}, the weather is currently ${condition} and it’s about ${tempC} degrees Celsius. A beautiful day for us here, too.`;
-            } else {
-                weatherReply = `Okay! It looks like in ${cleanedCity} the weather is ${condition} and the temperature is ${tempC} degrees Celsius. That's good to know.`;
-            }
 
-            const messages = JSON.parse(await redis.get(`history:${sessionId}`)) || [];
-            messages.push({ role: "user", content: sanitizedText });
-            messages.push({ role: "assistant", content: weatherReply });
-            await redis.set(`history:${sessionId}`, JSON.stringify(messages));
-            return res.json({ text: weatherReply, character: sessionData.character, voiceId: characters[sessionData.character].voiceId });
+    if (sessionData.isWeatherQuery) {
+      const cleanedCity = sanitizedText.replace(/,/g, "").trim();
+
+      const weatherData = await getWeather(cleanedCity);
+
+      sessionData.isWeatherQuery = false;
+      await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
+
+      if (weatherData) {
+        const tempC = weatherData.current.temp_c;
+        const condition = String(weatherData.current.condition.text || "").toLowerCase();
+        const character = characters[sessionData.character];
+
+        let weatherReply = "";
+        if (sessionData.character === "johannes") {
+          weatherReply = `The soil is always talking, but for a real report on ${cleanedCity}, I see the sky is ${condition} and the temperature is around ${tempC} degrees Celsius. That's a day for working in the fields.`;
+        } else if (sessionData.character === "mcarthur") {
+          weatherReply = `In ${cleanedCity}, the weather is currently ${condition} and it’s about ${tempC} degrees Celsius. A beautiful day for us here, too.`;
         } else {
-            const errorReply = `I am sorry, I could not find the weather for "${cleanedCity}". Is there a different city you would like to check?`;
-            const messages = JSON.parse(await redis.get(`history:${sessionId}`)) || [];
-            messages.push({ role: "user", content: sanitizedText });
-            messages.push({ role: "assistant", content: errorReply });
-            await redis.set(`history:${sessionId}`, JSON.stringify(messages));
-            return res.json({ text: errorReply, character: sessionData.character, voiceId: characters[sessionData.character].voiceId });
+          weatherReply = `Okay! It looks like in ${cleanedCity} the weather is ${condition} and the temperature is ${tempC} degrees Celsius. That's good to know.`;
         }
+
+        const messages = JSON.parse((await redis.get(`history:${sessionId}`)) || "[]");
+        messages.push({ role: "user", content: sanitizedText });
+        messages.push({ role: "assistant", content: weatherReply });
+        await redis.set(`history:${sessionId}`, JSON.stringify(messages));
+        return res.json({ text: weatherReply, character: sessionData.character, voiceId: characters[sessionData.character].voiceId });
+      } else {
+        const errorReply = `I am sorry, I could not find the weather for "${cleanedCity}". Is there a different city you would like to check?`;
+        const messages = JSON.parse((await redis.get(`history:${sessionId}`)) || "[]");
+        messages.push({ role: "user", content: sanitizedText });
+        messages.push({ role: "assistant", content: errorReply });
+        await redis.set(`history:${sessionId}`, JSON.stringify(messages));
+        return res.json({ text: errorReply, character: sessionData.character, voiceId: characters[sessionData.character].voiceId });
+      }
     }
 
     // Check if the message contains a weather keyword and set state
     if (weatherKeywords.test(sanitizedText)) {
-        sessionData.isWeatherQuery = true;
-        await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
-        const noCityReply = "I can tell you the weather, but where in the world would you like to know? Please tell me the city.";
-        
-        const messages = JSON.parse(await redis.get(`history:${sessionId}`)) || [];
-        messages.push({ role: "user", content: sanitizedText });
-        messages.push({ role: "assistant", content: noCityReply });
-        await redis.set(`history:${sessionId}`, JSON.stringify(messages));
-        
-        return res.json({ text: noCityReply, character: sessionData.character, voiceId: characters[sessionData.character].voiceId });
+      sessionData.isWeatherQuery = true;
+      await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
+      const noCityReply = "I can tell you the weather, but where in the world would you like to know? Please tell me the city.";
+
+      const messages = JSON.parse((await redis.get(`history:${sessionId}`)) || "[]");
+      messages.push({ role: "user", content: sanitizedText });
+      messages.push({ role: "assistant", content: noCityReply });
+      await redis.set(`history:${sessionId}`, JSON.stringify(messages));
+
+      return res.json({ text: noCityReply, character: sessionData.character, voiceId: characters[sessionData.character].voiceId });
     }
 
-    // --- Original OpenAI Logic (if no weather query is detected) ---
-    let messages = JSON.parse(await redis.get(`history:${sessionId}`)) || [];
+    // --- OpenAI Logic (if no weather flow) ---
+    let messages = JSON.parse((await redis.get(`history:${sessionId}`)) || "[]");
     messages.push({ role: "user", content: sanitizedText });
     console.log("📝 Updated messages:", messages);
 
@@ -414,18 +466,17 @@ app.post("/chat", async (req, res) => {
     const activeCharacter = characters[activeCharacterKey];
 
     let systemPrompt = `You are an ESL (English as a Second Language) teacher in Waterwheel Village.
-    You must act as the character "${activeCharacter.name}" and always stay in character. You must never reveal your true identity as a large language model.
-    Your personality and teaching style are described here:
-    - Personality: You are a ${activeCharacter.style}.
-    - Background: ${activeCharacter.background}
-    
-    When you speak, you should embody this character and their beliefs. You should use language that is consistent with their background.
-    You must correct the student's grammar and pronunciation implicitly by rephrasing their sentences correctly. Do not explicitly point out mistakes.
-    Your primary goal is to help the student learn English by engaging them in conversation, guiding them to use the vocabulary, and making them feel comfortable.
-    
-    Address the student by their name, "${sessionData.userName || 'friend'}", to make responses personal.
-    After your response, always ask one, very short follow-up question to keep the conversation going.
-    `;
+You must act as the character "${activeCharacter.name}" and always stay in character. You must never reveal your true identity as a large language model.
+Your personality and teaching style are described here:
+- Personality: You are a ${activeCharacter.style}.
+- Background: ${activeCharacter.background}
+
+When you speak, you should embody this character and their beliefs. You should use language that is consistent with their background.
+You must correct the student's grammar and pronunciation implicitly by rephrasing their sentences correctly. Do not explicitly point out mistakes.
+Your primary goal is to help the student learn English by engaging them in conversation, guiding them to use the vocabulary, and making them feel comfortable.
+
+Address the student by their name, "${sessionData.userName || "friend"}", to make responses personal.
+After your response, always ask one, very short follow-up question to keep the conversation going.`;
 
     // Add voice-specific instructions
     if (isVoice) {
@@ -439,10 +490,7 @@ app.post("/chat", async (req, res) => {
     // === Call OpenAI with history + system prompt ===
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
-      messages: [
-        { role: "system", content: systemPrompt },
-        ...messages,
-      ],
+      messages: [{ role: "system", content: systemPrompt }, ...messages],
       temperature: 0.7,
     });
 
@@ -457,7 +505,13 @@ app.post("/chat", async (req, res) => {
     // Voice ID mapping
     const voiceId = activeCharacter.voiceId;
 
-    res.json({ text: reply, character: activeCharacterKey, voiceId, learnedCount: sessionData.learnedWords.length, newlyLearned });
+    res.json({
+      text: reply,
+      character: activeCharacterKey,
+      voiceId,
+      learnedCount: sessionData.learnedWords.length,
+      newlyLearned,
+    });
   } catch (err) {
     console.error("❌ Chat error:", err?.message || err, err?.stack || "");
     res.status(500).json({
@@ -469,7 +523,9 @@ app.post("/chat", async (req, res) => {
 
 // === Speakbase endpoint (for ElevenLabs) ===
 app.post("/speakbase", async (req, res) => {
-  const { text, voiceId } = req.body;
+  const { text, voiceId } = req.body || {};
+  const preview = typeof text === "string" ? text.slice(0, 30) : "";
+  console.log(`Speakbase request: voiceId=${voiceId}, text="${preview}..."`);
   try {
     const ttsRes = await fetch("https://api.elevenlabs.io/v1/text-to-speech/" + voiceId, {
       method: "POST",
@@ -479,17 +535,34 @@ app.post("/speakbase", async (req, res) => {
       },
       body: JSON.stringify({ text }),
     });
+    if (!ttsRes.ok) {
+      console.error(`Speakbase failed: status=${ttsRes.status}`);
+      throw new Error(`Speakbase failed: ${ttsRes.status}`);
+    }
     const audioBuffer = await ttsRes.arrayBuffer();
     res.set("Content-Type", "audio/mpeg");
     res.send(Buffer.from(audioBuffer));
   } catch (err) {
-    console.error("❌ Speakbase failed:", err);
-    res.status(500).json({ error: "Speakbase failed" });
+    console.error("❌ Speakbase failed:", err.message);
+    res.status(500).json({ error: "Speakbase failed", details: err.message });
   }
 });
 
 // === Health check ===
-app.get("/health", (req, res) => res.json({ ok: true, status: "Waterwheel backend alive" }));
+app.get("/health", (_req, res) => res.json({ ok: true, status: "Waterwheel backend alive" }));
+
+// === Static hosting / friendly root (FIX for "Cannot GET /") ===
+const publicDir = path.join(__dirname, "public");
+if (fs.existsSync(publicDir)) {
+  app.use(express.static(publicDir));
+  app.get("/", (_req, res) => res.sendFile(path.join(publicDir, "index.html")));
+} else {
+  app.get("/", (_req, res) => {
+    res
+      .status(200)
+      .send("✅ Waterwheel backend is running. Add a /public/index.html to serve the UI, or call /health.");
+  });
+}
 
 // === Start server ===
 app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
