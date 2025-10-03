@@ -1,4 +1,3 @@
-// betterchatF.js
 // === Waterwheel Village Backend (CommonJS) ===
 
 // ✅ Load env first
@@ -44,7 +43,7 @@ console.log("✅ Using Redis at:", redisUrl);
 
 // === NEW: WeatherAPI Setup ===
 const WEATHERAPI_KEY = process.env.WEATHERAPI_KEY;
-console.log("Checking the WeatherAPI Key:", WEATHERAPI_KEY);
+console.log("WeatherAPI Key loaded:", WEATHERAPI_KEY ? "Yes" : "No");
 
 // === Character Data ===
 const characters = {
@@ -60,7 +59,7 @@ const characters = {
     name: "Johannes",
     style: "a man of quiet strength and steady hands. He speaks little but his words are deeply thoughtful and reverent, reflecting a lifetime of working the soil. His teaching style is patient and humble, focused on perseverance.",
     background: "He is a Finnish farmer whose face is weathered by wind and sun. He believes the hard northern land teaches patience and humility. He mentors younger villagers, guiding them with a quiet reverence for the earth.",
-    phrases: ["The land knows me, and I know it.", "The land knows me, and I know it."],
+    phrases: ["The land knows me, and I know it.", "Patience grows stronger than the toughest storms."],
   },
   nadia: {
     voiceId: "a1KZUXKFVFDOb33I1uqr",
@@ -84,35 +83,35 @@ const characters = {
     phrases: ["Every stitch is a promise that we will not forget who we are."],
   },
   liang: {
-    voiceId: "gAMZphRyrWJnLMDnom6H", // <-- Replace with your ID
+    voiceId: "gAMZphRyrWJnLMDnom6H",
     name: "Liang",
     style: "a calm and logical entrepreneur. He sees patterns in everything and his teaching style is strong, steady, and forward-flowing, using analogies from trade and cultivation.",
     background: "He managed a family tea house in China and now sets up networks in the village. He is also a poet, comparing the whisper of pine trees to bamboo in moonlight.",
     phrases: ["Commerce is not just numbers. It is trust. And trust must be cultivated like a garden."],
   },
   alex: {
-    voiceId: "tIFPE2y0DAU6xfZn3Fka", // <-- Replace with your ID
+    voiceId: "tIFPE2y0DAU6xfZn3Fka",
     name: "Aleksanderi (Alex)",
     style: "a calm and dignified Lutheran priest. His voice is gentle and soothing, and his teaching style is centered on grace, forgiveness, and the power of scripture. He is a source of hope and stillness.",
     background: "He is a priest who brings peace to the village. He carves wooden crosses and gives them to people who are feeling lost. He often sings old hymns and tells stories of saints and mercy.",
     phrases: ["The heart must be open like a window to receive both sunlight and rain.", "In the name and blood of the Lord Jesus Christ, all your sins are forgiven."],
   },
   ibrahim: {
-    voiceId: "tlETan7Okc4pzjD0z62P", // <-- Replace with your ID
+    voiceId: "tlETan7Okc4pzjD0z62P",
     name: "Ibrahim",
     style: "a quiet and focused blacksmith. He speaks rarely, but when he does, his words are simple and true, like iron. His teaching style is hands-on and purposeful, focusing on craftsmanship and resilience.",
     background: "A blacksmith from Afghanistan whose forge is the heartbeat of the village. War stole his home, but not his craft. He believes metal remembers, and that shaping it is an act of peace.",
     phrases: ["Because I now build what holds the world together—not what breaks it."],
   },
   sophia: {
-    voiceId: "0q9TlrIoQJIdxZP9oZh7", // <-- Replace with your ID
+    voiceId: "0q9TlrIoQJIdxZP9oZh7",
     name: "Sophia",
     style: "a cheerful and energetic teacher. She brings sunshine into every room and her voice carries the rhythm of salsa. Her teaching style is full of laughter and stories, focusing on kindness and the joy of learning.",
     background: "A teacher from Venezuela who has a love of words and books. She often begins her day with a proverb from her homeland and is adored by the children she teaches.",
     phrases: ["We are not just learning letters, we are learning how to be human."],
   },
   kwame: {
-    voiceId: "dhwafD61uVd8h85wAZSE", // <-- Replace with your ID
+    voiceId: "dhwafD61uVd8h85wAZSE",
     name: "Kwame",
     style: "a warm and wise farmer. He walks barefoot on the earth to listen to the soil. His teaching style is patient and nurturing, using analogies from farming and nature.",
     background: "A regenerative farmer from Ghana who believes food is sacred. He tells stories of talking goats and clever foxes, and teaches villagers how to plant and care for the land with love.",
@@ -152,28 +151,33 @@ app.get("/wordlist/:month/:chapter", (req, res) => {
   }
 });
 
-// === Lesson intros ===
+// === Lesson intros with stories ===
 const lessonIntros = {
   month1: {
     greetings_introductions: {
       teacher: "mcarthur",
-      text: "Hello, friend! My name is Mr. McArthur. Let’s practice greetings and introductions. Try saying: 'Hello, my name is...'"
+      text: "Hello, [name]! I’m Mr. McArthur, the village elder. Welcome to Waterwheel Village! Today, we’ll practice greetings and introductions with our friends. Imagine you’re at the village square, meeting new people under the big oak tree. You smile and say, 'Hello, my name is [name]!' Let’s try it together.",
+      story: "Every morning, the villagers gather at the well to greet each other. Old Mrs. Lila waves and says, 'Good morning, how are you?' to everyone. Young Tom, the baker, replies, 'I’m great, thank you!' It’s a warm way to start the day, learning words like 'hello,' 'goodbye,' and 'please.'"
     },
     numbers_days_questions: {
       teacher: "johannes",
-      text: "I am Johannes. Let’s talk about numbers and days. Can you count to five with me?"
+      text: "[name], I am Johannes, the farmer. Today, we’ll count the days and ask questions. Let’s count to five as we walk the fields together.",
+      story: "Johannes walks through the village, counting his steps: 'One, two, three, four, five.' On Monday, he asks, 'What day is today?' The children shout, 'Monday!' Numbers and days help us plan our work and rest."
     },
     food_drink: {
       teacher: "fatima",
-      text: "Welcome, dear student! I am Fatima. Today we will enjoy talking about food and drink. Let’s start with simple words like 'soup' and 'bread'."
+      text: "Welcome, [name]! I’m Fatima, the healer. Let’s talk about food and drink today. What’s your favorite meal to share?",
+      story: "At the village feast, Fatima sets out bowls of soup and fresh bread. She asks, 'Would you like some water or juice?' The children learn to say 'soup,' 'bread,' and 'please, can I have more?' as they share the meal."
     },
     daily_phrases: {
       teacher: "anika",
-      text: "Hi, I am Anika! Let’s practice daily phrases together. Start by saying: 'Good morning!'"
+      text: "Hi, [name]! I’m Anika, the seamstress. Let’s practice daily phrases to use around the village. Try saying, 'Good morning!'",
+      story: "Anika sits by her workshop, sewing and humming. She greets passersby: 'Good morning! How are you?' They reply, 'I’m fine, thank you!' She teaches phrases like 'excuse me,' 'please,' and 'thank you' to make every day kind."
     },
     farmer_chat: {
-      teacher: "abraham",
-      text: "Greetings, Matthew! I am Abraham, the farmer. I grow many fruits and vegetables, and I would love to talk about food with you. What would you like to discuss?"
+      teacher: "kwame",
+      text: "Greetings, [name]! I’m Kwame, the farmer. Let’s talk about food and farming. What do you like to eat?",
+      story: "Kwame tends his garden, pulling carrots and tomatoes. He asks the children, 'Do you like vegetables?' They learn words like 'apple,' 'potato,' and 'water' as they help him harvest under the sun."
     }
   }
 };
@@ -186,32 +190,46 @@ app.get("/lesson/:month/:chapter", async (req, res) => {
 
   const sessionId = req.query.sessionId || uuidv4();
   
+  // Load or initialize session
+  let sessionData = JSON.parse(await redis.get(`session:${sessionId}`)) || {
+    character: "mcarthur",
+    currentLesson: null,
+    learnedWords: [],
+    lessonWordlist: [],
+    userName: null
+  };
+
+  // Use student name if provided
+  const studentName = sessionData.userName || req.query.name || "friend";
+  sessionData.userName = studentName;
+  
   // Get the lesson's full wordlist
   const monthData = monthlyWordlists[month];
   const words = monthData?.chapters?.[chapter]?.words || [];
   const wordlist = words.map(w => w.en.toLowerCase());
 
-  // === NEW: Initialize the session and history for the lesson ===
-  const sessionData = {
-    character: intro.teacher,
-    currentLesson: { month, chapter },
-    learnedWords: [],
-    lessonWordlist: wordlist,
-  };
+  // Initialize session data
+  sessionData.currentLesson = { month, chapter };
+  sessionData.lessonWordlist = wordlist;
   await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
 
-  // Also set the initial chat history with the intro message
+  // Mr. McArthur's welcome message
+  const welcomeText = `Greetings, ${studentName}! I’m Mr. McArthur, the village elder. Welcome to Waterwheel Village, where we learn together like family. Today, you’ll meet ${characters[intro.teacher].name} to explore ${chapter.replace(/_/g, " ")}. Let’s begin!`;
+
+  // Combine welcome, teacher intro, and story
+  const fullIntroText = `${welcomeText}\n\n${intro.text.replace("[name]", studentName)}\n\n${intro.story.replace("[name]", studentName)}`;
+
+  // Initialize chat history with the full intro
   const initialHistory = [{
     role: "assistant",
-    content: intro.text
+    content: fullIntroText
   }];
   await redis.set(`history:${sessionId}`, JSON.stringify(initialHistory));
 
   // Get the character's voice ID
-  const voiceId = characters[intro.teacher]?.voiceId;
+  const voiceId = characters[intro.teacher].voiceId;
 
-  // The frontend now gets the intro text, the wordlist, and the session ID
-  res.json({ ...intro, words, sessionId, voiceId });
+  res.json({ text: fullIntroText, words, sessionId, voiceId, character: intro.teacher });
 });
 
 // Helper function to find a character
@@ -286,15 +304,16 @@ app.post("/chat", async (req, res) => {
       sessionData.learnedWords = [];
       sessionData.lessonWordlist = [];
       await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
+      await redis.set(`history:${sessionId}`, JSON.stringify([])); // Clear history
       console.log("🔄 Switched to new character:", requestedCharacterKey);
 
       const introText = `Hello, I am ${requestedCharacter.name}. What would you like to talk about today?`;
-      
+      await redis.set(`history:${sessionId}`, JSON.stringify([{ role: "assistant", content: introText }]));
       return res.json({ text: introText, character: requestedCharacterKey, voiceId: requestedCharacter.voiceId });
     }
     
     // === Word Counting Logic ===
-    const userWords = sanitizedText.toLowerCase().replace(/[.,!?;:]/g, "").split(/\s+/).filter(word => word.length > 0);
+    const userWords = sanitizedText.toLowerCase().replace(/[^\w\s-]/g, "").split(/\s+/).filter(word => word.length > 0);
     let newlyLearned = [];
 
     if (sessionData.lessonWordlist.length > 0) {
@@ -310,6 +329,11 @@ app.post("/chat", async (req, res) => {
         }
       }
       sessionData.lessonWordlist = wordsRemaining;
+      
+      // Add completion message if all words are learned
+      if (sessionData.lessonWordlist.length === 0 && sessionData.learnedWords.length > 0) {
+        newlyLearned.push("\n\n🎉 You've learned all the words for this lesson! Great job!");
+      }
     }
 
     // === Improved Weather Logic with State ===
@@ -394,6 +418,7 @@ app.post("/chat", async (req, res) => {
     You must correct the student's grammar and pronunciation implicitly by rephrasing their sentences correctly. Do not explicitly point out mistakes.
     Your primary goal is to help the student learn English by engaging them in conversation, guiding them to use the vocabulary, and making them feel comfortable.
     
+    Address the student by their name, "${sessionData.userName || 'friend'}", to make responses personal.
     After your response, always ask one, very short follow-up question to keep the conversation going.
     `;
 
@@ -436,6 +461,7 @@ app.post("/chat", async (req, res) => {
     });
   }
 });
+
 // === Speakbase endpoint (for ElevenLabs) ===
 app.post("/speakbase", async (req, res) => {
   const { text, voiceId } = req.body;
