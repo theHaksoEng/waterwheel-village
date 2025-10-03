@@ -156,12 +156,12 @@ const lessonIntros = {
   month1: {
     greetings_introductions: {
       teacher: "mcarthur",
-      text: "Hello, [name]! I’m Mr. McArthur, the village elder. Welcome to Waterwheel Village! Today, we’ll practice greetings and introductions with our friends. Imagine you’re at the village square, meeting new people under the big oak tree. You smile and say, 'Hello, my name is [name]!' Let’s try it together.",
+      text: "Hello, [name]! I’m Mr. McArthur, the village elder. Welcome to Waterwheel Village, where we learn together like family. Today, we’ll practice greetings and introductions with our friends. Imagine you’re at the village square, meeting new people under the big oak tree. You smile and say, 'Hello, my name is [name]!' Let’s try it together.",
       story: "Every morning, the villagers gather at the well to greet each other. Old Mrs. Lila waves and says, 'Good morning, how are you?' to everyone. Young Tom, the baker, replies, 'I’m great, thank you!' It’s a warm way to start the day, learning words like 'hello,' 'goodbye,' and 'please.'"
     },
     numbers_days_questions: {
       teacher: "johannes",
-      text: "[name], I am Johannes, the farmer. Today, we’ll count the days and ask questions. Let’s count to five as we walk the fields together.",
+      text: "Hello, [name]! I am Johannes, the farmer. Today, we’ll count the days and ask questions. Let’s count to five as we walk the fields together.",
       story: "Johannes walks through the village, counting his steps: 'One, two, three, four, five.' On Monday, he asks, 'What day is today?' The children shout, 'Monday!' Numbers and days help us plan our work and rest."
     },
     food_drink: {
@@ -199,8 +199,8 @@ app.get("/lesson/:month/:chapter", async (req, res) => {
     userName: null
   };
 
-  // Use student name if provided
-  const studentName = sessionData.userName || req.query.name || "friend";
+  // Use student name from query param first, then session, then default to "friend"
+  const studentName = req.query.name ? decodeURIComponent(req.query.name) : (sessionData.userName || "friend");
   sessionData.userName = studentName;
   
   // Get the lesson's full wordlist
@@ -213,11 +213,16 @@ app.get("/lesson/:month/:chapter", async (req, res) => {
   sessionData.lessonWordlist = wordlist;
   await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
 
-  // Mr. McArthur's welcome message
-  const welcomeText = `Greetings, ${studentName}! I’m Mr. McArthur, the village elder. Welcome to Waterwheel Village, where we learn together like family. Today, you’ll meet ${characters[intro.teacher].name} to explore ${chapter.replace(/_/g, " ")}. Let’s begin!`;
+  // Mr. McArthur's welcome message (skip for greetings_introductions to avoid redundancy)
+  let welcomeText = "";
+  if (chapter !== "greetings_introductions") {
+    welcomeText = `Greetings, ${studentName}! I’m Mr. McArthur, the village elder. Welcome to Waterwheel Village, where we learn together like family. Today, you’ll meet ${characters[intro.teacher].name} to explore ${chapter.replace(/_/g, " ")}. Let’s begin!`;
+  }
 
-  // Combine welcome, teacher intro, and story
-  const fullIntroText = `${welcomeText}\n\n${intro.text.replace("[name]", studentName)}\n\n${intro.story.replace("[name]", studentName)}`;
+  // Combine welcome, teacher intro, and story, replacing [name]
+  const teacherText = intro.text.replace(/\[name\]/g, studentName);
+  const storyText = intro.story.replace(/\[name\]/g, studentName);
+  const fullIntroText = welcomeText ? `${welcomeText}\n\n${teacherText}\n\n${storyText}` : `${teacherText}\n\n${storyText}`;
 
   // Initialize chat history with the full intro
   const initialHistory = [{
@@ -280,9 +285,9 @@ app.post("/chat", async (req, res) => {
     };
     console.log("📦 Loaded sessionData:", sessionData);
     
-    // Check for a name provided by the frontend and store it
-    if (userNameFromFrontend && !sessionData.userName) {
-        sessionData.userName = userNameFromFrontend;
+    // Update name if provided by frontend
+    if (userNameFromFrontend && userNameFromFrontend !== sessionData.userName) {
+      sessionData.userName = decodeURIComponent(userNameFromFrontend);
     }
 
     // Check for active lesson and use that character
@@ -356,7 +361,7 @@ app.post("/chat", async (req, res) => {
             if (sessionData.character === 'johannes') {
                 weatherReply = `The soil is always talking, but for a real report on ${cleanedCity}, I see the sky is ${condition} and the temperature is around ${tempC} degrees Celsius. That's a day for working in the fields.`;
             } else if (sessionData.character === 'mcarthur') {
-                weatherReply = `In ${cleanedCity}, the weather is currently ${condition} and it's about ${tempC} degrees Celsius. A beautiful day for us here, too.`;
+                weatherReply = `In ${cleanedCity}, the weather is currently ${condition} and it’s about ${tempC} degrees Celsius. A beautiful day for us here, too.`;
             } else {
                 weatherReply = `Okay! It looks like in ${cleanedCity} the weather is ${condition} and the temperature is ${tempC} degrees Celsius. That's good to know.`;
             }
@@ -367,7 +372,7 @@ app.post("/chat", async (req, res) => {
             await redis.set(`history:${sessionId}`, JSON.stringify(messages));
             return res.json({ text: weatherReply, character: sessionData.character, voiceId: characters[sessionData.character].voiceId });
         } else {
-            const errorReply = `I am sorry, I could not find the weather for "${cleanedCity}". Is there a different city you would like me to check?`;
+            const errorReply = `I am sorry, I could not find the weather for "${cleanedCity}". Is there a different city you would like to check?`;
             const messages = JSON.parse(await redis.get(`history:${sessionId}`)) || [];
             messages.push({ role: "user", content: sanitizedText });
             messages.push({ role: "assistant", content: errorReply });
