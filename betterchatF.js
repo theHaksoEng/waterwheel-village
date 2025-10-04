@@ -18,8 +18,18 @@ const fs = require("fs");
 const path = require("path");
 const { v4: uuidv4 } = require("uuid");
 const fetch = (...args) => import("node-fetch").then(({ default: f }) => f(...args));
+// file: betterchatF.js  (top of file, with other requires)
 const multer = require("multer");
 const upload = multer();
+
+// Ensure Blob/File exist in Node (Node 18+ usually has Blob; File via undici)
+const { Blob } = require("buffer");
+if (!global.Blob) global.Blob = Blob;
+try {
+  if (!global.File) {
+    global.File = require("undici").File; // harmless if already present
+  }
+} catch (_) {}
 
 // === Express setup ===
 const app = express();
@@ -565,6 +575,7 @@ app.post("/speakbase", async (req, res) => {
   }
 });
 // === Server-side Speech-to-Text (OpenAI) ===
+// Accepts multipart/form-data with "audio" file and optional "lang" (e.g., "en-US", "fi-FI")
 app.post("/stt", upload.single("audio"), async (req, res) => {
   try {
     if (!req.file) {
@@ -574,28 +585,35 @@ app.post("/stt", upload.single("audio"), async (req, res) => {
       return res.status(500).json({ error: "Missing OPENAI_API_KEY" });
     }
 
-    // Node 18+ has Blob/File available
+    const langRaw = (req.body?.lang || req.query?.lang || "").toString().trim();
+    const lang = langRaw ? (langRaw.split("-")[0] || langRaw) : undefined; // "en-US" -> "en"
+
     const mime = req.file.mimetype || "audio/webm";
     const blob = new Blob([req.file.buffer], { type: mime });
-    const file = new File([blob], "speech.webm", { type: mime });
+    const file = new File([blob], mime.includes("mp4") ? "speech.m4a" : "speech.webm", { type: mime });
 
-    // Use OpenAI STT (choose one model below)
-    // Fast & cheap:
-    const model = "gpt-4o-mini-transcribe";
-    // Or Whisper:
-    // const model = "whisper-1";
+    // Try fast/cheap model first
+    try {
+      const fast = await openai.audio.transcriptions.create({
+        file,
+        model: "gpt-4o-mini-transcribe",
+        ...(lang ? { language: lang } : {}),
+        prompt: "Casual ESL conversation in a village learning app. Short phrases, simple words.",
+      });
+      return res.json({ text: fast?.text || "" });
+    } catch (e) {
+      console.warn("gpt-4o-mini-transcribe failed; falling back to whisper-1:", e?.message || e);
+    }
 
+    // Robust fallback
     const result = await openai.audio.transcriptions.create({
       file,
-      model,
+      model: "whisper-1",
+      ...(lang ? { language: lang } : {}),
+      prompt: "Casual ESL conversation in a village learning app. Short phrases, simple words.",
     });
 
-    // The SDK returns { text: "..." } for both models
-    const text = result?.text || "";
-    if (!text) {
-      return res.status(200).json({ text: "" });
-    }
-    return res.json({ text });
+    return res.json({ text: result?.text || "" });
   } catch (err) {
     console.error("❌ STT failed:", err);
     res.status(500).json({ error: "STT failed", details: err?.message || "Unknown error" });
