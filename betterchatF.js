@@ -1,14 +1,11 @@
 // === Waterwheel Village Backend (CommonJS) ===
 
 // ✅ Load env first
-const dotenv = require("dotenv");
-dotenv.config();
+require("dotenv").config();
 
 // === OpenAI Setup ===
 const OpenAI = require("openai");
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // === Core libs ===
 const express = require("express");
@@ -18,24 +15,31 @@ const fs = require("fs");
 const path = require("path");
 const { v4: uuidv4 } = require("uuid");
 const fetch = (...args) => import("node-fetch").then(({ default: f }) => f(...args));
-// file: betterchatF.js  (top of file, with other requires)
-const multer = require("multer");
-const upload = multer();
 
-// Ensure Blob/File exist in Node (Node 18+ usually has Blob; File via undici)
+// === Uploads (Multer, memory) ===
+const multer = require("multer");
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024 }, // 25 MB safety cap
+});
+
+// === Ensure Blob/File exist in Node (Node 18+ has Blob; File via undici) ===
 const { Blob } = require("buffer");
 if (!global.Blob) global.Blob = Blob;
 try {
-  if (!global.File) {
-    global.File = require("undici").File; // harmless if already present
-  }
-} catch (_) {}
+  const { File } = require("undici");
+  if (!global.File) global.File = File;
+} catch (_) {
+  // If undici isn't available, most hosts still provide File via fetch/undici runtime.
+  // If not, OpenAI SDK also accepts Readable streams, so we're still OK.
+}
 
 // === Express setup ===
 const app = express();
 const PORT = process.env.PORT || 3000;
 app.use(cors());
-app.use(bodyParser.json());
+app.use(bodyParser.json({ limit: "10mb" })); // allow larger payloads
+app.use(bodyParser.urlencoded({ extended: false }));
 
 // === Redis Setup ===
 const Redis = require("ioredis");
