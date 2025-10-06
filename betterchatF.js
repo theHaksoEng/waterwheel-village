@@ -20,7 +20,7 @@ const fetch = (...args) => import("node-fetch").then(({ default: f }) => f(...ar
 const multer = require("multer");
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 25 * 1024 * 1024 }, // 25 MB safety cap
+  limits: { fileSize: 25 * 1024 * 1024 }, // 25 MB cap
 });
 
 // === Ensure Blob/File exist in Node (Node 18+ has Blob; File via undici) ===
@@ -29,17 +29,39 @@ if (!global.Blob) global.Blob = Blob;
 try {
   const { File } = require("undici");
   if (!global.File) global.File = File;
-} catch (_) {
-  // If undici isn't available, most hosts still provide File via fetch/undici runtime.
-  // If not, OpenAI SDK also accepts Readable streams, so we're still OK.
-}
+} catch (_) {}
 
 // === Express setup ===
 const app = express();
 const PORT = process.env.PORT || 3000;
 app.use(cors());
-app.use(bodyParser.json({ limit: "10mb" })); // allow larger payloads
+app.use(bodyParser.json({ limit: "10mb" }));
 app.use(bodyParser.urlencoded({ extended: false }));
+
+// Serve static frontend
+app.use(express.static(path.join(__dirname, "public")));
+app.get("/", (_req, res) => {
+  const indexPath = path.join(__dirname, "public", "index.html");
+  if (fs.existsSync(indexPath)) return res.sendFile(indexPath);
+  res.status(200).send("Waterwheel backend is running. (No public/index.html found.)");
+});
+// Pretty titles for chapters
+const chapterTitles = {
+  greetings_introductions: "Greetings & Introductions",
+  numbers_days_questions: "Numbers, Days & Questions",
+  food_drink: "Food & Drink",
+  daily_phrases: "Daily Phrases",
+  farmer_chat: "Farmer Chat",
+};
+
+function toTitleCase(s) {
+  return s.replace(/\w\S*/g, (w) => w.charAt(0).toUpperCase() + w.slice(1));
+}
+function humanizeChapter(slug) {
+  if (chapterTitles[slug]) return chapterTitles[slug];
+  // fallback: title-case underscores
+  return toTitleCase(slug.replace(/_/g, " "));
+}
 
 // === Redis Setup ===
 const Redis = require("ioredis");
@@ -68,76 +90,99 @@ const characters = {
   mcarthur: {
     voiceId: "fEVT2ExfHe1MyjuiIiU9",
     name: "Mr. McArthur",
-    style: "a kind, patient, and wise village elder. He speaks with a gentle, grandfatherly tone, guiding students like a mentor. He is deeply rooted in his faith and often uses analogies from his time on a farm or his travels.",
-    background: "He is a retired history teacher who, after a lifetime of travel, found his home in Waterwheel Village. He is a man of quiet strength and faith, tending to his garden with the same care he gives to his students. He believes every path is built one step at a time.",
+    style:
+      "a kind, patient, and wise village elder. He speaks with a gentle, grandfatherly tone, guiding students like a mentor. He is deeply rooted in his faith and often uses analogies from his time on a farm or his travels.",
+    background:
+      "He is a retired history teacher who, after a lifetime of travel, found his home in Waterwheel Village. He is a man of quiet strength and faith, tending to his garden with the same care he gives to his students. He believes every path is built one step at a time.",
     phrases: ["Let's rise up to the occasion.", "Each plant, like each person, has its season.", "Every path is built one step at a time."],
   },
   johannes: {
     voiceId: "JgHmW3ojZwT0NDP5D1JJ",
     name: "Johannes",
-    style: "a man of quiet strength and steady hands. He speaks little but his words are deeply thoughtful and reverent, reflecting a lifetime of working the soil. His teaching style is patient and humble, focused on perseverance.",
-    background: "He is a Finnish farmer whose face is weathered by wind and sun. He believes the hard northern land teaches patience and humility. He mentors younger villagers, guiding them with a quiet reverence for the earth.",
+    style:
+      "a man of quiet strength and steady hands. He speaks little but his words are deeply thoughtful and reverent, reflecting a lifetime of working the soil. His teaching style is patient and humble, focused on perseverance.",
+    background:
+      "He is a Finnish farmer whose face is weathered by wind and sun. He believes the hard northern land teaches patience and humility. He mentors younger villagers, guiding them with a quiet reverence for the earth.",
     phrases: ["The land knows me, and I know it.", "Patience grows stronger than the toughest storms."],
   },
   nadia: {
     voiceId: "a1KZUXKFVFDOb33I1uqr",
     name: "Nadia",
-    style: "a soft-spoken but firm architect. Her voice carries the calm rhythm of ancient stone cities. Her teaching style is precise and inspiring, focusing on structure, design, and harmony.",
-    background: "An architect from Aleppo who rebuilds broken dreams in Waterwheel Village. She believes architecture should protect and inspire nature. She often sketches at sunrise and her words, like her designs, are inspired by both olive trees and pine forests.",
+    style:
+      "a soft-spoken but firm architect. Her voice carries the calm rhythm of ancient stone cities. Her teaching style is precise and inspiring, focusing on structure, design, and harmony.",
+    background:
+      "An architect from Aleppo who rebuilds broken dreams in Waterwheel Village. She believes architecture should protect and inspire nature. She often sketches at sunrise and her words, like her designs, are inspired by both olive trees and pine forests.",
     phrases: ["A good home must hold both light and silence."],
   },
   fatima: {
     voiceId: "JMbCR4ujfEfGaawA1YtC",
     name: "Fatima",
-    style: "a warm and compassionate healer. She walks slowly and listens deeply, speaking with the wisdom of her ancestors. Her teaching style is comforting and gentle, full of empathy and warmth.",
-    background: "Born in Sudan, she learned healing from her grandmother using herbs, oils, and kind eyes. She is a comfort to the entire village, believing that laughter is a medicine.",
+    style:
+      "a warm and compassionate healer. She walks slowly and listens deeply, speaking with the wisdom of her ancestors. Her teaching style is comforting and gentle, full of empathy and warmth.",
+    background:
+      "Born in Sudan, she learned healing from her grandmother using herbs, oils, and kind eyes. She is a comfort to the entire village, believing that laughter is a medicine.",
     phrases: ["Every pain has a story. And every story has a root that can be softened."],
   },
   anika: {
     voiceId: "GCPLhb1XrVwcoKUJYcvz",
     name: "Anika",
-    style: "a cheerful and tender seamstress. She hums while she works, and her teaching style is gentle and nurturing, focusing on the beauty of heritage and the importance of memory.",
-    background: "A seamstress from Ukraine, her hands move fast but tenderly, threading hope and heritage into her work. Her workshop smells of lavender and she often tells stories from her mother's village.",
+    style:
+      "a cheerful and tender seamstress. She hums while she works, and her teaching style is gentle and nurturing, focusing on the beauty of heritage and the importance of memory.",
+    background:
+      "A seamstress from Ukraine, her hands move fast but tenderly, threading hope and heritage into her work. Her workshop smells of lavender and she often tells stories from her mother's village.",
     phrases: ["Every stitch is a promise that we will not forget who we are."],
   },
   liang: {
     voiceId: "gAMZphRyrWJnLMDnom6H",
     name: "Liang",
-    style: "a calm and logical entrepreneur. He sees patterns in everything and his teaching style is strong, steady, and forward-flowing, using analogies from trade and cultivation.",
-    background: "He managed a family tea house in China and now sets up networks in the village. He is also a poet, comparing the whisper of pine trees to bamboo in moonlight.",
+    style:
+      "a calm and logical entrepreneur. He sees patterns in everything and his teaching style is strong, steady, and forward-flowing, using analogies from trade and cultivation.",
+    background:
+      "He managed a family tea house in China and now sets up networks in the village. He is also a poet, comparing the whisper of pine trees to bamboo in moonlight.",
     phrases: ["Commerce is not just numbers. It is trust. And trust must be cultivated like a garden."],
   },
   alex: {
     voiceId: "tIFPE2y0DAU6xfZn3Fka",
     name: "Aleksanderi (Alex)",
-    style: "a calm and dignified Lutheran priest. His voice is gentle and soothing, and his teaching style is centered on grace, forgiveness, and the power of scripture. He is a source of hope and stillness.",
-    background: "He is a priest who brings peace to the village. He carves wooden crosses and gives them to people who are feeling lost. He often sings old hymns and tells stories of saints and mercy.",
-    phrases: ["The heart must be open like a window to receive both sunlight and rain.", "In the name and blood of the Lord Jesus Christ, all your sins are forgiven."],
+    style:
+      "a calm and dignified Lutheran priest. His voice is gentle and soothing, and his teaching style is centered on grace, forgiveness, and the power of scripture. He is a source of hope and stillness.",
+    background:
+      "He is a priest who brings peace to the village. He carves wooden crosses and gives them to people who are feeling lost. He often sings old hymns and tells stories of saints and mercy.",
+    phrases: [
+      "The heart must be open like a window to receive both sunlight and rain.",
+      "In the name and blood of the Lord Jesus Christ, all your sins are forgiven.",
+    ],
   },
   ibrahim: {
     voiceId: "tlETan7Okc4pzjD0z62P",
     name: "Ibrahim",
-    style: "a quiet and focused blacksmith. He speaks rarely, but when he does, his words are simple and true, like iron. His teaching style is hands-on and purposeful, focusing on craftsmanship and resilience.",
-    background: "A blacksmith from Afghanistan whose forge is the heartbeat of the village. War stole his home, but not his craft. He believes metal remembers, and that shaping it is an act of peace.",
+    style:
+      "a quiet and focused blacksmith. He speaks rarely, but when he does, his words are simple and true, like iron. His teaching style is hands-on and purposeful, focusing on craftsmanship and resilience.",
+    background:
+      "A blacksmith from Afghanistan whose forge is the heartbeat of the village. War stole his home, but not his craft. He believes metal remembers, and that shaping it is an act of peace.",
     phrases: ["Because I now build what holds the world together—not what breaks it."],
   },
   sophia: {
     voiceId: "0q9TlrIoQJIdxZP9oZh7",
     name: "Sophia",
-    style: "a cheerful and energetic teacher. She brings sunshine into every room and her voice carries the rhythm of salsa. Her teaching style is full of laughter and stories, focusing on kindness and the joy of learning.",
-    background: "A teacher from Venezuela who has a love of words and books. She often begins her day with a proverb from her homeland and is adored by the children she teaches.",
+    style:
+      "a cheerful and energetic teacher. She brings sunshine into every room and her voice carries the rhythm of salsa. Her teaching style is full of laughter and stories, focusing on kindness and the joy of learning.",
+    background:
+      "A teacher from Venezuela who has a love of words and books. She often begins her day with a proverb from her homeland and is adored by the children she teaches.",
     phrases: ["We are not just learning letters, we are learning how to be human."],
   },
   kwame: {
     voiceId: "dhwafD61uVd8h85wAZSE",
     name: "Kwame",
-    style: "a warm and wise farmer. He walks barefoot on the earth to listen to the soil. His teaching style is patient and nurturing, using analogies from farming and nature.",
-    background: "A regenerative farmer from Ghana who believes food is sacred. He tells stories of talking goats and clever foxes, and teaches villagers how to plant and care for the land with love.",
+    style:
+      "a warm and wise farmer. He walks barefoot on the earth to listen to the soil. His teaching style is patient and nurturing, using analogies from farming and nature.",
+    background:
+      "A regenerative farmer from Ghana who believes food is sacred. He tells stories of talking goats and clever foxes, and teaches villagers how to plant and care for the land with love.",
     phrases: ["Farming is like loving someone. You show up every day, even when it’s hard, and little by little, things grow."],
   },
 };
 
-// === Lesson Intros (NEW: fix missing import) ===
+// === Lessons ===
 const lessonIntros = require("./lessonIntros");
 
 // === Load monthly wordlists ===
@@ -156,7 +201,7 @@ function loadMonthlyWordlists() {
     }
     console.log("✅ Monthly wordlists loaded:", Object.keys(monthlyWordlists));
   } catch (err) {
-    console.error("❌ Failed to load monthly wordlists:", err.message);
+    console.error("❌ Failed to load monthly wordlists:", err);
   }
 }
 loadMonthlyWordlists();
@@ -172,23 +217,15 @@ app.get("/wordlist/:month/:chapter", (req, res) => {
   }
 });
 
-// === Lesson endpoint (FIXED: add fallback if intro missing, avoid 404) ===
+// === Lesson endpoint ===
 app.get("/lesson/:month/:chapter", async (req, res) => {
   const { month, chapter } = req.params;
   console.log(`Fetching lesson: ${month}/${chapter}, query:`, req.query);
 
-  // try to find a proper intro
-  let intro = lessonIntros?.[month]?.[chapter];
-
-  // graceful fallback if no intro found
+  const intro = lessonIntros[month]?.[chapter];
   if (!intro) {
-    console.warn(`⚠️ No lessonIntro for ${month}/${chapter}. Using fallback.`);
-    const fallbackTeacher = "mcarthur";
-    intro = {
-      teacher: fallbackTeacher,
-      text: `Welcome, [name]! We’ll explore ${chapter.replace(/_/g, " ")} today.`,
-      story: `Let’s practice together in Waterwheel Village, slowly and clearly.`,
-    };
+    console.error(`Lesson not found: ${month}/${chapter}`);
+    return res.status(404).json({ error: `Lesson '${chapter}' not found in ${month}` });
   }
 
   const sessionId = req.query.sessionId || uuidv4();
@@ -219,15 +256,13 @@ app.get("/lesson/:month/:chapter", async (req, res) => {
   }
 
   // Use student name from query param first, then session, then default to "friend"
-  const studentName = req.query.name
-    ? decodeURIComponent(req.query.name)
-    : sessionData.userName || "friend";
+  const studentName = req.query.name ? decodeURIComponent(req.query.name) : sessionData.userName || "friend";
   sessionData.userName = studentName;
 
-  // Get the lesson's full wordlist (handles missing wordlists gracefully)
+  // Get the lesson's full wordlist
   const monthData = monthlyWordlists[month];
   const words = monthData?.chapters?.[chapter]?.words || [];
-  const wordlist = words.map((w) => String(w.en || "").toLowerCase()).filter(Boolean);
+  const wordlist = words.map((w) => w.en.toLowerCase());
   console.log(`Wordlist for ${month}/${chapter}:`, wordlist);
 
   // Initialize session data
@@ -242,23 +277,23 @@ app.get("/lesson/:month/:chapter", async (req, res) => {
 
   // Mr. McArthur's welcome message (skip for greetings_introductions to avoid redundancy)
   let welcomeText = "";
-  if (chapter !== "greetings_introductions") {
-    welcomeText = `Greetings, ${studentName}! I’m Mr. McArthur, the village elder. Welcome to Waterwheel Village, where we learn together like family. Today, you’ll meet ${characters[intro.teacher].name} to explore ${chapter.replace(/_/g, " ")}. Let’s begin!`;
-  }
+if (chapter !== "greetings_introductions") {
+  const pretty = humanizeChapter(chapter);
+  welcomeText = `Greetings, ${studentName}! I’m Mr. McArthur, the village elder. Welcome to Waterwheel Village, where we learn together like family. Today, you’ll meet ${characters[intro.teacher].name} to explore ${pretty}. Let’s begin!`;
+}
+
 
   // Combine teacher intro and story, replacing [name]
-  const teacherText = (intro.text || "").replace(/\[name\]/g, studentName);
-  const storyText = (intro.story || "").replace(/\[name\]/g, studentName);
-  const lessonText = `${teacherText}\n\n${storyText}`.trim();
+  const teacherText = intro.text.replace(/\[name\]/g, studentName);
+  const storyText = intro.story.replace(/\[name\]/g, studentName);
+  const lessonText = `${teacherText}\n\n${storyText}`;
 
   // Initialize chat history with welcome and lesson as separate entries
   const initialHistory = [];
   if (welcomeText) {
     initialHistory.push({ role: "assistant", content: welcomeText });
   }
-  if (lessonText) {
-    initialHistory.push({ role: "assistant", content: lessonText });
-  }
+  initialHistory.push({ role: "assistant", content: lessonText });
   try {
     await redis.set(`history:${sessionId}`, JSON.stringify(initialHistory));
     console.log(`History initialized for ${sessionId}:`, initialHistory);
@@ -266,23 +301,16 @@ app.get("/lesson/:month/:chapter", async (req, res) => {
     console.error(`Failed to save history:${sessionId}:`, err.message);
   }
 
-  // Voice ID for the chapter teacher
+  // Get the character's voice ID
   const voiceId = characters[intro.teacher].voiceId;
 
-  // Return response (always succeeds now)
-  const response = {
-    welcomeText,
-    lessonText,
-    words,
-    sessionId,
-    voiceId,
-    character: intro.teacher,
-  };
+  // Return response
+  const response = { welcomeText, lessonText, words, sessionId, voiceId, character: intro.teacher };
   console.log(`Lesson response:`, response);
   res.json(response);
 });
 
-// Helper function to find a character by name inside user text
+// Helper function to find a character
 const findCharacter = (text) => {
   const lowered = text.toLowerCase();
   for (const key in characters) {
@@ -293,23 +321,20 @@ const findCharacter = (text) => {
   return null;
 };
 
-// === Weather API Function ===
+// === NEW: Weather API Function ===
 async function getWeather(city) {
-  if (!WEATHERAPI_KEY) return null;
   try {
     const response = await fetch(
-      `http://api.weatherapi.com/v1/current.json?key=${WEATHERAPI_KEY}&q=${encodeURIComponent(
-        city
-      )}&aqi=no`
+      `http://api.weatherapi.com/v1/current.json?key=${WEATHERAPI_KEY}&q=${encodeURIComponent(city)}&aqi=no`
     );
     const data = await response.json();
     if (response.status !== 200) {
-      console.error("❌ Weather API error:", data?.error?.message || "Unknown");
+      console.error("❌ Weather API error:", data?.error?.message || "unknown");
       return null;
     }
     return data;
   } catch (error) {
-    console.error("❌ Failed to fetch weather data:", error.message);
+    console.error("❌ Failed to fetch weather data:", error);
     return null;
   }
 }
@@ -357,18 +382,17 @@ app.post("/chat", async (req, res) => {
       sessionData.userName = decodeURIComponent(userNameFromFrontend);
     }
 
-    // If there is an active lesson, use that character
+    // Check for active lesson and use that character
     if (sessionData.currentLesson) {
-      const { month, chapter } = sessionData.currentLesson;
-      const lesson = lessonIntros?.[month]?.[chapter];
-      if (lesson?.teacher) {
+      const lesson = lessonIntros[sessionData.currentLesson.month]?.[sessionData.currentLesson.chapter];
+      if (lesson) {
         sessionData.character = lesson.teacher;
       }
     }
 
     // Handle character change requests
     const requestedCharacterKey = findCharacter(sanitizedText);
-    const requestedCharacter = requestedCharacterKey ? characters[requestedCharacterKey] : null;
+    const requestedCharacter = characters[requestedCharacterKey];
 
     if (requestedCharacter && requestedCharacterKey !== sessionData.character) {
       sessionData.character = requestedCharacterKey;
@@ -422,7 +446,7 @@ app.post("/chat", async (req, res) => {
 
       if (weatherData) {
         const tempC = weatherData.current.temp_c;
-        const condition = String(weatherData.current.condition.text || "").toLowerCase();
+        const condition = weatherData.current.condition.text.toLowerCase();
         const character = characters[sessionData.character];
 
         let weatherReply = "";
@@ -463,7 +487,7 @@ app.post("/chat", async (req, res) => {
       return res.json({ text: noCityReply, character: sessionData.character, voiceId: characters[sessionData.character].voiceId });
     }
 
-    // --- OpenAI Logic (if no weather flow) ---
+    // --- OpenAI Logic ---
     let messages = JSON.parse((await redis.get(`history:${sessionId}`)) || "[]");
     messages.push({ role: "user", content: sanitizedText });
     console.log("📝 Updated messages:", messages);
@@ -482,28 +506,26 @@ app.post("/chat", async (req, res) => {
     const activeCharacter = characters[activeCharacterKey];
 
     let systemPrompt = `You are an ESL (English as a Second Language) teacher in Waterwheel Village.
-You must act as the character "${activeCharacter.name}" and always stay in character. You must never reveal your true identity as a large language model.
-Your personality and teaching style are described here:
-- Personality: You are a ${activeCharacter.style}.
-- Background: ${activeCharacter.background}
+    You must act as the character "${activeCharacter.name}" and always stay in character. You must never reveal your true identity as a large language model.
+    Your personality and teaching style are described here:
+    - Personality: You are a ${activeCharacter.style}.
+    - Background: ${activeCharacter.background}
 
-When you speak, you should embody this character and their beliefs. You should use language that is consistent with their background.
-You must correct the student's grammar and pronunciation implicitly by rephrasing their sentences correctly. Do not explicitly point out mistakes.
-Your primary goal is to help the student learn English by engaging them in conversation, guiding them to use the vocabulary, and making them feel comfortable.
+    When you speak, you should embody this character and their beliefs. You should use language that is consistent with their background.
+    You must correct the student's grammar implicitly by rephrasing their sentences correctly. Do not explicitly point out mistakes.
+    Your primary goal is to help the student learn English by engaging them in conversation, guiding them to use the vocabulary, and making them feel comfortable.
+    Address the student by their name, "${sessionData.userName || "friend"}", to make responses personal.
+    After your response, always ask one, very short follow-up question to keep the conversation going.
+    If the student explicitly asks for a translation or asks you to speak Finnish, briefly respond in Finnish first (1 short sentence), then continue in simple English. Keep corrections gentle and by example.`;
 
-Address the student by their name, "${sessionData.userName || "friend"}", to make responses personal.
-After your response, always ask one, very short follow-up question to keep the conversation going.`;
-
-    // Add voice-specific instructions
     if (isVoice) {
       systemPrompt += `\nThe student is speaking by voice. Do NOT mention punctuation, commas, or capitalization. Just focus on vocabulary and gentle grammar correction by example.`;
     } else {
-      systemPrompt += `\nThe student is typing. Correct by example, focusing on word choice, word order, and simple grammar. Do NOT mention or explicitly correct punctuation (commas, periods, question marks).`;
+      systemPrompt += `\nThe student is typing. Correct by example, focusing on word choice, word order, and simple grammar. Do NOT mention or explicitly correct punctuation.`;
     }
 
     console.log("🛠 Using systemPrompt:", systemPrompt);
 
-    // === Call OpenAI with history + system prompt ===
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [{ role: "system", content: systemPrompt }, ...messages],
@@ -518,7 +540,6 @@ After your response, always ask one, very short follow-up question to keep the c
     await redis.set(`history:${sessionId}`, JSON.stringify(messages));
     await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
 
-    // Voice ID mapping
     const voiceId = activeCharacter.voiceId;
 
     res.json({
@@ -539,85 +560,70 @@ After your response, always ask one, very short follow-up question to keep the c
 
 // === Speakbase endpoint (for ElevenLabs) ===
 app.post("/speakbase", async (req, res) => {
-  const { text, voiceId } = req.body || {};
   try {
-    if (!process.env.ELEVENLABS_API_KEY) {
-      return res.status(500).json({ error: "Speakbase failed", details: "Missing ELEVENLABS_API_KEY env var" });
-    }
-    if (!voiceId || !text) {
-      return res.status(400).json({ error: "Speakbase failed", details: "Missing voiceId or text" });
-    }
-
-    const ttsRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+    const { text, voiceId } = req.body || {};
+    console.log(`Speakbase request: voiceId=${voiceId}, text="${(text || "").slice(0, 30)}..."`);
+    const ttsRes = await fetch("https://api.elevenlabs.io/v1/text-to-speech/" + voiceId, {
       method: "POST",
       headers: {
         "xi-api-key": process.env.ELEVENLABS_API_KEY,
         "Content-Type": "application/json",
-        // Optional but often helpful:
-        "Accept": "audio/mpeg"
       },
-      body: JSON.stringify({
-        text,
-        // Optional voice settings to reduce 429s / weirdness:
-        model_id: "eleven_multilingual_v2",
-        voice_settings: { stability: 0.5, similarity_boost: 0.75 }
-      }),
+      body: JSON.stringify({ text }),
     });
-
     if (!ttsRes.ok) {
-      const errTxt = await ttsRes.text().catch(() => "");
-      console.error(`❌ Speakbase failed: status=${ttsRes.status}, body=${errTxt}`);
-      return res.status(ttsRes.status).json({ error: "Speakbase failed", details: errTxt || `HTTP ${ttsRes.status}` });
+      console.error(`Speakbase failed: status=${ttsRes.status}`);
+      throw new Error(`Speakbase failed: ${ttsRes.status}`);
     }
-
     const audioBuffer = await ttsRes.arrayBuffer();
     res.set("Content-Type", "audio/mpeg");
     res.send(Buffer.from(audioBuffer));
   } catch (err) {
     console.error("❌ Speakbase failed:", err);
-    res.status(500).json({ error: "Speakbase failed", details: err?.message || "Unknown error" });
+    res.status(500).json({ error: "Speakbase failed", details: err.message });
   }
 });
+
 // === Server-side Speech-to-Text (OpenAI) ===
-// Accepts multipart/form-data with "audio" file and optional "lang" (e.g., "en-US", "fi-FI")
+// multipart/form-data: "audio" (webm/opus or m4a), optional "lang" (e.g., "en-US", "fi-FI")
 app.post("/stt", upload.single("audio"), async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ error: "No audio uploaded" });
-    }
-    if (!process.env.OPENAI_API_KEY) {
-      return res.status(500).json({ error: "Missing OPENAI_API_KEY" });
+    if (!req.file) return res.status(400).json({ error: "No audio uploaded" });
+    if (!process.env.OPENAI_API_KEY) return res.status(500).json({ error: "Missing OPENAI_API_KEY" });
+
+    const byteLen = req.file.buffer?.length || 0;
+    if (byteLen < 1200) {
+      console.warn("STT: audio too small:", byteLen, "bytes");
+      return res.status(400).json({ error: "Audio too short" });
     }
 
     const langRaw = (req.body?.lang || req.query?.lang || "").toString().trim();
-    const lang = langRaw ? (langRaw.split("-")[0] || langRaw) : undefined; // "en-US" -> "en"
+    const lang = langRaw.includes("-") ? langRaw.split("-")[0] : langRaw; // "fi-FI" -> "fi"
 
     const mime = req.file.mimetype || "audio/webm";
     const blob = new Blob([req.file.buffer], { type: mime });
     const file = new File([blob], mime.includes("mp4") ? "speech.m4a" : "speech.webm", { type: mime });
 
-    // Try fast/cheap model first
+    // Try fast model first — NO prompt
     try {
       const fast = await openai.audio.transcriptions.create({
         file,
         model: "gpt-4o-mini-transcribe",
-        ...(lang ? { language: lang } : {}),
-        prompt: "Casual ESL conversation in a village learning app. Short phrases, simple words.",
       });
-      return res.json({ text: fast?.text || "" });
+      const text = (fast?.text || "").trim();
+      if (text) return res.json({ text });
+      console.warn("STT fast empty; falling back to whisper-1");
     } catch (e) {
-      console.warn("gpt-4o-mini-transcribe failed; falling back to whisper-1:", e?.message || e);
+      console.warn("STT fast failed; falling back:", e?.message || e);
     }
 
     // Robust fallback
-    const result = await openai.audio.transcriptions.create({
+    const whisper = await openai.audio.transcriptions.create({
       file,
       model: "whisper-1",
       ...(lang ? { language: lang } : {}),
-      prompt: "Casual ESL conversation in a village learning app. Short phrases, simple words.",
     });
-
-    return res.json({ text: result?.text || "" });
+    return res.json({ text: (whisper?.text || "").trim() });
   } catch (err) {
     console.error("❌ STT failed:", err);
     res.status(500).json({ error: "STT failed", details: err?.message || "Unknown error" });
@@ -626,19 +632,6 @@ app.post("/stt", upload.single("audio"), async (req, res) => {
 
 // === Health check ===
 app.get("/health", (_req, res) => res.json({ ok: true, status: "Waterwheel backend alive" }));
-
-// === Static hosting / friendly root (FIX for "Cannot GET /") ===
-const publicDir = path.join(__dirname, "public");
-if (fs.existsSync(publicDir)) {
-  app.use(express.static(publicDir));
-  app.get("/", (_req, res) => res.sendFile(path.join(publicDir, "index.html")));
-} else {
-  app.get("/", (_req, res) => {
-    res
-      .status(200)
-      .send("✅ Waterwheel backend is running. Add a /public/index.html to serve the UI, or call /health.");
-  });
-}
 
 // === Start server ===
 app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
