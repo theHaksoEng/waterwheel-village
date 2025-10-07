@@ -45,6 +45,7 @@ app.get("/", (_req, res) => {
   if (fs.existsSync(indexPath)) return res.sendFile(indexPath);
   res.status(200).send("Waterwheel backend is running. (No public/index.html found.)");
 });
+
 // Pretty titles for chapters
 const chapterTitles = {
   greetings_introductions: "Greetings & Introductions",
@@ -222,7 +223,23 @@ app.get("/lesson/:month/:chapter", async (req, res) => {
   const { month, chapter } = req.params;
   console.log(`Fetching lesson: ${month}/${chapter}, query:`, req.query);
 
-  const intro = lessonIntros[month]?.[chapter];
+  // Pull vocab + possible teacher from JSON first (for fallback)
+  const monthData = monthlyWordlists[month];
+  const chData = monthData?.chapters?.[chapter];
+
+  // Prefer authored lesson intro
+  let intro = lessonIntros[month]?.[chapter];
+
+  // Fallback to JSON teacher if intro missing
+  if (!intro && chData?.teacher && characters[chData.teacher]) {
+    intro = {
+      teacher: chData.teacher,
+      text: `Hello, [name]. I am ${characters[chData.teacher].name}. Let’s explore ${humanizeChapter(chapter)}.`,
+      story: `In our village, we learn step by step.`,
+    };
+    console.log(`ℹ️ Using fallback intro from JSON teacher: ${chData.teacher}`);
+  }
+
   if (!intro) {
     console.error(`Lesson not found: ${month}/${chapter}`);
     return res.status(404).json({ error: `Lesson '${chapter}' not found in ${month}` });
@@ -260,8 +277,7 @@ app.get("/lesson/:month/:chapter", async (req, res) => {
   sessionData.userName = studentName;
 
   // Get the lesson's full wordlist
-  const monthData = monthlyWordlists[month];
-  const words = monthData?.chapters?.[chapter]?.words || [];
+  const words = chData?.words || [];
   const wordlist = words.map((w) => w.en.toLowerCase());
   console.log(`Wordlist for ${month}/${chapter}:`, wordlist);
 
@@ -277,11 +293,10 @@ app.get("/lesson/:month/:chapter", async (req, res) => {
 
   // Mr. McArthur's welcome message (skip for greetings_introductions to avoid redundancy)
   let welcomeText = "";
-if (chapter !== "greetings_introductions") {
-  const pretty = humanizeChapter(chapter);
-  welcomeText = `Greetings, ${studentName}! I’m Mr. McArthur, the village elder. Welcome to Waterwheel Village, where we learn together like family. Today, you’ll meet ${characters[intro.teacher].name} to explore ${pretty}. Let’s begin!`;
-}
-
+  if (chapter !== "greetings_introductions") {
+    const pretty = humanizeChapter(chapter);
+    welcomeText = `Greetings, ${studentName}! I’m Mr. McArthur, the village elder. Welcome to Waterwheel Village, where we learn together like family. Today, you’ll meet ${characters[intro.teacher].name} to explore ${pretty}. Let’s begin!`;
+  }
 
   // Combine teacher intro and story, replacing [name]
   const teacherText = intro.text.replace(/\[name\]/g, studentName);
@@ -597,19 +612,27 @@ app.post("/stt", upload.single("audio"), async (req, res) => {
       return res.status(400).json({ error: "Audio too short" });
     }
 
-    const langRaw = (req.body?.lang || req.query?.lang || "").toString().trim();
-    const lang = langRaw.includes("-") ? langRaw.split("-")[0] : langRaw; // "fi-FI" -> "fi"
+    // Map lang like "en-US" -> "en", "fi-FI" -> "fi"
+    const rawLang = (req.body?.lang || req.query?.lang || "").toString().trim();
+    const langMap = { "en-US": "en", "en-GB": "en", "fi-FI": "fi", "id-ID": "id" };
+    const lang = rawLang ? (langMap[rawLang] || rawLang.split("-")[0]) : "";
+    if (lang) console.log("🗣️ STT forced language:", lang);
+    else console.log("🗣️ STT language: auto-detect");
 
     const mime = req.file.mimetype || "audio/webm";
     const blob = new Blob([req.file.buffer], { type: mime });
     const file = new File([blob], mime.includes("mp4") ? "speech.m4a" : "speech.webm", { type: mime });
 
-    // Try fast model first — NO prompt
+    // Try fast model first, include language + prompt if provided
     try {
-      const fast = await openai.audio.transcriptions.create({
+      const fastReq = {
         file,
         model: "gpt-4o-mini-transcribe",
-      });
+      };
+      if (lang) fastReq.language = lang;
+      if (lang) fastReq.prompt = `Transcribe the audio strictly as ${lang}. Ignore other languages.`;
+
+      const fast = await openai.audio.transcriptions.create(fastReq);
       const text = (fast?.text || "").trim();
       if (text) return res.json({ text });
       console.warn("STT fast empty; falling back to whisper-1");
@@ -617,12 +640,15 @@ app.post("/stt", upload.single("audio"), async (req, res) => {
       console.warn("STT fast failed; falling back:", e?.message || e);
     }
 
-    // Robust fallback
-    const whisper = await openai.audio.transcriptions.create({
+    // Robust fallback (whisper-1) with language + prompt if provided
+    const whisperReq = {
       file,
       model: "whisper-1",
-      ...(lang ? { language: lang } : {}),
-    });
+    };
+    if (lang) whisperReq.language = lang;
+    if (lang) whisperReq.prompt = `Transcribe the audio strictly as ${lang}. Ignore other languages.`;
+
+    const whisper = await openai.audio.transcriptions.create(whisperReq);
     return res.json({ text: (whisper?.text || "").trim() });
   } catch (err) {
     console.error("❌ STT failed:", err);
