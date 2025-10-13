@@ -33,3 +33,4 @@ button:hover { opacity:0.9; }
 #sttLang, #micSelect { padding:6px 8px; border:1px solid #ccc; border-radius:6px; background:#fafafa; }
 #meter { width:160px; height:10px; background:#eee; border-radius:6px; overflow:hidden; border:1px solid #ccc; }
 #meterBar { height:100%; width:0%; background:#4caf50; }
+label.inline { display:flex; align-items:center; gap:6px; font-size:14px; }
