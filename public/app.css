@@ -1,36 +1,246 @@
-body { font-family: Arial, sans-serif; background:#f8f8f8; margin:20px; color:#333; }
-#chatbot-wrapper { max-width: 900px; margin:auto; display:flex; flex-direction:column; gap:20px; }
-#chatContainer { display:none; flex-direction:column; height:520px; border:1px solid #ccc; border-radius:8px; padding:15px; background:#fff; box-shadow:0 4px 6px rgba(0,0,0,0.1); }
-#chatHistory { flex-grow:1; overflow-y:auto; padding:15px; }
+/* public/app.css - Cleaned and Fixed */
 
-.user-message { text-align:right; background:#e0f7fa; margin-left:auto; padding:8px 12px; border-radius:15px; margin-bottom:8px; max-width:80%; }
-.bot-message { text-align:left; background:#f1f8e9; margin-right:auto; padding:8px 12px; border-radius:15px; margin-bottom:8px; max-width:80%; }
-.welcome-message { text-align:left; background:#e8eaf6; margin-right:auto; padding:10px 14px; border-radius:15px; margin-bottom:12px; max-width:80%; font-weight:bold; border:1px solid #3f51b5; }
+/* === Base Layout === */
+body { 
+    font-family: Arial, sans-serif; 
+    background:#f8f8f8; 
+    margin:20px; 
+    color:#333; 
+}
 
-.button-section { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; justify-content:flex-start; }
-.contents-button-section { display:grid; grid-template-columns:repeat(2, 1fr); gap:8px; margin-bottom:10px; }
+#chatbot-wrapper { 
+    max-width: 900px; 
+    margin:auto; 
+    display:flex; 
+    flex-direction:column; 
+    gap:20px; 
+}
 
-.chat-btn { background:#4caf50; color:white; }
-.lesson-btn { background:#6c63ff; color:white; }
-.progress-btn { background:#607d8b; color:white; }
-.voice-btn { background:#ff9800; color:white; }
+/* === Chat Window === */
+#chatContainer { 
+    display:none; /* Controlled by JS */
+    flex-direction:column; 
+    height:520px; 
+    border:1px solid #ccc; 
+    border-radius:8px; 
+    padding:15px; 
+    background:#fff; 
+    box-shadow:0 4px 6px rgba(0,0,0,0.1); 
+}
 
-button { padding:8px 14px; border:none; border-radius:4px; cursor:pointer; font-size:14px; }
-button:hover { opacity:0.9; }
+#chatHistory { 
+    flex-grow:1; 
+    overflow-y:auto; 
+    padding:15px; 
+    /* Prevent text selection when scrolling/clicking */
+    user-select: none; 
+}
 
-#welcome-form { display:flex; flex-direction:column; align-items:center; gap:15px; padding:30px; border:1px solid #ccc; border-radius:8px; background:#fff; }
-#welcome-form input { padding:10px; border:1px solid #ccc; border-radius:4px; width:250px; }
-#welcome-form button { background:#4CAF50; color:white; font-size:16px; padding:12px 24px; }
+/* === Chat Messages === */
+.user-message { 
+    text-align:right; 
+    background:#e0f7fa; 
+    margin-left:auto; 
+    padding:8px 12px; 
+    border-radius:15px; 
+    margin-bottom:8px; 
+    max-width:80%; 
+    word-wrap: break-word; /* Ensure long words don't overflow */
+}
 
-#contentsMenu { border:1px solid #ccc; border-radius:8px; padding:15px; background:#fff; margin-bottom:20px; display:none; }
-#contentsMenu h3 { margin-top:0; }
+.bot-message { 
+    text-align:left; 
+    background:#f1f8e9; 
+    margin-right:auto; 
+    padding:8px 12px; 
+    border-radius:15px; 
+    margin-bottom:8px; 
+    max-width:80%; 
+    word-wrap: break-word;
+}
 
-#wordProgress { font-size:14px; text-align:center; color:#555; margin-bottom:10px; }
-.newly-learned { font-size:14px; text-align:center; color:#fff; background-color:#4CAF50; border-radius:15px; padding:5px 10px; margin:10px auto; max-width:50%; }
+.welcome-message { 
+    text-align:left; 
+    background:#e8eaf6; 
+    margin-right:auto; 
+    padding:10px 14px; 
+    border-radius:15px; 
+    margin-bottom:12px; 
+    max-width:80%; 
+    font-weight:bold; 
+    border:1px solid #3f51b5; 
+}
 
-/* Mic controls row */
-#voiceControls { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
-#sttLang, #micSelect { padding:6px 8px; border:1px solid #ccc; border-radius:6px; background:#fafafa; }
-#meter { width:160px; height:10px; background:#eee; border-radius:6px; overflow:hidden; border:1px solid #ccc; }
-#meterBar { height:100%; width:0%; background:#4caf50; }
-label.inline { display:flex; align-items:center; gap:6px; font-size:14px; }
+.newly-learned { 
+    font-size:14px; 
+    text-align:center; 
+    color:#fff; 
+    background-color:#4CAF50; /* A pleasant green */
+    border-radius:15px; 
+    padding:5px 10px; 
+    margin:10px auto; 
+    max-width:50%; 
+    font-weight: bold;
+}
+
+/* === Input Area === */
+#input-section {
+    display: flex;
+    gap: 8px;
+    padding-top: 10px;
+    border-top: 1px solid #eee;
+}
+
+#userInput {
+    flex-grow: 1;
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 16px;
+}
+
+/* === Buttons & Controls === */
+button { 
+    padding:8px 14px; 
+    border:none; 
+    border-radius:4px; 
+    cursor:pointer; 
+    font-size:14px; 
+    transition: background-color 0.2s, opacity 0.2s;
+}
+
+button:hover { 
+    opacity:0.9; 
+}
+
+.button-section { 
+    display:flex; 
+    flex-wrap:wrap; 
+    gap:8px; 
+    margin-top:10px; 
+    justify-content:flex-start; 
+}
+
+.contents-button-section { 
+    display:grid; 
+    grid-template-columns:repeat(2, 1fr); 
+    gap:8px; 
+    margin-bottom:10px; 
+}
+
+/* Button Colors */
+.chat-btn { 
+    background:#4caf50; /* Green */
+    color:white; 
+}
+.lesson-btn { 
+    background:#6c63ff; /* Violet/Blue */
+    color:white; 
+}
+.progress-btn { 
+    background:#607d8b; /* Blue-Gray */
+    color:white; 
+}
+.voice-btn { 
+    background:#ff9800; /* Orange */
+    color:white; 
+}
+/* New style for session management buttons (reusing progress color) */
+.session-btn {
+    background: #607d8b; /* Blue-Gray */
+    color: white;
+}
+
+/* === Welcome Form === */
+#welcome-form { 
+    display:flex; 
+    flex-direction:column; 
+    align-items:center; 
+    gap:15px; 
+    padding:30px; 
+    border:1px solid #ccc; 
+    border-radius:8px; 
+    background:#fff; 
+}
+
+#welcome-form input { 
+    padding:10px; 
+    border:1px solid #ccc; 
+    border-radius:4px; 
+    width:250px; 
+}
+
+#welcome-form button { 
+    background:#4CAF50; 
+    color:white; 
+    font-size:16px; 
+    padding:12px 24px; 
+}
+
+/* === Contents Menu === */
+#contentsMenu { 
+    border:1px solid #ccc; 
+    border-radius:8px; 
+    padding:15px; 
+    background:#fff; 
+    margin-bottom:20px; 
+    display:none; 
+}
+
+#contentsMenu h3 { 
+    margin-top:0; 
+}
+
+/* === Progress Display === */
+#wordProgress { 
+    font-size:14px; 
+    text-align:center; 
+    color:#555; 
+    margin-bottom:10px; 
+    font-weight: bold;
+}
+
+/* === Mic Controls === */
+#voiceControls { 
+    display:flex; 
+    flex-wrap:wrap; 
+    gap:8px; 
+    align-items:center; 
+    padding: 8px 0;
+}
+
+#sttLang, #micSelect { 
+    padding:6px 8px; 
+    border:1px solid #ccc; 
+    border-radius:6px; 
+    background:#fafafa; 
+    font-size: 14px;
+}
+
+#meter { 
+    width:160px; 
+    height:10px; 
+    background:#eee; 
+    border-radius:6px; 
+    overflow:hidden; 
+    border:1px solid #ccc; 
+}
+
+#meterBar { 
+    height:100%; 
+    width:0%; 
+    background:#4caf50; 
+    transition: width 0.1s;
+}
+
+label.inline { 
+    display:flex; 
+    align-items:center; 
+    gap:6px; 
+    font-size:14px; 
+}
+
+/* Hide the file input (used for upload) */
+#uploadLessonInput {
+    display: none;
+}

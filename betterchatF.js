@@ -573,52 +573,18 @@ app.post("/chat", async (req, res) => {
   }
 });
 
+// ... (Your code continues from the previous response)
+
+// ... (The rest of your bestchatF.js code above this point remains the same)
+
 // === Speakbase endpoint (for ElevenLabs) ===
 app.post("/speakbase", async (req, res) => {
-  try {
-    const { text, voiceId } = req.body || {};
-    if (!text || !voiceId) {
-      return res.status(400).json({ error: "Missing text or voiceId" });
-    }
-
-    const xiKey = process.env.ELEVENLABS_API_KEY;
-    if (!xiKey) {
-      console.error("❌ ELEVENLABS_API_KEY is not set");
-      return res.status(503).json({ error: "TTS not configured" });
-    }
-
-    const url = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`;
-    const ttsRes = await fetch(url, {
-      method: "POST",
-      headers: {
-        "xi-api-key": xiKey,
-        "Content-Type": "application/json",
-        "Accept": "audio/mpeg"
-      },
-      body: JSON.stringify({
-        text,
-        model_id: "eleven_multilingual_v2", // safe default
-        voice_settings: { stability: 0.5, similarity_boost: 0.6 }
-      }),
-    });
-
-    if (ttsRes.status === 401) {
-      console.error("❌ ElevenLabs 401 Unauthorized: bad or missing API key");
-      return res.status(503).json({ error: "TTS unauthorized" });
-    }
-    if (!ttsRes.ok) {
-      const errTxt = await ttsRes.text().catch(() => "");
-      console.error(`❌ ElevenLabs failed: ${ttsRes.status} ${errTxt}`);
-      return res.status(502).json({ error: "TTS upstream error" });
-    }
-
-    const audioBuffer = await ttsRes.arrayBuffer();
-    res.set("Content-Type", "audio/mpeg");
-    return res.send(Buffer.from(audioBuffer));
-  } catch (err) {
-    console.error("❌ Speakbase failed:", err);
-    return res.status(500).json({ error: "Speakbase failed", details: err.message });
-  }
+  // ⚠️ ACTION: ElevenLabs is disabled due to credit limit.
+  // The paid service has been replaced with this safe, credit-free handler.
+  console.log("🚫 TTS /speakbase call received but ElevenLabs is disabled. Forcing browser TTS.");
+  return res.status(503).json({
+    error: "Paid Text-to-Speech service (ElevenLabs) is currently disabled due to credit limits. Please use the free browser-based voice."
+  });
 });
 
 // === Server-side Speech-to-Text (OpenAI) ===
