@@ -1,10 +1,10 @@
-// =========================
-// Waterwheel Village – Frontend
-// =========================
+// === API base URL ===
+// Local dev → localhost:3000
+// Production (WordPress site) → Render backend
+const API_BASE = location.hostname.includes("localhost")
+  ? "http://localhost:3000/api"
+  : "https://your-render-app.onrender.com/api";  // replace with your Render backend URL
 
-// 1) CONFIG
-// Always talk to the same origin, with /api prefix (works locally + on Render)
-const API_BASE = `${location.origin}/api`;
 
 // 2) DOM helpers & state
 const $ = (id) => document.getElementById(id);
