@@ -1,5 +1,11 @@
 // === Waterwheel Village Backend (CommonJS) ===
 
+// ✅ Load env first (force override so .env beats any stale shell var)
+require("dotenv").config({ override: true });
+
+const mask = (s) => (s ? s.slice(0, 10) + "..." + s.slice(-6) : "missing");
+console.log("🔐 OPENAI key:", mask(process.env.OPENAI_API_KEY));
+
 // ✅ Load env first
 require("dotenv").config();
 

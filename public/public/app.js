@@ -1,91 +1,448 @@
-// app.js (The Browser/Frontend Logic) - Adding Safety Checks
+// =========================
+// Waterwheel Village – Frontend
+// =========================
 
-// === 1. Configuration ===
-const SERVER_URL = 'http://localhost:3000'; 
+// 1) CONFIG
+// Always talk to the same origin, with /api prefix (works locally + on Render)
+const API_BASE = `${location.origin}/api`;
 
-// === 2. Global State & DOM Selectors ===
-let sessionId = null;
-let currentLesson = null;
-let studentName = '';
-let currentVoiceId = null;
-
+// 2) DOM helpers & state
 const $ = (id) => document.getElementById(id);
 
-// Get DOM elements based on your HTML structure
-// NOTE: We wrap these in a DOMContentLoaded listener (later) for safety
-const welcomeForm = $('welcome-form');
-const contentsMenu = $('contentsMenu');
-const chatContainer = $('chatContainer');
-const startChatBtn = $('start-chat-btn');
-const userInput = $('userInput');
-const sendBtn = $('sendBtn');
-const chatHistory = $('chatHistory');
-const spinner = $('spinner');
-const voiceOutput = $('voiceOutput');
-// ... (rest of your declarations)
+const state = {
+  sessionId: localStorage.getItem("wwv_session") || crypto.randomUUID(),
+  name: localStorage.getItem("studentName") || "",
+  currentLesson: null, // {month, chapter}
+  character: "mcarthur",
+  voiceId: null,
+  isListening: false,
+};
 
-// ... (rest of helper functions)
+localStorage.setItem("wwv_session", state.sessionId);
 
-// === 5. Event Listeners (Applying Safety Checks) ===
-document.addEventListener('DOMContentLoaded', () => {
-    // Initial display of the welcome screen
-    showScreen('welcome');
-    
-    // Attempt to focus on name input if it's the first screen
-    const nameInput = $('student-name');
-    if (nameInput) nameInput.focus();
+// cache DOM from your HTML
+const welcomeForm     = $("welcome-form");
+const contentsMenu    = $("contentsMenu");
+const chatContainer   = $("chatContainer");
+const startChatBtn    = $("start-chat-btn");
+const nameInput       = $("student-name");
 
-    // Hide audio player by default
-    if (voiceOutput) {
-        voiceOutput.style.display = 'none'; 
+const sendBtn         = $("sendBtn");
+const clearChatBtn    = $("clearChatBtn");
+const restartLessonBtn= $("restartLessonBtn");
+const endLessonBtn    = $("endLessonBtn");
+const resumeLessonBtn = $("resumeLessonBtn");
+
+const changeNameBtn   = $("changeNameBtn");
+const newSessionBtn   = $("newSessionBtn");
+
+const downloadLessonBtn = $("downloadLessonBtn");
+const uploadLessonBtn   = $("uploadLessonBtn");
+const uploadLessonInput = $("uploadLessonInput");
+
+const sttLangSel      = $("sttLang");
+const micSelect       = $("micSelect");
+const meter           = $("meter");
+const meterBar        = $("meterBar");
+const useBrowserTTSChk= $("useBrowserTTSChk");
+const startVoiceBtn   = $("startVoiceBtn");
+const stopVoiceBtn    = $("stopVoiceBtn");
+
+const chatHistory     = $("chatHistory");
+const userInput       = $("userInput");
+const spinner         = $("spinner");
+const wordProgress    = $("wordProgress");
+const voiceOutput     = $("voiceOutput"); // <audio>, we hide unless needed
+
+if (voiceOutput) voiceOutput.style.display = "none";
+
+// 3) UI helpers
+function showScreen(which) {
+  // which: 'welcome' | 'contents' | 'chat'
+  if (!welcomeForm || !contentsMenu || !chatContainer) return;
+  if (which === "welcome") {
+    welcomeForm.style.display = "block";
+    contentsMenu.style.display = "none";
+    chatContainer.style.display = "none";
+  } else if (which === "contents") {
+    welcomeForm.style.display = "none";
+    contentsMenu.style.display = "block";
+    chatContainer.style.display = "none";
+  } else {
+    welcomeForm.style.display = "none";
+    contentsMenu.style.display = "none";
+    chatContainer.style.display = "block";
+  }
+}
+
+function addBubble(role, text) {
+  if (!chatHistory) return;
+  const w = document.createElement("div");
+  w.className = `bubble ${role}`;
+  w.textContent = text;
+  chatHistory.appendChild(w);
+  chatHistory.scrollTop = chatHistory.scrollHeight;
+}
+
+function setSpinner(on) {
+  if (!spinner) return;
+  spinner.style.display = on ? "block" : "none";
+}
+
+// Browser TTS (free) if checked
+function speak(text) {
+  if (!useBrowserTTSChk || !useBrowserTTSChk.checked) return;
+  if (!("speechSynthesis" in window)) return;
+  const u = new SpeechSynthesisUtterance(text);
+  window.speechSynthesis.cancel();
+  window.speechSynthesis.speak(u);
+}
+
+// 4) Networking
+async function fetchJSON(url, options) {
+  const resp = await fetch(url, {
+    ...options,
+    headers: { "Content-Type": "application/json", ...(options && options.headers) },
+  });
+  if (!resp.ok) {
+    const msg = await resp.text().catch(() => "");
+    throw new Error(`HTTP ${resp.status} ${resp.statusText}: ${msg}`);
+  }
+  return resp.json();
+}
+
+// 5) Lesson & Chat
+async function startLessonInternal(month, chapter) {
+  try {
+    setSpinner(true);
+    const url = `${API_BASE}/lesson/${encodeURIComponent(month)}/${encodeURIComponent(chapter)}?sessionId=${encodeURIComponent(state.sessionId)}&name=${encodeURIComponent(state.name || "friend")}`;
+    const data = await fetchJSON(url);
+
+    // { welcomeText, lessonText, words, sessionId, voiceId, character }
+    if (data.sessionId) {
+      state.sessionId = data.sessionId;
+      localStorage.setItem("wwv_session", state.sessionId);
+    }
+    state.character = data.character || state.character;
+    state.voiceId = data.voiceId || state.voiceId;
+    state.currentLesson = { month, chapter };
+
+    // show chat pane and print lesson
+    showScreen("chat");
+    if (data.welcomeText) {
+      addBubble("assistant", data.welcomeText);
+      speak(data.welcomeText);
+    }
+    if (data.lessonText) {
+      addBubble("assistant", data.lessonText);
+      speak(data.lessonText);
     }
 
-    // Wrap all listeners in checks to prevent the TypeError
-    if (startChatBtn) {
-        startChatBtn.addEventListener('click', () => {
-            const nameInput = $('student-name');
-            studentName = nameInput.value.trim();
-            if (studentName) {
-                showScreen('contents');
-            } else {
-                alert("Please enter your name to start.");
-                nameInput.focus();
-            }
-        });
+    // simple progress summary
+    if (wordProgress) {
+      const total = Array.isArray(data.words) ? data.words.length : 0;
+      wordProgress.style.display = total ? "block" : "none";
+      wordProgress.textContent = total ? `Words in this lesson: ${total}` : "";
     }
+  } catch (e) {
+    console.error("startLesson failed:", e);
+    addBubble("system", "Sorry, I couldn’t load that lesson. Please try again.");
+  } finally {
+    setSpinner(false);
+  }
+}
 
-    if (sendBtn) {
-        sendBtn.addEventListener('click', () => {
-            const text = userInput.value.trim();
-            if (text) {
-                sendChatToServer(text);
-                userInput.value = ''; 
-            }
-        });
-    }
-
-    if (userInput) {
-        userInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter' && !userInput.disabled) {
-                e.preventDefault(); 
-                sendBtn.click();
-            }
-        });
-    }
-
-    // Menu button listeners
-    if ($('changeNameBtn')) $('changeNameBtn').addEventListener('click', () => { showScreen('welcome'); });
-    if ($('newSessionBtn')) $('newSessionBtn').addEventListener('click', () => { sessionId = null; showScreen('welcome'); });
-    if ($('endLessonBtn')) $('endLessonBtn').addEventListener('click', () => { showScreen('contents'); });
-    if ($('restartLessonBtn') && currentLesson) $('restartLessonBtn').addEventListener('click', () => { 
-        if (currentLesson) window.startLesson(currentLesson.month, currentLesson.chapter); 
+async function sendChatToServer(text, { isVoice = false } = {}) {
+  addBubble("user", text);
+  try {
+    setSpinner(true);
+    const payload = {
+      text,
+      sessionId: state.sessionId,
+      isVoice,
+      name: state.name || "friend",
+    };
+    const data = await fetchJSON(`${API_BASE}/chat`, {
+      method: "POST",
+      body: JSON.stringify(payload),
     });
-    if ($('clearChatBtn')) $('clearChatBtn').addEventListener('click', () => { chatHistory.innerHTML = ''; });
-    
-    // (Other listeners for download/upload/voice controls should be added here too)
+
+    // { text, character, voiceId, learnedCount, newlyLearned }
+    const reply = data.text || "";
+    state.character = data.character || state.character;
+    state.voiceId = data.voiceId || state.voiceId;
+
+    addBubble("assistant", reply);
+    speak(reply);
+
+    // Nice-to-have: reflect learned count
+    if (wordProgress && (data.learnedCount || data.newlyLearned?.length)) {
+      const learned = data.learnedCount ?? 0;
+      const gained  = (data.newlyLearned || []).filter(w => !!w && !/🎉/.test(w));
+      wordProgress.style.display = "block";
+      wordProgress.textContent = `Learned so far: ${learned}${gained.length ? ` (+${gained.length})` : ""}`;
+    }
+  } catch (e) {
+    console.error("chat error:", e);
+    addBubble("system", "Sorry, the conversation failed. Please try again.");
+  } finally {
+    setSpinner(false);
+  }
+}
+
+// 6) STT (optional)
+// Minimal Voice input using MediaRecorder → POST /api/stt
+let mediaRecorder = null;
+let chunks = [];
+let audioStream = null;
+
+async function listMics() {
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const mics = devices.filter(d => d.kind === "audioinput");
+    if (micSelect) {
+      micSelect.innerHTML = "";
+      for (const d of mics) {
+        const opt = document.createElement("option");
+        opt.value = d.deviceId;
+        opt.textContent = d.label || `Microphone ${micSelect.length + 1}`;
+        micSelect.appendChild(opt);
+      }
+    }
+  } catch (e) {
+    console.warn("enumerateDevices failed:", e);
+  }
+}
+
+async function startListening() {
+  if (!navigator.mediaDevices) {
+    addBubble("system", "Microphone is not available in this browser.");
+    return;
+  }
+  const constraints = { audio: { deviceId: micSelect && micSelect.value ? { exact: micSelect.value } : undefined } };
+  audioStream = await navigator.mediaDevices.getUserMedia(constraints);
+  mediaRecorder = new MediaRecorder(audioStream, { mimeType: "audio/webm" });
+  chunks = [];
+  mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+  mediaRecorder.onstop = async () => {
+    try {
+      const blob = new Blob(chunks, { type: "audio/webm" });
+      const form = new FormData();
+      form.append("audio", blob, "speech.webm");
+      const lang = sttLangSel ? sttLangSel.value : "";
+      if (lang) form.append("lang", lang);
+
+      const resp = await fetch(`${API_BASE}/stt`, { method: "POST", body: form });
+      if (!resp.ok) throw new Error(`STT ${resp.status}`);
+      const { text } = await resp.json();
+      if (text && text.trim()) {
+        await sendChatToServer(text, { isVoice: true });
+      } else {
+        addBubble("system", "I could not understand the audio. Please try again.");
+      }
+    } catch (e) {
+      console.error("STT failed:", e);
+      addBubble("system", "Speech-to-text failed. Please try again.");
+    } finally {
+      if (audioStream) {
+        audioStream.getTracks().forEach(t => t.stop());
+        audioStream = null;
+      }
+      state.isListening = false;
+      if (startVoiceBtn) startVoiceBtn.style.display = "";
+      if (stopVoiceBtn) stopVoiceBtn.style.display = "none";
+    }
+  };
+  mediaRecorder.start();
+  state.isListening = true;
+  if (startVoiceBtn) startVoiceBtn.style.display = "none";
+  if (stopVoiceBtn)  stopVoiceBtn.style.display = "";
+}
+
+function stopListening() {
+  if (mediaRecorder && mediaRecorder.state !== "inactive") {
+    mediaRecorder.stop();
+  }
+}
+
+// simple mic meter (optional)
+let meterRAF = null;
+function startMeter(stream) {
+  if (!meter || !meterBar) return;
+  const ac = new AudioContext();
+  const src = ac.createMediaStreamSource(stream);
+  const analyser = ac.createAnalyser();
+  analyser.fftSize = 512;
+  src.connect(analyser);
+  const data = new Uint8Array(analyser.frequencyBinCount);
+  function tick() {
+    analyser.getByteTimeDomainData(data);
+    // crude peak detector
+    let peak = 0;
+    for (let i = 0; i < data.length; i++) {
+      const v = Math.abs(data[i] - 128);
+      if (v > peak) peak = v;
+    }
+    const pct = Math.min(100, Math.round((peak / 128) * 100));
+    meterBar.style.width = pct + "%";
+    meterRAF = requestAnimationFrame(tick);
+  }
+  meterRAF = requestAnimationFrame(tick);
+}
+
+function stopMeter() {
+  if (meterRAF) cancelAnimationFrame(meterRAF);
+  meterRAF = null;
+  if (meterBar) meterBar.style.width = "0%";
+}
+
+// 7) Global function for your onclick buttons in HTML
+//    (must be on window)
+window.startLesson = async function(month, chapter) {
+  if (!state.name) {
+    showScreen("welcome");
+    nameInput && nameInput.focus();
+    return;
+  }
+  await startLessonInternal(month, chapter);
+};
+
+// 8) Event listeners
+document.addEventListener("DOMContentLoaded", async () => {
+  // initial route
+  if (state.name) {
+    showScreen("contents");
+  } else {
+    showScreen("welcome");
+  }
+
+  if (nameInput) nameInput.value = state.name;
+
+  // Start chat button
+  if (startChatBtn) {
+    startChatBtn.addEventListener("click", () => {
+      const val = (nameInput && nameInput.value.trim()) || "";
+      if (!val) {
+        alert("Please enter your name to start.");
+        nameInput && nameInput.focus();
+        return;
+      }
+      state.name = val;
+      localStorage.setItem("studentName", state.name);
+      showScreen("contents");
+    });
+  }
+
+  // send message
+  if (sendBtn && userInput) {
+    sendBtn.addEventListener("click", async () => {
+      const text = userInput.value.trim();
+      if (!text) return;
+      userInput.value = "";
+      await sendChatToServer(text);
+    });
+    userInput.addEventListener("keypress", (e) => {
+      if (e.key === "Enter" && !userInput.disabled) {
+        e.preventDefault();
+        sendBtn.click();
+      }
+    });
+  }
+
+  // simple controls
+  if (clearChatBtn) {
+    clearChatBtn.addEventListener("click", () => {
+      if (chatHistory) chatHistory.innerHTML = "";
+    });
+  }
+  if (endLessonBtn) {
+    endLessonBtn.addEventListener("click", () => {
+      state.currentLesson = null;
+      showScreen("contents");
+    });
+  }
+  if (restartLessonBtn) {
+    restartLessonBtn.addEventListener("click", () => {
+      if (state.currentLesson) {
+        startLessonInternal(state.currentLesson.month, state.currentLesson.chapter);
+      }
+    });
+  }
+  if (resumeLessonBtn) {
+    resumeLessonBtn.addEventListener("click", () => {
+      if (state.currentLesson) showScreen("chat");
+      else showScreen("contents");
+    });
+  }
+  if (changeNameBtn) {
+    changeNameBtn.addEventListener("click", () => {
+      showScreen("welcome");
+      nameInput && nameInput.focus();
+    });
+  }
+  if (newSessionBtn) {
+    newSessionBtn.addEventListener("click", () => {
+      state.sessionId = crypto.randomUUID();
+      localStorage.setItem("wwv_session", state.sessionId);
+      addBubble("system", "Started a new session.");
+      showScreen("welcome");
+    });
+  }
+
+  // download/upload progress (local JSON)
+  if (downloadLessonBtn) {
+    downloadLessonBtn.addEventListener("click", () => {
+      const data = {
+        sessionId: state.sessionId,
+        name: state.name,
+        currentLesson: state.currentLesson,
+        character: state.character,
+        ts: Date.now(),
+      };
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "waterwheel-progress.json";
+      a.click();
+    });
+  }
+  if (uploadLessonBtn && uploadLessonInput) {
+    uploadLessonBtn.addEventListener("click", () => uploadLessonInput.click());
+    uploadLessonInput.addEventListener("change", async () => {
+      const file = uploadLessonInput.files?.[0];
+      if (!file) return;
+      const txt = await file.text();
+      try {
+        const data = JSON.parse(txt);
+        state.sessionId = data.sessionId || state.sessionId;
+        state.name = data.name || state.name;
+        state.currentLesson = data.currentLesson || state.currentLesson;
+        state.character = data.character || state.character;
+        localStorage.setItem("wwv_session", state.sessionId);
+        localStorage.setItem("studentName", state.name);
+        addBubble("system", "Progress loaded.");
+        if (state.currentLesson) showScreen("chat"); else showScreen("contents");
+      } catch (_) {
+        addBubble("system", "Invalid progress file.");
+      }
+    });
+  }
+
+  // voice controls
+  if (startVoiceBtn) {
+    startVoiceBtn.addEventListener("click", async () => {
+      try {
+        await listMics();
+        await startListening();
+      } catch (e) {
+        console.error(e);
+        addBubble("system", "Cannot access microphone.");
+      }
+    });
+  }
+  if (stopVoiceBtn) {
+    stopVoiceBtn.addEventListener("click", () => {
+      stopListening();
+    });
+  }
 });
-
-// NOTE: The window.startLesson function must remain outside the DOMContentLoaded block
-// because it is called directly from the HTML's onclick attribute.
-
-
