@@ -38,7 +38,7 @@ try {
 // === Express setup ===
 const app = express();
 const PORT = process.env.PORT || 3000;
-app.use(cors({ origin: 'https://waterwheel-village.onrender.com' })); // Restrict to frontend
+app.use(cors({ origin: ['https://waterwheel-village.onrender.com', 'https://aaronhakso.com'] }));
 app.use(bodyParser.json({ limit: "10mb" }));
 app.use(bodyParser.urlencoded({ extended: false }));
 
