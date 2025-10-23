@@ -1,10 +1,7 @@
 // === API base URL ===
-// Local dev → localhost:3000
-// Production (WordPress site) → Render backend
 const API_BASE = location.hostname.includes("localhost")
   ? "http://localhost:3000/api"
-  : "https://your-render-app.onrender.com/api";  // replace with your Render backend URL
-
+  : "https://waterwheel-village.onrender.com/api"; // Replace with your actual Render URL
 
 // 2) DOM helpers & state
 const $ = (id) => document.getElementById(id);
@@ -58,7 +55,6 @@ if (voiceOutput) voiceOutput.style.display = "none";
 
 // 3) UI helpers
 function showScreen(which) {
-  // which: 'welcome' | 'contents' | 'chat'
   if (!welcomeForm || !contentsMenu || !chatContainer) return;
   if (which === "welcome") {
     welcomeForm.style.display = "block";
@@ -89,7 +85,6 @@ function setSpinner(on) {
   spinner.style.display = on ? "block" : "none";
 }
 
-// Browser TTS (free) if checked
 function speak(text) {
   if (!useBrowserTTSChk || !useBrowserTTSChk.checked) return;
   if (!("speechSynthesis" in window)) return;
@@ -116,9 +111,10 @@ async function startLessonInternal(month, chapter) {
   try {
     setSpinner(true);
     const url = `${API_BASE}/lesson/${encodeURIComponent(month)}/${encodeURIComponent(chapter)}?sessionId=${encodeURIComponent(state.sessionId)}&name=${encodeURIComponent(state.name || "friend")}`;
+    console.log('Fetching lesson from:', url);
     const data = await fetchJSON(url);
+    console.log('Lesson data received:', data);
 
-    // { welcomeText, lessonText, words, sessionId, voiceId, character }
     if (data.sessionId) {
       state.sessionId = data.sessionId;
       localStorage.setItem("wwv_session", state.sessionId);
@@ -127,7 +123,6 @@ async function startLessonInternal(month, chapter) {
     state.voiceId = data.voiceId || state.voiceId;
     state.currentLesson = { month, chapter };
 
-    // show chat pane and print lesson
     showScreen("chat");
     if (data.welcomeText) {
       addBubble("assistant", data.welcomeText);
@@ -138,15 +133,23 @@ async function startLessonInternal(month, chapter) {
       speak(data.lessonText);
     }
 
-    // simple progress summary
     if (wordProgress) {
       const total = Array.isArray(data.words) ? data.words.length : 0;
       wordProgress.style.display = total ? "block" : "none";
       wordProgress.textContent = total ? `Words in this lesson: ${total}` : "";
     }
   } catch (e) {
-    console.error("startLesson failed:", e);
-    addBubble("system", "Sorry, I couldn’t load that lesson. Please try again.");
+    console.error("startLesson failed:", e.message, e.stack);
+    state.currentLesson = { month, chapter };
+    state.character = "mcarthur";
+    showScreen("chat");
+    const fallbackWelcome = `Welcome to ${chapter} from ${month}, ${state.name}!`;
+    const fallbackLesson = `Let's learn about ${chapter.replace('_', ' ')}. Type a message to start!`;
+    addBubble("assistant", fallbackWelcome);
+    addBubble("assistant", fallbackLesson);
+    speak(fallbackWelcome);
+    speak(fallbackLesson);
+    if (wordProgress) wordProgress.style.display = "none";
   } finally {
     setSpinner(false);
   }
@@ -167,7 +170,6 @@ async function sendChatToServer(text, { isVoice = false } = {}) {
       body: JSON.stringify(payload),
     });
 
-    // { text, character, voiceId, learnedCount, newlyLearned }
     const reply = data.text || "";
     state.character = data.character || state.character;
     state.voiceId = data.voiceId || state.voiceId;
@@ -175,7 +177,6 @@ async function sendChatToServer(text, { isVoice = false } = {}) {
     addBubble("assistant", reply);
     speak(reply);
 
-    // Nice-to-have: reflect learned count
     if (wordProgress && (data.learnedCount || data.newlyLearned?.length)) {
       const learned = data.learnedCount ?? 0;
       const gained  = (data.newlyLearned || []).filter(w => !!w && !/🎉/.test(w));
@@ -191,7 +192,6 @@ async function sendChatToServer(text, { isVoice = false } = {}) {
 }
 
 // 6) STT (optional)
-// Minimal Voice input using MediaRecorder → POST /api/stt
 let mediaRecorder = null;
 let chunks = [];
 let audioStream = null;
@@ -265,7 +265,6 @@ function stopListening() {
   }
 }
 
-// simple mic meter (optional)
 let meterRAF = null;
 function startMeter(stream) {
   if (!meter || !meterBar) return;
@@ -277,7 +276,6 @@ function startMeter(stream) {
   const data = new Uint8Array(analyser.frequencyBinCount);
   function tick() {
     analyser.getByteTimeDomainData(data);
-    // crude peak detector
     let peak = 0;
     for (let i = 0; i < data.length; i++) {
       const v = Math.abs(data[i] - 128);
@@ -297,7 +295,6 @@ function stopMeter() {
 }
 
 // 7) Global function for your onclick buttons in HTML
-//    (must be on window)
 window.startLesson = async function(month, chapter) {
   if (!state.name) {
     showScreen("welcome");
@@ -309,7 +306,6 @@ window.startLesson = async function(month, chapter) {
 
 // 8) Event listeners
 document.addEventListener("DOMContentLoaded", async () => {
-  // initial route
   if (state.name) {
     showScreen("contents");
   } else {
@@ -318,7 +314,6 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   if (nameInput) nameInput.value = state.name;
 
-  // Start chat button
   if (startChatBtn) {
     startChatBtn.addEventListener("click", () => {
       const val = (nameInput && nameInput.value.trim()) || "";
@@ -333,7 +328,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
-  // send message
   if (sendBtn && userInput) {
     sendBtn.addEventListener("click", async () => {
       const text = userInput.value.trim();
@@ -349,7 +343,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
-  // simple controls
   if (clearChatBtn) {
     clearChatBtn.addEventListener("click", () => {
       if (chatHistory) chatHistory.innerHTML = "";
@@ -389,7 +382,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
-  // download/upload progress (local JSON)
   if (downloadLessonBtn) {
     downloadLessonBtn.addEventListener("click", () => {
       const data = {
@@ -428,7 +420,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
-  // voice controls
   if (startVoiceBtn) {
     startVoiceBtn.addEventListener("click", async () => {
       try {
