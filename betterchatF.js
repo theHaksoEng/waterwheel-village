@@ -6,9 +6,6 @@ require("dotenv").config({ override: true });
 const mask = (s) => (s ? s.slice(0, 10) + "..." + s.slice(-6) : "missing");
 console.log("🔐 OPENAI key:", mask(process.env.OPENAI_API_KEY));
 
-// ✅ Load env first
-require("dotenv").config();
-
 // === OpenAI Setup ===
 const OpenAI = require("openai");
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -41,7 +38,7 @@ try {
 // === Express setup ===
 const app = express();
 const PORT = process.env.PORT || 3000;
-app.use(cors());
+app.use(cors({ origin: 'https://waterwheel-village.onrender.com' })); // Restrict to frontend
 app.use(bodyParser.json({ limit: "10mb" }));
 app.use(bodyParser.urlencoded({ extended: false }));
 
@@ -191,13 +188,11 @@ const characters = {
 };
 
 // === Lessons ===
-// NOTE: This assumes you have a local file named 'lessonIntros.js' that exports this data.
 const lessonIntros = require("./lessonIntros");
 
 // === Load monthly wordlists ===
 const monthlyWordlists = {};
 function loadMonthlyWordlists() {
-    // IMPORTANT: Assuming 'wordlists' directory is parallel to betterchatF.js
     const wordlistsDir = path.join(__dirname, "wordlists", "monthly");
     try {
         const files = fs.readdirSync(wordlistsDir);
@@ -635,6 +630,40 @@ app.post("/api/speakbase", async (req, res) => {
     } catch (err) {
         console.error("❌ Speakbase processing error:", err.message);
         res.status(500).json({ error: "TTS Generation Failed", details: err.message });
+    }
+});
+
+// === STT endpoint (Speech-to-Text via OpenAI Whisper) ===
+app.post("/api/stt", upload.single("audio"), async (req, res) => {
+    const audioFile = req.file; // From Multer (memory storage)
+    const lang = req.body.lang || "en"; // Optional lang from frontend (e.g., en-US)
+
+    if (!audioFile) {
+        console.error("❌ No audio file provided");
+        return res.status(400).json({ error: "No audio file provided" });
+    }
+
+    console.log(`🔊 Processing STT for lang: ${lang}, size: ${audioFile.size} bytes`);
+
+    try {
+        // Create a File object for OpenAI Whisper
+        const audio = new File([audioFile.buffer], "speech.webm", { type: "audio/webm" });
+
+        // Use OpenAI Whisper for transcription
+        const transcription = await openai.audio.transcriptions.create({
+            file: audio,
+            model: "whisper-1",
+            language: lang.split('-')[0], // e.g., "en" from "en-US"
+            response_format: "text",
+        });
+
+        const text = transcription.trim();
+        console.log(`📝 Transcribed text: ${text}`);
+
+        res.json({ text });
+    } catch (err) {
+        console.error("❌ STT error:", err.message);
+        res.status(500).json({ error: "Speech-to-text failed", details: err.message });
     }
 });
 
