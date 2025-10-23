@@ -1,20 +1,38 @@
 // === API base URL ===
 const API_BASE = location.hostname.includes("localhost")
   ? "http://localhost:3000/api"
-  : "https://waterwheel-village.onrender.com/api"; // Replace with your actual Render URL
+  : "https://waterwheel-village.onrender.com/api";
 
-// 2) DOM helpers & state
-const $ = (id) => document.getElementById(id);
+// === Safe DOM helper (waits for element) ===
+function $(id, callback) {
+  const el = document.getElementById(id);
+  if (el && callback) callback(el);
+  return el;
+}
 
+// Wait for element with retry
+function waitFor(id, callback, max = 50) {
+  let tries = 0;
+  const check = () => {
+    const el = document.getElementById(id);
+    if (el || tries++ > max) {
+      clearInterval(interval);
+      if (el) callback(el);
+    }
+  };
+  const interval = setInterval(check, 200);
+  check();
+}
+
+// === State ===
 const state = {
   sessionId: localStorage.getItem("wwv_session") || crypto.randomUUID(),
   name: localStorage.getItem("studentName") || "",
-  currentLesson: null, // {month, chapter}
+  currentLesson: null,
   character: "mcarthur",
   voiceId: null,
   isListening: false,
 };
-
 localStorage.setItem("wwv_session", state.sessionId);
 
 // cache DOM from your HTML
