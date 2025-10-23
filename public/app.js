@@ -1,496 +1,181 @@
-(function() {
-// Use same-origin in prod; localhost in dev; always include /api prefix
-const API_BASE = `${location.origin}/api`;
+// publicjshint esversion: 9
+console.log('app.js LOADED SUCCESSFULLY');
 
-  const $ = (id) => document.getElementById(id);
+// === CORRECT API BASE (HARD CODED FOR RENDER) ===
+const API_BASE = 'https://waterwheel-village.onrender.com/api';
 
-  // DOM
-  const chatHistoryDiv = $("chatHistory");
-  const userInput = $("userInput");
-  const welcomeForm = $("welcome-form");
-  const studentNameInput = $("student-name");
-  const startChatBtn = $("start-chat-btn");
-  const chatContainer = $("chatContainer");
-  const contentsMenu = $("contentsMenu");
-  const voiceOutput = $("voiceOutput");
-  const sendBtn = $("sendBtn");
-  const clearChatBtn = $("clearChatBtn");
-  const startVoiceBtn = $("startVoiceBtn");
-  const stopVoiceBtn = $("stopVoiceBtn");
-  const spinner = $("spinner");
-  const uploadLessonInput = $("uploadLessonInput");
-  const downloadLessonBtn = $("downloadLessonBtn");
-  const uploadLessonBtn = $("uploadLessonBtn");
-  const restartLessonBtn = $("restartLessonBtn");
-  const endLessonBtn = $("endLessonBtn");
-  const resumeLessonBtn = $("resumeLessonBtn");
-  const wordProgressDiv = $("wordProgress");
-  const micSelect = $("micSelect");
-  const sttLang = $("sttLang");
-  const meterBar = $("meterBar");
+// === Safe DOM Helper (wait for elements) ===
+function $(id, callback) {
+  const el = document.getElementById(id);
+  if (el && callback) callback(el);
+  return el;
+}
 
-  // Simple UI gates
-  function showWelcome() {
-    if (welcomeForm) welcomeForm.style.display = "flex";
-    if (contentsMenu) contentsMenu.style.display = "none";
-    if (chatContainer) chatContainer.style.display = "none";
-  }
-  function showMenu() {
-    if (welcomeForm) welcomeForm.style.display = "none";
-    if (contentsMenu) contentsMenu.style.display = "block";
-  }
-
-  // Name/session
-  let studentName = localStorage.getItem("studentName") || "";
-  if (!studentName) showWelcome(); else showMenu();
-
-  function getSessionId() {
-    let id = localStorage.getItem("waterwheelSessionId");
-    if (!id) {
-      id = (self.crypto && crypto.randomUUID)
-        ? crypto.randomUUID()
-        : (Date.now().toString(36) + Math.random().toString(36).slice(2));
-      localStorage.setItem("waterwheelSessionId", id);
+function waitFor(id, callback, maxTries = 50) {
+  let tries = 0;
+  const check = () => {
+    const el = document.getElementById(id);
+    if (el || tries++ > maxTries) {
+      clearInterval(interval);
+      if (el) callback(el);
     }
-    return id;
-  }
-  let currentSessionId = getSessionId();
-  let currentLesson = null;
-  let initialLoad = true;
+  };
+  const interval = setInterval(check, 200);
+  check();
+}
 
-  // Helpers
-  function addMessageToHistory(message, sender, isWelcome = false) {
-    if (!chatHistoryDiv) return;
-    const el = document.createElement("div");
-    el.classList.add(isWelcome ? "welcome-message" : (sender === "user" ? "user-message" : "bot-message"));
-    el.textContent = message;
-    chatHistoryDiv.appendChild(el);
-    chatHistoryDiv.scrollTop = chatHistoryDiv.scrollHeight;
-  }
-  function addLearnedWordsMessage(words) {
-    if (!chatHistoryDiv || !words || !words.length) return;
-    const msg = `✨ Great job, ${studentName || "friend"}! You learned these new words: ${words.join(", ")}!`;
-    const el = document.createElement("div");
-    el.classList.add("newly-learned");
-    el.textContent = msg;
-    chatHistoryDiv.appendChild(el);
-    chatHistoryDiv.scrollTop = chatHistoryDiv.scrollHeight;
-  }
+// === State ===
+const state = {
+  sessionId: localStorage.getItem('wwv_session') || crypto.randomUUID(),
+  name: localStorage.getItem('studentName') || '',
+  currentLesson: null,
+  character: 'mcarthur',
+  voiceId: null,
+  isListening: false,
+};
+localStorage.setItem('wwv_session', state.sessionId);
 
-  // TTS
-  async function playVoice(text, voiceId) {
-    if (!voiceId || !text) return;
-    try {
-      const audioRes = await fetch(`${API_BASE_URL}/speakbase`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, voiceId })
-      });
-      if (!audioRes.ok) return;
-      const audioBlob = await audioRes.blob();
-      const audioUrl = URL.createObjectURL(audioBlob);
-      try { voiceOutput.pause(); } catch {}
-      voiceOutput.src = audioUrl;
-      voiceOutput.style.display = "block";
-      await new Promise((resolve) => {
-        const cleanup = () => { voiceOutput.onended = null; voiceOutput.onerror = null; resolve(); };
-        voiceOutput.onended = cleanup;
-        voiceOutput.onerror = cleanup;
-        voiceOutput.play().catch(() => cleanup());
-      });
-    } catch {}
-  }
+// === DOM Elements (wait for them) ===
+let welcomeForm, contentsMenu, chatContainer, studentNameInput, startChatBtn;
+let chatHistory, userInput, sendBtn, clearChatBtn, spinner, wordProgress;
+let startVoiceBtn, stopVoiceBtn, uploadLessonInput;
 
-  // Start chat (robust)
-  function goToMenuWithName(name) {
-    const n = (name || "").trim();
-    if (!n) { alert("Please enter your name to start!"); return; }
-    studentName = n;
-    localStorage.setItem("studentName", studentName);
-    showMenu();
-  }
-  if (startChatBtn) {
-    startChatBtn.addEventListener("click", (e) => { e.preventDefault(); goToMenuWithName(studentNameInput ? studentNameInput.value : ""); });
-  }
-  document.addEventListener("click", (e) => {
-    const t = e.target;
-    if (t && t.id === "start-chat-btn") {
-      e.preventDefault();
-      goToMenuWithName(studentNameInput ? studentNameInput.value : "");
-    }
+waitFor('welcome-form', el => welcomeForm = el);
+waitFor('contentsMenu', el => contentsMenu = el);
+waitFor('chatContainer', el => chatContainer = el);
+waitFor('student-name', el => studentNameInput = el);
+waitFor('start-chat-btn', el => startChatBtn = el);
+waitFor('chatHistory', el => chatHistory = el);
+waitFor('userInput', el => userInput = el);
+waitFor('sendBtn', el => sendBtn = el);
+waitFor('clearChatBtn', el => clearChatBtn = el);
+waitFor('spinner', el => spinner = el);
+waitFor('wordProgress', el => wordProgress = el);
+waitFor('startVoiceBtn', el => startVoiceBtn = el);
+waitFor('stopVoiceBtn', el => stopVoiceBtn = el);
+waitFor('uploadLessonInput', el => uploadLessonInput = el);
+
+// === UI Helpers ===
+function showScreen(screen) {
+  if (!welcomeForm || !contentsMenu || !chatContainer) return;
+  welcomeForm.style.display = screen === 'welcome' ? 'block' : 'none';
+  contentsMenu.style.display = screen === 'contents' ? 'block' : 'none';
+  chatContainer.style.display = screen === 'chat' ? 'block' : 'none';
+}
+
+function addBubble(role, text) {
+  if (!chatHistory) return;
+  const div = document.createElement('div');
+  div.className = role === 'assistant' ? 'bot-message' : 'user-message';
+  div.textContent = text;
+  chatHistory.appendChild(div);
+  chatHistory.scrollTop = chatHistory.scrollHeight;
+}
+
+function setSpinner(show) {
+  if (spinner) spinner.style.display = show ? 'block' : 'none';
+}
+
+function speak(text) {
+  const chk = document.getElementById('useBrowserTTSChk');
+  if (!chk?.checked || !('speechSynthesis' in window)) return;
+  const u = new SpeechSynthesisUtterance(text);
+  window.speechSynthesis.cancel();
+  window.speechSynthesis.speak(u);
+}
+
+// === API ===
+async function fetchJSON(url, options = {}) {
+  const resp = await fetch(url, {
+    ...options,
+    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
   });
-  if (studentNameInput) {
-    studentNameInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") { e.preventDefault(); goToMenuWithName(studentNameInput.value); }
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  return resp.json();
+}
+
+// === Lesson ===
+window.startLesson = async function(month, chapter) {
+  if (!state.name) {
+    showScreen('welcome');
+    studentNameInput?.focus();
+    return;
+  }
+  try {
+    setSpinner(true);
+    const url = `${API_BASE}/lesson/${month}/${chapter}?sessionId=${state.sessionId}&name=${encodeURIComponent(state.name)}`;
+    console.log('Fetching:', url);
+    const data = await fetchJSON(url);
+
+    state.sessionId = data.sessionId || state.sessionId;
+    localStorage.setItem('wwv_session', state.sessionId);
+    state.currentLesson = { month, chapter };
+
+    showScreen('chat');
+    if (data.welcomeText) { addBubble('assistant', data.welcomeText); speak(data.welcomeText); }
+    if (data.lessonText) { addBubble('assistant', data.lessonText); speak(data.lessonText); }
+
+    if (wordProgress && data.words) {
+      wordProgress.style.display = 'block';
+      wordProgress.textContent = `Words: ${data.words.length}`;
+    }
+  } catch (e) {
+    console.error('Lesson failed:', e);
+    addBubble('assistant', `Welcome, ${state.name}! Let's learn.`);
+  } finally {
+    setSpinner(false);
+  }
+};
+
+// === DOM Ready ===
+document.addEventListener('DOMContentLoaded', () => {
+  console.log('DOM ready, initializing...');
+
+  if (state.name) {
+    showScreen('contents');
+    if (studentNameInput) studentNameInput.value = state.name;
+  } else {
+    showScreen('welcome');
+  }
+
+  // Start Chat
+  waitFor('start-chat-btn', btn => {
+    btn.addEventListener('click', () => {
+      const val = studentNameInput?.value.trim();
+      if (!val) { alert('Enter your name'); return; }
+      state.name = val;
+      localStorage.setItem('studentName', val);
+      showScreen('contents');
     });
-  }
+  });
 
-  // Change name / New session
-  const changeNameBtn = $("changeNameBtn");
-  if (changeNameBtn) {
-    changeNameBtn.addEventListener("click", () => {
-      localStorage.removeItem("studentName");
-      studentName = "";
-      showWelcome();
-    });
-  }
-  const newSessionBtn = $("newSessionBtn");
-  if (newSessionBtn) {
-    newSessionBtn.addEventListener("click", () => {
-      localStorage.removeItem("waterwheelSessionId");
-      currentSessionId = getSessionId();
-      if (chatHistoryDiv) chatHistoryDiv.innerHTML = "";
-      addMessageToHistory("🧹 New session started. Pick a chapter.", "bot");
-    });
-  }
-
-  // Lessons
-  async function startLesson(month, chapter) {
-    if (!contentsMenu || !chatContainer) return;
-    contentsMenu.style.display = "none";
-    chatContainer.style.display = "flex";
-    chatHistoryDiv.innerHTML = "";
-    currentLesson = { month, chapter };
-    localStorage.setItem("currentLesson", JSON.stringify(currentLesson));
-
-    try {
-      const url = `${API_BASE_URL}/lesson/${month}/${chapter}?sessionId=${encodeURIComponent(currentSessionId)}&name=${encodeURIComponent(studentName || "friend")}`;
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`Lesson fetch failed: ${res.status}`);
-      const lesson = await res.json();
-
-      if (lesson.welcomeText) {
-        addMessageToHistory(lesson.welcomeText, "bot", true);
-        await playVoice(lesson.welcomeText, "fEVT2ExfHe1MyjuiIiU9");
-      }
-      if (lesson.lessonText) {
-        addMessageToHistory(lesson.lessonText, "bot");
-        if (lesson.voiceId) await playVoice(lesson.lessonText, lesson.voiceId);
-      }
-      if (Array.isArray(lesson.words) && lesson.words.length) {
-        const list = lesson.words.map(w => (w && w.fi) ? `${w.en} — ${w.fi}` : w.en).join(", ");
-        addMessageToHistory(`📖 Here are some useful words: ${list}.`, "bot");
-      }
-      if (!lesson.welcomeText && !lesson.lessonText) {
-        addMessageToHistory("⚠️ Sorry, this lesson could not be loaded.", "bot");
-      }
-    } catch {
-      addMessageToHistory("⚠️ Sorry, this lesson could not be loaded.", "bot");
-    }
-  }
-  window.startLesson = startLesson;
-
-  // Chat flow
-  async function handleFullChatFlow(inputText, isVoice = false) {
-    if (inputText.trim() === "" && initialLoad === false) return;
-    if (inputText.trim() !== "") addMessageToHistory(inputText, "user");
-    userInput.value = "";
-    if (spinner) { spinner.textContent = "🤖 Thinking..."; spinner.style.display = "block"; }
-    initialLoad = false;
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/chat`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: inputText, sessionId: currentSessionId, isVoice, name: studentName })
-      });
-      const data = await response.json();
-
-      if (data.text) {
-        addMessageToHistory(data.text, "bot");
-        if (data.voiceId) await playVoice(data.text, data.voiceId);
-        if (Array.isArray(data.newlyLearned) && data.newlyLearned.length > 0) addLearnedWordsMessage(data.newlyLearned);
-        if (typeof data.learnedCount === "number" && wordProgressDiv) {
-          wordProgressDiv.style.display = "block";
-          wordProgressDiv.textContent = `Words learned: ${data.learnedCount}`;
-        }
-      }
-    } catch {
-      addMessageToHistory("⚠️ Sorry, the chat service is not available.", "bot");
-    } finally {
-      if (spinner) spinner.style.display = "none";
-    }
-  }
-  if (sendBtn) sendBtn.addEventListener("click", () => handleFullChatFlow(userInput.value));
-  if (userInput) userInput.addEventListener("keydown", (e) => { if (e.key === "Enter") handleFullChatFlow(userInput.value); });
-
-  // Mic meter
-  let audioCtx = null, analyser = null, meterRAF = null;
-  function startMeter(stream) {
-    stopMeter();
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const src = audioCtx.createMediaStreamSource(stream);
-    analyser = audioCtx.createAnalyser();
-    analyser.fftSize = 512;
-    src.connect(analyser);
-    const data = new Uint8Array(analyser.frequencyBinCount);
-    const tick = () => {
-      if (!analyser) return;
-      analyser.getByteTimeDomainData(data);
-      let sum = 0;
-      for (let i = 0; i < data.length; i++) {
-        const v = (data[i] - 128) / 128;
-        sum += v*v;
-      }
-      const rms = Math.sqrt(sum / data.length);
-      const pct = Math.min(100, Math.max(0, Math.round(rms * 200)));
-      meterBar.style.width = pct + "%";
-      meterRAF = requestAnimationFrame(tick);
-    };
-    meterRAF = requestAnimationFrame(tick);
-  }
-  function stopMeter() {
-    try { if (audioCtx) audioCtx.close(); } catch {}
-    audioCtx = null; analyser = null;
-    if (meterRAF) cancelAnimationFrame(meterRAF);
-    meterRAF = null; if (meterBar) meterBar.style.width = "0%";
-  }
-
-  async function populateMics(afterPermissionStream) {
-    try {
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const inputs = devices.filter(d => d.kind === "audioinput");
-      const prev = micSelect.value || localStorage.getItem("preferredMicId") || "";
-      micSelect.innerHTML = "";
-      inputs.forEach((d, i) => {
-        const opt = document.createElement("option");
-        opt.value = d.deviceId || "";
-        opt.textContent = d.label || `Microphone ${i+1}`;
-        micSelect.appendChild(opt);
-      });
-      if (prev && [...micSelect.options].some(o => o.value === prev)) {
-        micSelect.value = prev;
-      }
-    } catch {}
-    if (afterPermissionStream) { try { afterPermissionStream.getTracks().forEach(t => t.stop()); } catch {} }
-  }
-  async function ensureMicPermission() {
-    try {
-      const tmp = await navigator.mediaDevices.getUserMedia({ audio: true });
-      await populateMics(tmp);
-      return true;
-    } catch {
-      addMessageToHistory("🎙️ Microphone permission denied or unavailable.", "bot");
-      return false;
-    }
-  }
-  if (navigator.mediaDevices?.enumerateDevices) populateMics();
-
-  // Voice: WebSpeech + fallback recorder
-  let recognition = null, rec = null, recStream = null;
-
-  async function startRecordingFallback() {
-    try {
-      const deviceId = micSelect.value || undefined;
-      if (deviceId) localStorage.setItem("preferredMicId", deviceId);
-      const constraints = { audio: deviceId ? { deviceId: { exact: deviceId } } : true };
-      recStream = await navigator.mediaDevices.getUserMedia(constraints);
-      startMeter(recStream);
-
-      const mime =
-        (window.MediaRecorder && MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) ? "audio/webm;codecs=opus" :
-        (window.MediaRecorder && MediaRecorder.isTypeSupported("audio/webm")) ? "audio/webm" : "";
-
-      rec = new MediaRecorder(recStream, mime ? { mimeType: mime } : undefined);
-      const chunks = [];
-      rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
-      rec.onstart = () => {
-        if (spinner) { spinner.textContent = "🎤 Recording… speak normally"; spinner.style.display = "block"; }
-        startVoiceBtn.style.display = "none";
-        stopVoiceBtn.style.display = "inline-block";
-      };
-      rec.onstop = async () => {
-        stopMeter();
-        if (spinner) spinner.style.display = "none";
-        startVoiceBtn.style.display = "inline-block";
-        stopVoiceBtn.style.display = "none";
-
-        const blob = new Blob(chunks, { type: mime || "audio/webm" });
-        const form = new FormData();
-        form.append("audio", blob, mime.includes("mp4") ? "speech.m4a" : "speech.webm");
-        form.append("lang", sttLang ? (sttLang.value || "en-US") : "en-US");
-
-        try {
-          const res = await fetch(`${API_BASE_URL}/stt`, { method: "POST", body: form });
-          const data = await res.json().catch(() => ({}));
-          const text = (data && data.text ? String(data.text) : "").trim();
-          if (text) handleFullChatFlow(text, true);
-          else addMessageToHistory("🤔 I didn’t catch that (server). Try again and speak close to the mic.", "bot");
-        } finally {
-          try { recStream.getTracks().forEach(t => t.stop()); } catch {}
-          recStream = null; rec = null;
-        }
-      };
-      rec.start();
-      setTimeout(() => { try { rec && rec.state === "recording" && rec.stop(); } catch {} }, 5000);
-    } catch (e) {
-      console.error("Fallback recorder failed:", e);
-      addMessageToHistory("⚠️ Could not access microphone.", "bot");
-    }
-  }
-
-  async function startListening() {
-    const ok = await ensureMicPermission();
-    if (!ok) return;
-
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) { await startRecordingFallback(); return; }
-
-    try { voiceOutput.pause(); } catch {}
-    let gotResult = false;
-    recognition = new SpeechRecognition();
-    if (sttLang) recognition.lang = sttLang.value || "en-US";
-    recognition.interimResults = true;
-    recognition.continuous = false;
-
-    recognition.onstart = async () => {
-      if (spinner) { spinner.textContent = "🎤 Listening..."; spinner.style.display = "block"; }
-      startVoiceBtn.style.display = "none";
-      stopVoiceBtn.style.display = "inline-block";
+  // Send Message
+  waitFor('sendBtn', btn => {
+    btn.addEventListener('click', async () => {
+      const text = userInput?.value.trim();
+      if (!text) return;
+      userInput.value = '';
+      addBubble('user', text);
       try {
-        const deviceId = micSelect.value || undefined;
-        const constraints = { audio: deviceId ? { deviceId: { exact: deviceId } } : true };
-        const tmp = await navigator.mediaDevices.getUserMedia(constraints);
-        startMeter(tmp);
-        recognition.addEventListener("end", () => {
-          stopMeter();
-          try { tmp.getTracks().forEach(t => t.stop()); } catch {}
-        }, { once: true });
-      } catch {}
-    };
-    recognition.onresult = (event) => {
-      let interim = "", finalText = "";
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const t = event.results[i][0].transcript;
-        if (event.results[i].isFinal) finalText += t;
-        else interim += t;
+        setSpinner(true);
+        const data = await fetchJSON(`${API_BASE}/chat`, {
+          method: 'POST',
+          body: JSON.stringify({ text, sessionId: state.sessionId, name: state.name }),
+        });
+        addBubble('assistant', data.text || '');
+        speak(data.text || '');
+      } catch (e) {
+        addBubble('system', 'Error. Try again.');
+      } finally {
+        setSpinner(false);
       }
-      if (interim && userInput) userInput.placeholder = interim.trim();
-      if (finalText && userInput) {
-        gotResult = true;
-        userInput.value = (userInput.value + " " + finalText).trim();
-        userInput.placeholder = "";
-      }
-    };
-    recognition.onerror = async () => {
-      stopMeter();
-      if (spinner) spinner.style.display = "none";
-      await startRecordingFallback();
-    };
-    recognition.onend = async () => {
-      if (spinner) spinner.style.display = "none";
-      startVoiceBtn.style.display = "inline-block";
-      stopVoiceBtn.style.display = "none";
-      const textToSend = (userInput && userInput.value || "").trim();
-      if (textToSend) handleFullChatFlow(textToSend, true);
-      else if (!gotResult) await startRecordingFallback();
-    };
-    recognition.start();
-  }
-  function stopListening() {
-    try { if (recognition) { recognition.stop(); recognition = null; } } catch {}
-    try { if (rec && rec.state === "recording") rec.stop(); } catch {}
-    stopMeter();
-    if (spinner) spinner.style.display = "none";
-    startVoiceBtn.style.display = "inline-block";
-    stopVoiceBtn.style.display = "none";
-  }
-  if (startVoiceBtn) startVoiceBtn.addEventListener("click", startListening);
-  if (stopVoiceBtn)  stopVoiceBtn.addEventListener("click", stopListening);
+    });
+  });
 
-  // Controls
-  if (clearChatBtn) {
-    clearChatBtn.addEventListener("click", () => {
-      localStorage.removeItem("waterwheelSessionId");
-      if (chatHistoryDiv) chatHistoryDiv.innerHTML = "";
-      addMessageToHistory("Chat history has been cleared. Start a new lesson!", "bot");
-      window.location.reload();
+  // Enter key
+  waitFor('userInput', input => {
+    input.addEventListener('keypress', e => {
+      if (e.key === 'Enter') sendBtn?.click();
     });
-  }
-  if (restartLessonBtn) {
-    restartLessonBtn.addEventListener("click", () => {
-      if (currentLesson) startLesson(currentLesson.month, currentLesson.chapter);
-      else addMessageToHistory("No lesson is currently active. Please select one from the menu.", "bot");
-    });
-  }
-  if (endLessonBtn) {
-    endLessonBtn.addEventListener("click", () => {
-      currentLesson = null;
-      if (chatHistoryDiv) chatHistoryDiv.innerHTML = "";
-      chatContainer.style.display = "none";
-      contentsMenu.style.display = "block";
-      localStorage.removeItem("waterwheelSessionId");
-      currentSessionId = getSessionId();
-      stopMeter();
-    });
-  }
-  if (resumeLessonBtn) {
-    resumeLessonBtn.addEventListener("click", () => {
-      const saved = JSON.parse(localStorage.getItem("currentLesson") || "null");
-      if (saved) startLesson(saved.month, saved.chapter);
-      else addMessageToHistory("No saved lesson found. Start a new one!", "bot");
-    });
-  }
-
-  // Progress: save .json + readable .txt
-  if (downloadLessonBtn) {
-    downloadLessonBtn.addEventListener("click", () => {
-      const chatHistory = Array.from(chatHistoryDiv.children).map(el => ({
-        sender: el.classList.contains("user-message") ? "user"
-               : (el.classList.contains("welcome-message") ? "welcome" : "bot"),
-        text: el.textContent
-      }));
-      const json = JSON.stringify({ chatHistory }, null, 2);
-      const blob = new Blob([json], { type: "application/json" });
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = "waterwheel_progress.json";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-
-      const txt = chatHistory.map(m => (m.sender === "user" ? "You: " : "Tutor: ") + m.text).join("\n\n");
-      const blob2 = new Blob([txt], { type: "text/plain" });
-      const a2 = document.createElement("a");
-      a2.href = URL.createObjectURL(blob2);
-      a2.download = "waterwheel_transcript.txt";
-      document.body.appendChild(a2);
-      a2.click();
-      document.body.removeChild(a2);
-
-      addMessageToHistory("Download complete! Saved .json and .txt.", "bot");
-    });
-  }
-  if (uploadLessonInput) {
-    uploadLessonInput.addEventListener("change", (event) => {
-      const file = event.target.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        try {
-          const data = JSON.parse(e.target.result);
-          if (data.chatHistory) {
-            chatHistoryDiv.innerHTML = "";
-            data.chatHistory.forEach(msg => {
-              addMessageToHistory(msg.text, msg.sender === "user" ? "user" : "bot", msg.sender === "welcome");
-            });
-            addMessageToHistory("Upload complete!", "bot");
-          } else {
-            addMessageToHistory("⚠️ Invalid file format.", "bot");
-          }
-        } catch {
-          addMessageToHistory("⚠️ Failed to read file.", "bot");
-        }
-      };
-      reader.readAsText(file);
-    });
-  }
-  if (uploadLessonBtn) uploadLessonBtn.addEventListener("click", () => uploadLessonInput.click());
-
-  // Persist language choice
-  if (sttLang) {
-    const savedLang = localStorage.getItem("sttLang");
-    if (savedLang) sttLang.value = savedLang;
-    sttLang.addEventListener("change", () => localStorage.setItem("sttLang", sttLang.value));
-  }
-})();
+  });
+});
