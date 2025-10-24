@@ -1,0 +1,84 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Waterwheel Village</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <!-- your UI -->
+  <div id="chatbot-wrapper">
+    <h2>🌍 Waterwheel Village Learning</h2>
+
+    <div id="welcome-form">
+      <p>What is your name, friend?</p>
+      <input type="text" id="student-name" placeholder="Your Name" />
+      <button id="start-chat-btn">Start Chat</button>
+    </div>
+
+    <div id="contentsMenu" style="display:none;">
+      <h3>📖 Your Learning Book</h3>
+      <div style="margin-bottom:10px; display:flex; gap:8px; flex-wrap:wrap;">
+        <button id="changeNameBtn" class="progress-btn">👤 Change Name</button>
+        <button id="newSessionBtn" class="progress-btn">🧹 New Session</button>
+      </div>
+      <p>Select a chapter to begin:</p>
+      <div class="contents-button-section">
+        <button onclick="startLesson('month1','greetings_introductions')" class="lesson-btn">👨 Greetings & Introductions (McArthur)</button>
+        <button onclick="startLesson('month1','numbers_days_questions')" class="lesson-btn">👴 Numbers, Days & Questions (Johannes)</button>
+        <button onclick="startLesson('month1','food_drink')" class="lesson-btn">👩 Food & Drink (Fatima)</button>
+        <button onclick="startLesson('month1','daily_phrases')" class="lesson-btn">👩 Daily Phrases (Anika)</button>
+        <button onclick="startLesson('month1','farmer_chat')" class="lesson-btn">👨 Farmer Chat (Kwame)</button>
+      </div>
+      <p>Want to test yourself? <a href="quiz.html" target="_blank">📝 Go to Quiz</a></p>
+    </div>
+
+    <div id="chatContainer" style="display:none;">
+      <div id="wordProgress" style="display:none;"></div>
+      <div id="chatHistory"></div>
+
+      <div class="button-section">
+        <button id="sendBtn" class="chat-btn">📬 Send</button>
+        <button id="clearChatBtn" class="chat-btn">🗑️ Clear Chat</button>
+      </div>
+
+      <div class="button-section">
+        <button id="restartLessonBtn" class="lesson-btn">🔄 Restart Lesson</button>
+        <button id="endLessonBtn" class="lesson-btn">📕 End Lesson</button>
+        <button id="resumeLessonBtn" class="lesson-btn">📂 Resume Lesson</button>
+      </div>
+
+      <div class="button-section">
+        <button id="downloadLessonBtn" class="progress-btn">⬇️ Download Progress</button>
+        <input type="file" id="uploadLessonInput" style="display:none;" />
+        <button id="uploadLessonBtn" class="progress-btn">⬆️ Upload Progress</button>
+      </div>
+
+      <div class="button-section" id="voiceControls">
+        <select id="sttLang" title="Speech language">
+          <option value="en-US">English (US)</option>
+          <option value="fi-FI">Finnish</option>
+          <option value="id-ID">Indonesian</option>
+        </select>
+        <select id="micSelect" title="Microphone"></select>
+        <div id="meter" title="Mic level"><div id="meterBar"></div></div>
+
+        <label style="display:flex; align-items:center; gap:6px; font-size:14px;">
+          <input type="checkbox" id="useBrowserTTSChk" checked />
+          Use browser voice (free)
+        </label>
+
+        <button id="startVoiceBtn" class="voice-btn">🎤 Ask with Voice</button>
+        <button id="stopVoiceBtn" class="voice-btn" style="display:none;">⏹️ Stop Listening</button>
+      </div>
+
+      <input type="text" id="userInput" placeholder="Type your message..." style="margin-top:10px; padding:10px; width:100%;" />
+      <div id="spinner" style="display:none;">🤖 Thinking...</div>
+      <audio id="voiceOutput" controls></audio>
+    </div>
+  </div>
+
+  <!-- load local JS from the same /public folder -->
+  <script src="app.js" defer></script>
+</body>
+</html>
