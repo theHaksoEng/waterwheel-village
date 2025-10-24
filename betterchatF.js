@@ -12,8 +12,6 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // === Core libs ===
 const express = require("express");
-const cors = require("cors");
-const bodyParser = require("body-parser");
 const fs = require("fs");
 const path = require("path");
 const { v4: uuidv4 } = require("uuid");
@@ -34,98 +32,47 @@ try {
     const { File } = require("undici");
     if (!global.File) global.File = File;
 } catch (_) {}
-
 // === Express setup ===
 const app = express();
-// ---- CORS: must be FIRST ----
-const ALLOWED = new Set([
-    "https://www.aaronhakso.com",
-    "https://aaronhakso.com",
-    "https://waterwheel-village.onrender.com",
-  ]);
-  // ==== CORS (must be FIRST) ====
-const ALLOWED = new Set([
-    "https://www.aaronhakso.com",
-    "https://aaronhakso.com",
-    "https://waterwheel-village.onrender.com",
-  ]);
-  
-  // debug so you can see in Render logs which entry is running
-  console.log("ENTRY FILE:", __filename);
-  
-  app.use((req, res, next) => {
-    const origin = req.headers.origin;
-    console.log("CORS MW →", req.method, req.path, "Origin:", origin || "-");
-  
-    if (origin && ALLOWED.has(origin)) {
-      res.setHeader("Access-Control-Allow-Origin", origin);
-      res.setHeader("Vary", "Origin");
-    }
-    res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  
-    if (req.method === "OPTIONS") return res.sendStatus(204);
-    next();
-  });
-  // ==== /CORS ====
-  
-  app.use((req, res, next) => {
-    const origin = req.headers.origin;
-    // debug so you SEE it in Render logs
-    console.log("CORS MW →", req.method, req.path, "Origin:", origin);
-  
-    if (origin && ALLOWED.has(origin)) {
-      res.setHeader("Access-Control-Allow-Origin", origin);
-      res.setHeader("Vary", "Origin");
-    }
-    res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  
-    if (req.method === "OPTIONS") return res.sendStatus(204);
-    next();
-  });
-  // ---- /CORS ----
-  
 const PORT = process.env.PORT || 3000;
 
-// 🔒 Good hygiene (optional)
+// Hygiene
 app.disable("x-powered-by");
 
-// ✅ Allow only your sites
-const ALLOWED_ORIGINS = new Set([
+// One-time debug so you can verify in Render logs
+console.log("ENTRY FILE:", __filename);
+console.log("PUBLIC DIR:", path.join(__dirname, "public"));
+
+// ✅ Single CORS middleware — MUST be first
+const ALLOWED = new Set([
   "https://www.aaronhakso.com",
   "https://aaronhakso.com",
-  // (optional) if you ever load the site from the backend domain itself:
   "https://waterwheel-village.onrender.com",
 ]);
 
-// ✅ Strong, explicit CORS handler BEFORE any routes or static
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  if (origin && ALLOWED_ORIGINS.has(origin)) {
-    res.setHeader("Access-Control-Allow-Origin", origin);
-    // ensure caches/proxies don’t reuse for other origins
-    res.setHeader("Vary", "Origin");
-  }
+  console.log("CORS →", req.method, req.path, "Origin:", origin || "-");
 
-  // Methods/headers your frontend actually uses
+  if (origin && ALLOWED.has(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+  }
+  // prevent caches from reusing responses across origins
+  res.setHeader("Vary", "Origin");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 
-  // If you ever use cookies/Authorization with credentials from the browser,
-  // uncomment the next line AND do NOT use "*" for Allow-Origin
+  // If you use cookies later: also set
   // res.setHeader("Access-Control-Allow-Credentials", "true");
 
-  // Answer preflight here and now
-  if (req.method === "OPTIONS") {
-    return res.sendStatus(204);
-  }
+  if (req.method === "OPTIONS") return res.status(204).end();
   next();
 });
 
-// Use Express’ built-in parsers (body-parser not needed)
+// Use Express’ built-in parsers (no body-parser)
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: false }));
+
 
 // Serve static frontend
 app.use(express.static(path.join(__dirname, "public")));
