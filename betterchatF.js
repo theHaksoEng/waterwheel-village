@@ -17,6 +17,10 @@ const path = require("path");
 const { v4: uuidv4 } = require("uuid");
 const fetch = (...args) => import("node-fetch").then(({ default: f }) => f(...args));
 
+const allowed = ['https://AARONHAKSO.com'];
+app.use(require('cors')({ origin: allowed, credentials: false }));
+
+
 // === Uploads (Multer, memory) ===
 const multer = require("multer");
 const upload = multer({
