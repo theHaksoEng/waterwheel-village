@@ -1,10 +1,8 @@
-// === Waterwheel Village Backend (CommonJS) ===
 
-// ✅ Load env first (force override so .env beats any stale shell var)
-require("dotenv").config({ override: true });
+// === Waterwheel Village Backend (CommonJS) — ELEVENLABS-ONLY CLEAN ===
 
-const mask = (s) => (s ? s.slice(0, 10) + "..." + s.slice(-6) : "missing");
-console.log("🔐 OPENAI key:", mask(process.env.OPENAI_API_KEY));
+// ✅ Load env first
+require("dotenv").config();
 
 // === OpenAI Setup ===
 const OpenAI = require("openai");
@@ -12,10 +10,11 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // === Core libs ===
 const express = require("express");
+const cors = require("cors");
+const bodyParser = require("body-parser");
 const fs = require("fs");
 const path = require("path");
 const { v4: uuidv4 } = require("uuid");
-// Use dynamic import for node-fetch to make it compatible with CommonJS structure
 const fetch = (...args) => import("node-fetch").then(({ default: f }) => f(...args));
 
 // === Uploads (Multer, memory) ===
@@ -36,53 +35,9 @@ try {
 // === Express setup ===
 const app = express();
 const PORT = process.env.PORT || 3000;
-
-// Hygiene
-app.disable("x-powered-by");
-
-// One-time debug so you can verify in Render logs
-console.log("ENTRY FILE:", __filename);
-console.log("PUBLIC DIR:", path.join(__dirname, "public"));
-
-/**
- * ✅ CORS — MUST be first. We set headers for all requests,
- * and explicitly answer ALL preflights so ACAO is present on OPTIONS.
- */
-const ALLOWED = new Set([
-  "https://www.aaronhakso.com",
-  "https://aaronhakso.com",
-  "https://waterwheel-village.onrender.com",
-]);
-
-// Set CORS headers on every request
-app.use((req, res, next) => {
-  const origin = req.headers.origin;
-  if (origin && ALLOWED.has(origin)) {
-    res.setHeader("Access-Control-Allow-Origin", origin);
-  }
-  res.setHeader("Vary", "Origin");
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  // If you start using cookies/credentials, also set:
-  // res.setHeader("Access-Control-Allow-Credentials", "true");
-  next();
-});
-
-// Explicitly handle ALL preflights (so OPTIONS includes ACAO)
-app.options("*", (req, res) => {
-  const origin = req.headers.origin;
-  if (origin && ALLOWED.has(origin)) {
-    res.setHeader("Access-Control-Allow-Origin", origin);
-  }
-  res.setHeader("Vary", "Origin");
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  return res.status(204).end();
-});
-
-// Use Express’ built-in parsers (no body-parser)
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: false }));
+app.use(cors());
+app.use(bodyParser.json({ limit: "10mb" }));
+app.use(bodyParser.urlencoded({ extended: false }));
 
 // Serve static frontend
 app.use(express.static(path.join(__dirname, "public")));
@@ -106,7 +61,6 @@ function toTitleCase(s) {
 }
 function humanizeChapter(slug) {
   if (chapterTitles[slug]) return chapterTitles[slug];
-  // fallback: title-case underscores
   return toTitleCase(slug.replace(/_/g, " "));
 }
 
@@ -118,7 +72,7 @@ const redis = new Redis(redisUrl, {
 });
 console.log("✅ Using Redis at:", redisUrl);
 
-// Connection test
+// Connection test (fire-and-forget)
 (async () => {
   try {
     const pong = await redis.ping();
@@ -254,7 +208,7 @@ function loadMonthlyWordlists() {
 loadMonthlyWordlists();
 
 // === Wordlist endpoint ===
-app.get("/api/wordlist/:month/:chapter", (req, res) => {
+app.get("/wordlist/:month/:chapter", (req, res) => {
   const { month, chapter } = req.params;
   const monthData = monthlyWordlists[month];
   if (monthData && monthData.chapters && monthData.chapters[chapter]) {
@@ -264,19 +218,16 @@ app.get("/api/wordlist/:month/:chapter", (req, res) => {
   }
 });
 
-// === Lesson endpoint (Initialization) ===
-app.get("/api/lesson/:month/:chapter", async (req, res) => {
+// === Lesson endpoint ===
+app.get("/lesson/:month/:chapter", async (req, res) => {
   const { month, chapter } = req.params;
   console.log(`Fetching lesson: ${month}/${chapter}, query:`, req.query);
 
-  // Pull vocab + possible teacher from JSON first (for fallback)
   const monthData = monthlyWordlists[month];
   const chData = monthData?.chapters?.[chapter];
 
-  // Prefer authored lesson intro
   let intro = lessonIntros[month]?.[chapter];
 
-  // Fallback to JSON teacher if intro missing
   if (!intro && chData?.teacher && characters[chData.teacher]) {
     intro = {
       teacher: chData.teacher,
@@ -318,16 +269,13 @@ app.get("/api/lesson/:month/:chapter", async (req, res) => {
     };
   }
 
-  // Use student name from query param first, then session, then default to "friend"
   const studentName = req.query.name ? decodeURIComponent(req.query.name) : sessionData.userName || "friend";
   sessionData.userName = studentName;
 
-  // Get the lesson's full wordlist
   const words = chData?.words || [];
   const wordlist = words.map((w) => w.en.toLowerCase());
   console.log(`Wordlist for ${month}/${chapter}:`, wordlist);
 
-  // Initialize session data
   sessionData.currentLesson = { month, chapter };
   sessionData.lessonWordlist = wordlist;
   try {
@@ -337,23 +285,18 @@ app.get("/api/lesson/:month/:chapter", async (req, res) => {
     console.error(`Failed to save session:${sessionId}:`, err.message);
   }
 
-  // Mr. McArthur's welcome message (skip for greetings_introductions to avoid redundancy)
   let welcomeText = "";
   if (chapter !== "greetings_introductions") {
     const pretty = humanizeChapter(chapter);
     welcomeText = `Greetings, ${studentName}! I’m Mr. McArthur, the village elder. Welcome to Waterwheel Village, where we learn together like family. Today, you’ll meet ${characters[intro.teacher].name} to explore ${pretty}. Let’s begin!`;
   }
 
-  // Combine teacher intro and story, replacing [name]
   const teacherText = intro.text.replace(/\[name\]/g, studentName);
   const storyText = intro.story.replace(/\[name\]/g, studentName);
   const lessonText = `${teacherText}\n\n${storyText}`;
 
-  // Initialize chat history with welcome and lesson as separate entries
   const initialHistory = [];
-  if (welcomeText) {
-    initialHistory.push({ role: "assistant", content: welcomeText });
-  }
+  if (welcomeText) initialHistory.push({ role: "assistant", content: welcomeText });
   initialHistory.push({ role: "assistant", content: lessonText });
   try {
     await redis.set(`history:${sessionId}`, JSON.stringify(initialHistory));
@@ -362,10 +305,8 @@ app.get("/api/lesson/:month/:chapter", async (req, res) => {
     console.error(`Failed to save history:${sessionId}:`, err.message);
   }
 
-  // Get the character's voice ID
   const voiceId = characters[intro.teacher].voiceId;
 
-  // Return response
   const response = { welcomeText, lessonText, words, sessionId, voiceId, character: intro.teacher };
   console.log(`Lesson response:`, response);
   res.json(response);
@@ -375,9 +316,7 @@ app.get("/api/lesson/:month/:chapter", async (req, res) => {
 const findCharacter = (text) => {
   const lowered = text.toLowerCase();
   for (const key in characters) {
-    if (lowered.includes(characters[key].name.toLowerCase())) {
-      return key;
-    }
+    if (lowered.includes(characters[key].name.toLowerCase())) return key;
   }
   return null;
 };
@@ -400,8 +339,8 @@ async function getWeather(city) {
   }
 }
 
-// === CHAT endpoint ===
-app.post("/api/chat", async (req, res) => {
+// === CHAT endpoint (text-only response; no free/fallback TTS) ===
+app.post("/chat", async (req, res) => {
   const { text: rawText, sessionId: providedSessionId, isVoice, name: userNameFromFrontend } = req.body || {};
   const sessionId = providedSessionId || uuidv4();
   const sanitizedText = rawText ? String(rawText).trim() : "";
@@ -409,7 +348,6 @@ app.post("/api/chat", async (req, res) => {
   console.log("📩 Incoming chat request:", { text: sanitizedText, sessionId, isVoice, name: userNameFromFrontend });
 
   try {
-    // Load or initialize session
     let sessionData;
     try {
       const sessionRaw = await redis.get(`session:${sessionId}`);
@@ -438,20 +376,15 @@ app.post("/api/chat", async (req, res) => {
       };
     }
 
-    // Update name if provided by frontend
     if (userNameFromFrontend && userNameFromFrontend !== sessionData.userName) {
       sessionData.userName = decodeURIComponent(userNameFromFrontend);
     }
 
-    // Check for active lesson and use that character
     if (sessionData.currentLesson) {
       const lesson = lessonIntros[sessionData.currentLesson.month]?.[sessionData.currentLesson.chapter];
-      if (lesson) {
-        sessionData.character = lesson.teacher;
-      }
+      if (lesson) sessionData.character = lesson.teacher;
     }
 
-    // Handle character change requests
     const requestedCharacterKey = findCharacter(sanitizedText);
     const requestedCharacter = characters[requestedCharacterKey];
 
@@ -462,7 +395,7 @@ app.post("/api/chat", async (req, res) => {
       sessionData.learnedWords = [];
       sessionData.lessonWordlist = [];
       await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
-      await redis.set(`history:${sessionId}`, JSON.stringify([])); // Clear history
+      await redis.set(`history:${sessionId}`, JSON.stringify([]));
       console.log("🔄 Switched to new character:", requestedCharacterKey);
 
       const introText = `Hello, I am ${requestedCharacter.name}. What would you like to talk about today?`;
@@ -492,18 +425,16 @@ app.post("/api/chat", async (req, res) => {
       }
       sessionData.lessonWordlist = wordsRemaining;
 
-      // Add completion message if all words are learned
       if (sessionData.lessonWordlist.length === 0 && sessionData.learnedWords.length > 0) {
         newlyLearned.push("\n\n🎉 You've learned all the words for this lesson! Great job!");
       }
     }
 
-    // === Improved Weather Logic with State ===
+    // === Weather flow ===
     const weatherKeywords = /(weather|temperature|forecast|sunny|rainy|cloudy|snowy)/i;
 
     if (sessionData.isWeatherQuery) {
       const cleanedCity = sanitizedText.replace(/,/g, "").trim();
-
       const weatherData = await getWeather(cleanedCity);
 
       sessionData.isWeatherQuery = false;
@@ -512,6 +443,7 @@ app.post("/api/chat", async (req, res) => {
       if (weatherData) {
         const tempC = weatherData.current.temp_c;
         const condition = weatherData.current.condition.text.toLowerCase();
+        const character = characters[sessionData.character];
 
         let weatherReply = "";
         if (sessionData.character === "johannes") {
@@ -537,7 +469,6 @@ app.post("/api/chat", async (req, res) => {
       }
     }
 
-    // Check if the message contains a weather keyword and set state
     if (weatherKeywords.test(sanitizedText)) {
       sessionData.isWeatherQuery = true;
       await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
@@ -556,7 +487,6 @@ app.post("/api/chat", async (req, res) => {
     messages.push({ role: "user", content: sanitizedText });
     console.log("📝 Updated messages:", messages);
 
-    // Detect level from user message
     const lowered = sanitizedText.toLowerCase();
     if (lowered.includes("beginner")) sessionData.studentLevel = "beginner";
     else if (lowered.includes("intermediate")) sessionData.studentLevel = "intermediate";
@@ -565,7 +495,6 @@ app.post("/api/chat", async (req, res) => {
     await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
     console.log("💾 Saved sessionData:", sessionData);
 
-    // === Build system prompt with rich character data ===
     const activeCharacterKey = sessionData.character || "mcarthur";
     const activeCharacter = characters[activeCharacterKey];
 
@@ -599,14 +528,13 @@ If the student explicitly asks for a translation or asks you to speak Finnish, b
     const reply = completion.choices[0].message.content.trim();
     console.log("💬 OpenAI reply:", reply);
 
-    // Save bot reply to history
     messages.push({ role: "assistant", content: reply });
     await redis.set(`history:${sessionId}`, JSON.stringify(messages));
     await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
 
     const voiceId = activeCharacter.voiceId;
 
-    res.json({
+    return res.json({
       text: reply,
       character: activeCharacterKey,
       voiceId,
@@ -615,16 +543,13 @@ If the student explicitly asks for a translation or asks you to speak Finnish, b
     });
   } catch (err) {
     console.error("❌ Chat error:", err?.message || err, err?.stack || "");
-    res.status(500).json({
-      error: "Chat failed",
-      details: err?.message || "Unknown error",
-    });
+    return res.status(500).json({ error: "Chat failed", details: err?.message || "Unknown error" });
   }
 });
 
-// === Speakbase endpoint (for ElevenLabs) ===
-app.post("/api/speakbase", async (req, res) => {
-  const { text, voiceId } = req.body;
+// === Speakbase endpoint (ElevenLabs only; no free fallback) ===
+app.post("/speakbase", async (req, res) => {
+  const { text, voiceId } = req.body || {};
 
   if (!process.env.ELEVENLABS_API_KEY) {
     console.error("❌ Missing ELEVENLABS_API_KEY");
@@ -646,27 +571,19 @@ app.post("/api/speakbase", async (req, res) => {
           "Content-Type": "application/json",
           "xi-api-key": process.env.ELEVENLABS_API_KEY,
         },
-        body: JSON.stringify({
-          text: text,
-          model_id: "eleven_multilingual_v2", // Or your preferred model
-        }),
+        body: JSON.stringify({ text, model_id: "eleven_multilingual_v2" }),
       }
     );
 
     if (!response.ok) {
       const errorText = await response.text();
       console.error("❌ ElevenLabs API error:", response.status, errorText);
-      return res.status(response.status).json({
-        error: "ElevenLabs generation failed",
-        details: errorText,
-      });
+      return res.status(response.status).json({ error: "ElevenLabs generation failed", details: errorText });
     }
 
-    // Set headers for audio streaming
     res.setHeader("Content-Type", "audio/mpeg");
     res.setHeader("Transfer-Encoding", "chunked");
 
-    // Pipe the audio stream directly to the response
     if (response.body) {
       response.body.pipe(res);
     } else {
@@ -674,46 +591,12 @@ app.post("/api/speakbase", async (req, res) => {
     }
   } catch (err) {
     console.error("❌ Speakbase processing error:", err.message);
-    res.status(500).json({ error: "TTS Generation Failed", details: err.message });
-  }
-});
-
-// === STT endpoint (Speech-to-Text via OpenAI Whisper) ===
-app.post("/api/stt", upload.single("audio"), async (req, res) => {
-  const audioFile = req.file; // From Multer (memory storage)
-  const lang = req.body.lang || "en"; // Optional lang from frontend (e.g., en-US)
-
-  if (!audioFile) {
-    console.error("❌ No audio file provided");
-    return res.status(400).json({ error: "No audio file provided" });
-  }
-
-  console.log(`🔊 Processing STT for lang: ${lang}, size: ${audioFile.size} bytes`);
-
-  try {
-    // Create a File object for OpenAI Whisper
-    const audio = new File([audioFile.buffer], "speech.webm", { type: "audio/webm" });
-
-    // Use OpenAI Whisper for transcription
-    const transcription = await openai.audio.transcriptions.create({
-      file: audio,
-      model: "whisper-1",
-      language: lang.split("-")[0], // e.g., "en" from "en-US"
-      response_format: "text",
-    });
-
-    const text = transcription.trim();
-    console.log(`📝 Transcribed text: ${text}`);
-
-    res.json({ text });
-  } catch (err) {
-    console.error("❌ STT error:", err.message);
-    res.status(500).json({ error: "Speech-to-text failed", details: err.message });
+    return res.status(500).json({ error: "TTS Generation Failed", details: err.message });
   }
 });
 
 // === Health check ===
-app.get("/api/health", (_req, res) => res.json({ ok: true, status: "Waterwheel backend alive" }));
+app.get("/health", (_req, res) => res.json({ ok: true, status: "Waterwheel backend alive" }));
 
 // === Start server ===
 app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
