@@ -1,4 +1,3 @@
-
 // === Waterwheel Village Backend (CommonJS) — ELEVENLABS-ONLY CLEAN ===
 
 // ✅ Load env first
@@ -17,9 +16,17 @@ const path = require("path");
 const { v4: uuidv4 } = require("uuid");
 const fetch = (...args) => import("node-fetch").then(({ default: f }) => f(...args));
 
-const allowed = ['https://AARONHAKSO.com'];
-app.use(require('cors')({ origin: allowed, credentials: false }));
+// === Express setup (must come BEFORE app.use) ===
+const app = express();
+const PORT = process.env.PORT || 3000;
 
+// 🔒 CORS: restrict to your domain (or "*" while testing)
+const allowed = ["https://www.aaronhakso.com"];
+app.use(cors({ origin: allowed, credentials: false }));
+
+// Middleware
+app.use(bodyParser.json({ limit: "10mb" }));
+app.use(bodyParser.urlencoded({ extended: false }));
 
 // === Uploads (Multer, memory) ===
 const multer = require("multer");
@@ -35,13 +42,6 @@ try {
   const { File } = require("undici");
   if (!global.File) global.File = File;
 } catch (_) {}
-
-// === Express setup ===
-const app = express();
-const PORT = process.env.PORT || 3000;
-app.use(cors());
-app.use(bodyParser.json({ limit: "10mb" }));
-app.use(bodyParser.urlencoded({ extended: false }));
 
 // Serve static frontend
 app.use(express.static(path.join(__dirname, "public")));
