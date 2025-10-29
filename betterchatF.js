@@ -407,33 +407,77 @@ app.post("/chat", async (req, res) => {
       return res.json({ text: introText, character: requestedCharacterKey, voiceId: requestedCharacter.voiceId });
     }
 
-    // === Word Counting Logic ===
-    const userWords = sanitizedText
-      .toLowerCase()
-      .replace(/[^\w\s-]/g, "")
-      .split(/\s+/)
-      .filter((word) => word.length > 0);
-    let newlyLearned = [];
-
-    if (sessionData.lessonWordlist.length > 0) {
-      const wordsToLearn = sessionData.lessonWordlist.map((word) => word.toLowerCase());
-      const wordsRemaining = [];
-
-      for (const word of wordsToLearn) {
-        if (userWords.includes(word) && !sessionData.learnedWords.includes(word)) {
-          sessionData.learnedWords.push(word);
-          newlyLearned.push(word);
-        } else {
-          wordsRemaining.push(word);
-        }
-      }
-      sessionData.lessonWordlist = wordsRemaining;
-
-      if (sessionData.lessonWordlist.length === 0 && sessionData.learnedWords.length > 0) {
-        newlyLearned.push("\n\n🎉 You've learned all the words for this lesson! Great job!");
+// === Word Counting Logic (plural-aware) ===
+function normalizeToken(t) {
+    t = String(t || "").toLowerCase().trim();
+  
+    // handle simple punctuation/quotes already stripped above, but double-sanitize:
+    t = t.replace(/[^\w\s-]/g, "");
+  
+    if (!t) return t;
+  
+    // Basic plural rules:
+    if (t.endsWith("ies") && t.length > 3) {
+      // candies -> candy, tomatoes (not here) handled below
+      return t.slice(0, -3) + "y";
+    }
+    if (t.endsWith("es") && t.length > 2) {
+      // boxes -> box, tomatoes -> tomato, potatoes -> potato
+      const base = t.slice(0, -2);
+      // if the base ends with s, x, z, ch, sh, or 'o' then removal likely correct
+      if (
+        base.endsWith("s") || base.endsWith("x") || base.endsWith("z") ||
+        base.endsWith("ch") || base.endsWith("sh") || base.endsWith("o")
+      ) {
+        return base;
       }
     }
-
+    if (t.endsWith("s") && t.length > 1) {
+      // cars -> car, apples -> apple
+      return t.slice(0, -1);
+    }
+    return t;
+  }
+  
+  const userWords = sanitizedText
+    .toLowerCase()
+    .replace(/[^\w\s-]/g, "")
+    .split(/\s+/)
+    .filter((w) => w.length > 0);
+  
+  // Build a set with both raw and normalized tokens for easier matching
+  const userSet = new Set();
+  for (const w of userWords) {
+    userSet.add(w);
+    userSet.add(normalizeToken(w));
+  }
+  
+  let newlyLearned = [];
+  
+  if (sessionData.lessonWordlist.length > 0) {
+    // normalize the lesson words too (keep original for reporting)
+    const wordsRemaining = [];
+    for (const rawWord of sessionData.lessonWordlist) {
+      const lessonWord = String(rawWord || "").toLowerCase().trim();
+      const normLesson = normalizeToken(lessonWord);
+  
+      if (
+        (userSet.has(lessonWord) || userSet.has(normLesson)) &&
+        !sessionData.learnedWords.includes(lessonWord)
+      ) {
+        sessionData.learnedWords.push(lessonWord);
+        newlyLearned.push(lessonWord);
+      } else {
+        wordsRemaining.push(lessonWord);
+      }
+    }
+    sessionData.lessonWordlist = wordsRemaining;
+  
+    if (sessionData.lessonWordlist.length === 0 && sessionData.learnedWords.length > 0) {
+      newlyLearned.push("\n\n🎉 You've learned all the words for this lesson! Great job!");
+    }
+  }
+  
     // === Weather flow ===
     const weatherKeywords = /(weather|temperature|forecast|sunny|rainy|cloudy|snowy)/i;
 
