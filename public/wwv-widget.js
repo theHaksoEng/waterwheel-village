@@ -363,13 +363,23 @@
         }
       }
   
-      // Speak a word once, and ask the teacher for a one-line tip
+// Speak a word once, mark it as learned, and ask the teacher for a one-line tip
 async pronounceWord(word) {
     if (!word) return;
+  
+    // 1) Mark as learned on click of "Say"
+    const key = String(word || "").toLowerCase().trim();
+    if (key && this.wordsetEn && this.wordsetEn.has(key)) {
+      this.learned.add(key);
+      this.renderWordlist(); // refresh pills so it turns green
+    }
+  
+    // 2) Speak the word once
     const voiceId = this.lastVoiceId || MCARTHUR_VOICE;
     this.stopMic();
     this.enqueueSpeak(word, voiceId);
   
+    // 3) Ask the teacher for a one-line pronunciation tip
     try {
       this.addTyping(true);
       const r = await fetch(this.backend + "/chat", {
