@@ -24,6 +24,20 @@
       return t;
     }
   
+    // Strip markdown-ish formatting before sending to TTS
+    function sanitizeForTTS(str = "") {
+      return String(str)
+        // **bold** -> bold
+        .replace(/\*\*(.*?)\*\*/g, "$1")
+        // *italic* -> italic
+        .replace(/\*(.*?)\*/g, "$1")
+        // `code` -> code
+        .replace(/`([^`]+)`/g, "$1")
+        // remove stray underscores / tildes (used for emphasis)
+        .replace(/[_~]/g, "")
+        .trim();
+    }
+  
     class WaterwheelChat extends HTMLElement {
       constructor() {
         super();
@@ -304,7 +318,9 @@
       }
       enqueueSpeak(text, voiceId) {
         if (!text) return;
-        this.ttsQueue.push({ text, voiceId });
+        const clean = sanitizeForTTS(text);
+        if (!clean) return;
+        this.ttsQueue.push({ text: clean, voiceId });
         this.playNextSpeak();
       }
       async playNextSpeak() {
@@ -347,48 +363,38 @@
         }
       }
   
-      // Speak a word normal + slow, and ask the teacher for a one-line tip
-      async pronounceWord(word) {
-        if (!word) return;
-        const voiceId = this.lastVoiceId || MCARTHUR_VOICE;
-        this.stopMic();
-        this.enqueueSpeak(word, voiceId);
+      // Speak a word once, and ask the teacher for a one-line tip
+async pronounceWord(word) {
+    if (!word) return;
+    const voiceId = this.lastVoiceId || MCARTHUR_VOICE;
+    this.stopMic();
+    this.enqueueSpeak(word, voiceId);
   
-        const slow = this.slowPronounce(word);
-        if (slow && slow !== word) this.enqueueSpeak(slow, voiceId);
+    try {
+      this.addTyping(true);
+      const r = await fetch(this.backend + "/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: `Give a one-line pronunciation tip for: "${word}". Use simple hyphenation with CAPITAL stress (e.g., to-MAY-to). Respond with ONLY the tip line.`,
+          sessionId: this.sessionId,
+          isVoice: false,
+          name: (this.ui.name.value || "friend")
+        })
+      });
+      const d = await r.json().catch(() => ({}));
+      this.addTyping(false);
+      if (r.ok && d.text) {
+        this.addMsg("bot", d.text);
+      } else {
+        this.addMsg("bot", "Say: " + word);
+      }
+    } catch {
+      this.addTyping(false);
+      this.addMsg("bot", "Say: " + word);
+    }
+  }
   
-        try {
-          this.addTyping(true);
-          const r = await fetch(this.backend + "/chat", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              text: `Give a one-line pronunciation tip for: "${word}". Use simple hyphenation with CAPITAL stress (e.g., to-MAY-to). Respond with ONLY the tip line.`,
-              sessionId: this.sessionId,
-              isVoice: false,
-              name: (this.ui.name.value || "friend")
-            })
-          });
-          const d = await r.json().catch(() => ({}));
-          this.addTyping(false);
-          if (r.ok && d.text) {
-            this.addMsg("bot", d.text);
-          } else {
-            this.addMsg("bot", "Say: " + word);
-          }
-        } catch {
-          this.addTyping(false);
-          this.addMsg("bot", "Say: " + word);
-        }
-      }
-      slowPronounce(text) {
-        const t = String(text || "").trim();
-        if (!t) return "";
-        return t
-          .split(/\s+/)
-          .map(w => w.split("").join(" ").replace(/\s+/g, " "))
-          .join("   ");
-      }
   
       // Lesson
       async startLesson() {
@@ -624,5 +630,6 @@
       }
     });
   })();
+  
   
   
