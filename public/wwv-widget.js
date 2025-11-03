@@ -318,7 +318,12 @@
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ text, voiceId })
           });
-          if (!r.ok) { this.addMsg("bot", "(Audio error)"); this.ttsPlaying = false; setTimeout(() => this.playNextSpeak(), 120); return; }
+          if (!r.ok) {
+            this.addMsg("bot", "(Audio error)");
+            this.ttsPlaying = false;
+            setTimeout(() => this.playNextSpeak(), 120);
+            return;
+          }
           const blob = await r.blob();
           const url = URL.createObjectURL(blob);
           this.ui.player.src = url;
@@ -392,8 +397,18 @@
         const name = (this.ui.name.value || "friend").trim();
         localStorage.setItem("wwv-name", name);
   
+        // Reset wordlist state
+        this.wordlist = [];
+        this.wordsetEn = new Set();
+        this.learned.clear();
+        this.renderWordlist();
+  
+        // Clear chat UI for a fresh lesson
+        this.ui.chat.innerHTML = "";
+        this._typing = null;
+        this._interimNode = null;
+  
         // Load wordlist
-        this.wordlist = []; this.wordsetEn = new Set(); this.learned.clear(); this.renderWordlist();
         try {
           const wlRes = await fetch(this.backend + "/wordlist/" + encodeURIComponent(m) + "/" + encodeURIComponent(c));
           if (!wlRes.ok) throw new Error("HTTP " + wlRes.status);
@@ -408,7 +423,10 @@
         } catch (e) {
           console.error("Wordlist fetch failed:", e);
           this.setStatus("Could not load wordlist.");
-          this.wordlist = []; this.wordsetEn = new Set(); this.learned.clear(); this.renderWordlist();
+          this.wordlist = [];
+          this.wordsetEn = new Set();
+          this.learned.clear();
+          this.renderWordlist();
         }
   
         // Start lesson
@@ -422,8 +440,14 @@
           if (!r.ok) throw new Error((d && d.error) || "Lesson failed");
   
           // McArthur welcome (fixed voice), then teacher lesson (d.voiceId)
-          if (d.welcomeText) { this.addMsg("bot", d.welcomeText); if (this.voice) this.enqueueSpeak(d.welcomeText, MCARTHUR_VOICE); }
-          if (d.lessonText) { this.addMsg("bot", d.lessonText); if (this.voice && d.voiceId) this.enqueueSpeak(d.lessonText, d.voiceId); }
+          if (d.welcomeText) {
+            this.addMsg("bot", d.welcomeText);
+            if (this.voice) this.enqueueSpeak(d.welcomeText, MCARTHUR_VOICE);
+          }
+          if (d.lessonText) {
+            this.addMsg("bot", d.lessonText);
+            if (this.voice && d.voiceId) this.enqueueSpeak(d.lessonText, d.voiceId);
+          }
           if (d.voiceId) this.lastVoiceId = d.voiceId;
   
           this.setStatus("");
@@ -440,10 +464,10 @@
         this.addMsg("user", text);
         this.updateLearnedFromText(text); // optimistic highlight
         this.ui.input.value = "";
-        await this.sendText(text);
+        await this.sendText(text, false); // typed input -> isVoice = false
       }
   
-      async sendText(text) {
+      async sendText(text, isVoice) {
         this.addTyping(true);
         try {
           const r = await fetch(this.backend + "/chat", {
@@ -452,7 +476,7 @@
             body: JSON.stringify({
               text,
               sessionId: this.sessionId,
-              isVoice: true,
+              isVoice: !!isVoice,
               name: this.ui.name.value || "friend"
             })
           });
@@ -509,7 +533,7 @@
             this.addMsg("user", toSend);
             this.updateLearnedFromText(toSend);
             this.ui.input.value = "";
-            this.sendText(toSend);
+            this.sendText(toSend, true); // mic input -> isVoice = true
             this.stopMic();
           }
         };
@@ -600,4 +624,5 @@
       }
     });
   })();
+  
   
