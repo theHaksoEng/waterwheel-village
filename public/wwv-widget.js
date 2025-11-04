@@ -1,4 +1,4 @@
-// Waterwheel Village — Chat Widget (stable working version before Month 2 edits)
+// Waterwheel Village — Chat Widget (stable + Month 2 added)
 (() => {
     const DEFAULT_BACKEND = "https://waterwheel-village.onrender.com";
     const MCARTHUR_VOICE = "fEVT2ExfHe1MyjuiIiU9";
@@ -30,7 +30,7 @@
             :host { all: initial; font-family: system-ui, sans-serif; }
             .wrap { border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; background: #fff; }
             .top { background: #0ea5e9; color: white; font-weight: bold; padding: 10px; }
-            .pane { display: flex; gap: 8px; padding: 8px; background: #f1f5f9; border-bottom: 1px solid #e5e7eb; }
+            .pane { display: flex; gap: 8px; padding: 8px; background: #f1f5f9; border-bottom: 1px solid #e5e7eb; flex-wrap: wrap; }
             select, input { padding: 6px 8px; border-radius: 6px; border: 1px solid #cbd5e1; }
             .btn { background: #0ea5e9; color: white; border: none; border-radius: 6px; padding: 8px 10px; cursor: pointer; }
             .chat { height: 400px; overflow-y: auto; padding: 10px; }
@@ -55,13 +55,22 @@
               <select id="month">
                 <option value="">Month...</option>
                 <option value="month1" selected>Month 1 – Everyday Survival</option>
+                <option value="month2">Month 2 – Home & Family</option>
               </select>
               <select id="chapter">
                 <option value="">Chapter...</option>
-                <option value="greetings_introductions">Greetings & Introductions</option>
-                <option value="numbers_days_questions">Numbers, Days & Questions</option>
-                <option value="food_drink">Food & Drink</option>
-                <option value="daily_phrases">Daily Phrases</option>
+  
+                <!-- Month 1 chapters -->
+                <option value="greetings_introductions">Greetings & Introductions (M1)</option>
+                <option value="numbers_days_questions">Numbers, Days & Questions (M1)</option>
+                <option value="food_drink">Food & Drink (M1)</option>
+                <option value="daily_phrases">Daily Phrases (M1)</option>
+  
+                <!-- Month 2 chapters -->
+                <option value="family_members">Family Members (M2)</option>
+                <option value="house_furniture">House & Furniture (M2)</option>
+                <option value="routines_chores">Routines & Chores (M2)</option>
+                <option value="feelings_emotions">Feelings & Emotions (M2)</option>
               </select>
               <button id="start" class="btn">Start</button>
             </div>
@@ -126,7 +135,7 @@
           const wl = await wlRes.json();
           if (Array.isArray(wl)) {
             this.wordlist = wl;
-            this.wordsetEn = new Set(wl.map(w => w.en.toLowerCase()));
+            this.wordsetEn = new Set(wl.map(w => String(w.en || "").toLowerCase()));
             this.renderWordlist();
           }
         } catch {
@@ -134,7 +143,9 @@
         }
   
         try {
-          const r = await fetch(`${this.backend}/lesson/${m}/${c}?sessionId=${this.sessionId}&name=${encodeURIComponent(name)}`);
+          const r = await fetch(
+            `${this.backend}/lesson/${m}/${c}?sessionId=${this.sessionId}&name=${encodeURIComponent(name)}`
+          );
           const d = await r.json();
           if (d.welcomeText) this.addMsg("bot", d.welcomeText);
           if (d.lessonText) this.addMsg("bot", d.lessonText);
@@ -146,9 +157,13 @@
       renderWordlist() {
         this.ui.words.innerHTML = "";
         this.wordlist.forEach(({ en }) => {
-          const pill = ce("div", { className: "pill", textContent: en });
+          const text = String(en || "").trim();
+          if (!text) return;
+          const lower = text.toLowerCase();
+          const pill = ce("div", { className: "pill", textContent: text });
+          if (this.learned.has(lower)) pill.classList.add("learned");
           pill.addEventListener("click", () => {
-            this.ui.input.value += (this.ui.input.value ? " " : "") + en;
+            this.ui.input.value += (this.ui.input.value ? " " : "") + text;
             this.ui.input.focus();
           });
           this.ui.words.appendChild(pill);
@@ -159,6 +174,14 @@
         const text = this.ui.input.value.trim();
         if (!text) return;
         this.addMsg("user", text);
+  
+        // mark any known words as "learned"
+        const toks = text.toLowerCase().split(/\s+/).filter(Boolean);
+        toks.forEach(tok => {
+          if (this.wordsetEn.has(tok)) this.learned.add(tok);
+        });
+        this.renderWordlist();
+  
         this.ui.input.value = "";
         try {
           const r = await fetch(`${this.backend}/chat`, {
@@ -192,6 +215,7 @@
       }
     });
   })();
+  
   
   
   
