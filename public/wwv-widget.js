@@ -4,6 +4,29 @@
     const DEFAULT_BACKEND = "https://waterwheel-village.onrender.com";
     const MCARTHUR_VOICE = "fEVT2ExfHe1MyjuiIiU9"; // fixed welcome voice
   
+    // Month & chapter definitions
+    const MONTH_OPTIONS = [
+      { value: "month1", label: "Month 1 – Everyday Survival" },
+      { value: "month2", label: "Month 2 – Home & Family" }
+      // later: add month3–month6 here
+    ];
+  
+    const CHAPTERS_BY_MONTH = {
+      month1: [
+        { value: "greetings_introductions", label: "Greetings & Introductions" },
+        { value: "numbers_days_questions", label: "Numbers, Days & Questions" },
+        { value: "food_drink", label: "Food & Drink" },
+        { value: "daily_phrases", label: "Daily Phrases" }
+        // farmer_chat removed here to match your 4-chapter Month 1
+      ],
+      month2: [
+        { value: "family_members", label: "Family Members" },
+        { value: "house_furniture", label: "House & Furniture" },
+        { value: "routines_chores", label: "Routines & Chores" },
+        { value: "feelings_emotions", label: "Feelings & Emotions" }
+      ]
+    };
+  
     // Utility
     const qs = (root, sel) => root.querySelector(sel);
     const ce = (tag, props = {}) => Object.assign(document.createElement(tag), props);
@@ -27,14 +50,10 @@
     // Strip markdown-ish formatting before sending to TTS
     function sanitizeForTTS(str = "") {
       return String(str)
-        // **bold** -> bold
-        .replace(/\*\*(.*?)\*\*/g, "$1")
-        // *italic* -> italic
-        .replace(/\*(.*?)\*/g, "$1")
-        // `code` -> code
-        .replace(/`([^`]+)`/g, "$1")
-        // remove stray underscores / tildes (used for emphasis)
-        .replace(/[_~]/g, "")
+        .replace(/\*\*(.*?)\*\*/g, "$1") // **bold**
+        .replace(/\*(.*?)\*/g, "$1")     // *italic*
+        .replace(/`([^`]+)`/g, "$1")     // `code`
+        .replace(/[_~]/g, "")            // stray emphasis markers
         .trim();
     }
   
@@ -117,18 +136,8 @@
   
             <div class="pane">
               <input id="name" placeholder="Your name" />
-              <select id="month">
-                <option value="">Month...</option>
-                <option value="month1" selected>Month 1</option>
-              </select>
-              <select id="chapter">
-                <option value="">Chapter...</option>
-                <option value="greetings_introductions">Greetings & Introductions</option>
-                <option value="numbers_days_questions">Numbers, Days & Questions</option>
-                <option value="food_drink">Food & Drink</option>
-                <option value="daily_phrases">Daily Phrases</option>
-                <option value="farmer_chat">Farmer Chat</option>
-              </select>
+              <select id="month"></select>
+              <select id="chapter"></select>
               <button id="start" class="btn secondary">Start Lesson</button>
   
               <button id="voiceToggle" class="btn ghost">Voice: ON</button>
@@ -197,6 +206,8 @@
         const savedName = localStorage.getItem("wwv-name") || "friend";
         this.ui.name.value = savedName;
   
+        this.initMonthAndChapters();
+  
         // Handlers
         this.ui.name.addEventListener("change", () =>
           localStorage.setItem("wwv-name", this.ui.name.value.trim())
@@ -222,6 +233,42 @@
         this.ui.showFi.addEventListener("change", () => this.renderWordlist());
   
         this.setupMic();
+      }
+  
+      initMonthAndChapters() {
+        const monthSel = this.ui.month;
+        const chapSel = this.ui.chapter;
+  
+        // populate month select
+        monthSel.innerHTML = "";
+        const mPlaceholder = ce("option", { value: "", textContent: "Month..." });
+        monthSel.appendChild(mPlaceholder);
+        MONTH_OPTIONS.forEach(opt => {
+          const o = ce("option", { value: opt.value, textContent: opt.label });
+          monthSel.appendChild(o);
+        });
+  
+        // default to month1
+        monthSel.value = "month1";
+  
+        monthSel.addEventListener("change", () => this.populateChapters());
+  
+        // initial chapter population
+        this.populateChapters();
+      }
+  
+      populateChapters() {
+        const chapSel = this.ui.chapter;
+        const m = this.ui.month.value;
+        chapSel.innerHTML = "";
+        const cPlaceholder = ce("option", { value: "", textContent: "Chapter..." });
+        chapSel.appendChild(cPlaceholder);
+  
+        const list = CHAPTERS_BY_MONTH[m] || [];
+        list.forEach(ch => {
+          const o = ce("option", { value: ch.value, textContent: ch.label });
+          chapSel.appendChild(o);
+        });
       }
   
       setStatus(msg) { this.ui.status.textContent = msg || ""; }
@@ -271,7 +318,7 @@
   
           // click pill to insert into input
           pill.addEventListener("click", (ev) => {
-            if (ev.target === sayBtn) return; // avoid double when clicking say
+            if (ev.target === sayBtn) return;
             this.ui.input.value = (this.ui.input.value ? this.ui.input.value + " " : "") + en;
             this.ui.input.focus();
           });
@@ -363,47 +410,288 @@
         }
       }
   
-// Speak a word once, mark it as learned, and ask the teacher for a one-line tip
-async pronounceWord(word) {
-    if (!word) return;
+      // Speak a word once, mark it as learned, and ask the teacher for a one-line tip
+      async pronounceWord(word) {
+        if (!word) return;
   
-    // 1) Mark as learned on click of "Say"
-    const key = String(word || "").toLowerCase().trim();
-    if (key && this.wordsetEn && this.wordsetEn.has(key)) {
-      this.learned.add(key);
-      this.renderWordlist(); // refresh pills so it turns green
-    }
+        const key = String(word || "").toLowerCase().trim();
+        if (key && this.wordsetEn && this.wordsetEn.has(key)) {
+          this.learned.add(key);
+          this.renderWordlist();
+        }
   
-    // 2) Speak the word once
-    const voiceId = this.lastVoiceId || MCARTHUR_VOICE;
-    this.stopMic();
-    this.enqueueSpeak(word, voiceId);
+        const voiceId = this.lastVoiceId || MCARTHUR_VOICE;
+        this.stopMic();
+        this.enqueueSpeak(word, voiceId);
   
-    // 3) Ask the teacher for a one-line pronunciation tip
-    try {
-      this.addTyping(true);
-      const r = await fetch(this.backend + "/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text: `Give a one-line pronunciation tip for: "${word}". Use simple hyphenation with CAPITAL stress (e.g., to-MAY-to). Respond with ONLY the tip line.`,
-          sessionId: this.sessionId,
-          isVoice: false,
-          name: (this.ui.name.value || "friend")
-        })
-      });
-      const d = await r.json().catch(() => ({}));
-      this.addTyping(false);
-      if (r.ok && d.text) {
-        this.addMsg("bot", d.text);
-      } else {
-        this.addMsg("bot", "Say: " + word);
+        try {
+          this.addTyping(true);
+          const r = await fetch(this.backend + "/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              text: `Give a one-line pronunciation tip for: "${word}". Use simple hyphenation with CAPITAL stress (e.g., to-MAY-to). Respond with ONLY the tip line.`,
+              sessionId: this.sessionId,
+              isVoice: false,
+              name: (this.ui.name.value || "friend")
+            })
+          });
+          const d = await r.json().catch(() => ({}));
+          this.addTyping(false);
+          if (r.ok && d.text) {
+            this.addMsg("bot", d.text);
+          } else {
+            this.addMsg("bot", "Say: " + word);
+          }
+        } catch {
+          this.addTyping(false);
+          this.addMsg("bot", "Say: " + word);
+        }
       }
-    } catch {
-      this.addTyping(false);
-      this.addMsg("bot", "Say: " + word);
+  
+      slowPronounce(text) {
+        const t = String(text || "").trim();
+        if (!t) return "";
+        return t
+          .split(/\s+/)
+          .map(w => w.split("").join(" ").replace(/\s+/g, " "))
+          .join("   ");
+      }
+  
+      // Lesson
+      async startLesson() {
+        const m = this.ui.month.value, c = this.ui.chapter.value;
+        if (!m || !c) { alert("Pick Month and Chapter first"); return; }
+        const name = (this.ui.name.value || "friend").trim();
+        localStorage.setItem("wwv-name", name);
+  
+        // Reset wordlist state
+        this.wordlist = [];
+        this.wordsetEn = new Set();
+        this.learned.clear();
+        this.renderWordlist();
+  
+        // Clear chat UI for a fresh lesson
+        this.ui.chat.innerHTML = "";
+        this._typing = null;
+        this._interimNode = null;
+  
+        // Load wordlist
+        try {
+          const wlRes = await fetch(this.backend + "/wordlist/" + encodeURIComponent(m) + "/" + encodeURIComponent(c));
+          if (!wlRes.ok) throw new Error("HTTP " + wlRes.status);
+          const data = await wlRes.json();
+          const raw = Array.isArray(data) ? data : (Array.isArray(data && data.words) ? data.words : []);
+          this.wordlist = raw
+            .map(w => ({ en: String((w && w.en) || "").trim(), fi: String((w && w.fi) || "").trim() }))
+            .filter(w => w.en);
+          this.wordsetEn = new Set(this.wordlist.map(w => w.en.toLowerCase()));
+          this.renderWordlist();
+          if (this.wordlist.length === 0) this.setStatus("No wordlist found for this chapter.");
+        } catch (e) {
+          console.error("Wordlist fetch failed:", e);
+          this.setStatus("Could not load wordlist.");
+          this.wordlist = [];
+          this.wordsetEn = new Set();
+          this.learned.clear();
+          this.renderWordlist();
+        }
+  
+        // Start lesson
+        try {
+          this.setStatus("Starting lesson...");
+          const url = this.backend + "/lesson/" + encodeURIComponent(m) + "/" + encodeURIComponent(c)
+            + "?sessionId=" + encodeURIComponent(this.sessionId)
+            + "&name=" + encodeURIComponent(name);
+          const r = await fetch(url);
+          const d = await r.json();
+          if (!r.ok) throw new Error((d && d.error) || "Lesson failed");
+  
+          if (d.welcomeText) {
+            this.addMsg("bot", d.welcomeText);
+            if (this.voice) this.enqueueSpeak(d.welcomeText, MCARTHUR_VOICE);
+          }
+          if (d.lessonText) {
+            this.addMsg("bot", d.lessonText);
+            if (this.voice && d.voiceId) this.enqueueSpeak(d.lessonText, d.voiceId);
+          }
+          if (d.voiceId) this.lastVoiceId = d.voiceId;
+  
+          this.setStatus("");
+        } catch (e) {
+          this.setStatus("Could not start lesson.");
+          this.addMsg("bot", "Sorry, I could not start the lesson.");
+        }
+      }
+  
+      // Chat
+      async send() {
+        const text = this.ui.input.value.trim();
+        if (!text) return;
+        this.addMsg("user", text);
+        this.updateLearnedFromText(text);
+        this.ui.input.value = "";
+        await this.sendText(text, false);
+      }
+  
+      async sendText(text, isVoice) {
+        this.addTyping(true);
+        try {
+          const r = await fetch(this.backend + "/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              text,
+              sessionId: this.sessionId,
+              isVoice: !!isVoice,
+              name: this.ui.name.value || "friend"
+            })
+          });
+          const d = await r.json().catch(() => ({}));
+          this.addTyping(false);
+          if (!r.ok) throw new Error((d && d.error) || "Chat failed");
+  
+          const reply = d.text || "(no response)";
+          if (d.voiceId) this.lastVoiceId = d.voiceId;
+          this.addMsg("bot", reply);
+          if (this.voice && d.voiceId) this.enqueueSpeak(reply, d.voiceId);
+  
+          if (d.newlyLearned) this.mergeNewlyLearned(d.newlyLearned);
+        } catch (e) {
+          this.addTyping(false);
+          this.addMsg("bot", "Sorry, something went wrong sending your message.");
+        }
+      }
+  
+      // Mic with pause buffer
+      setupMic() {
+        const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+        const isHttps = location.protocol === "https:";
+        const isTop = window.top === window.self;
+  
+        if (!SR) { this.ui.micInfo.textContent = "Mic not supported in this browser."; return; }
+        if (!isHttps) { this.ui.micInfo.textContent = "Mic requires HTTPS."; return; }
+        if (!isTop) { this.ui.micInfo.textContent = "Open the published page (not the editor) to use the mic."; return; }
+  
+        const rec = new SR();
+        rec.lang = "en-US";
+        rec.continuous = true;
+        rec.interimResults = true;
+        rec.maxAlternatives = 1;
+        this.rec = rec;
+  
+        this.ui.micInfo.textContent = "Click mic, speak, pause to send, click again to stop.";
+  
+        const showInterim = (t) => {
+          if (!this._interimNode) {
+            this._interimNode = ce("div", { className: "interim" });
+            this.ui.chat.appendChild(this._interimNode);
+          }
+          this._interimNode.textContent = t || "";
+          if (!t) { this._interimNode.remove(); this._interimNode = null; }
+          this.ui.chat.scrollTop = this.ui.chat.scrollHeight;
+        };
+  
+        const flushSpeech = () => {
+          clearTimeout(this.holdTimer);
+          const toSend = this.speechBuf.trim();
+          this.speechBuf = "";
+          if (toSend) {
+            this.addMsg("user", toSend);
+            this.updateLearnedFromText(toSend);
+            this.ui.input.value = "";
+            this.sendText(toSend, true);
+            this.stopMic();
+          }
+        };
+        const queueSpeech = (finalChunk) => {
+          if (finalChunk && finalChunk.trim()) {
+            this.speechBuf += (this.speechBuf ? " " : "") + finalChunk.trim();
+          }
+          clearTimeout(this.holdTimer);
+          this.holdTimer = setTimeout(flushSpeech, this.PAUSE_GRACE_MS);
+        };
+  
+        this.ui.mic.addEventListener("click", async () => {
+          if (this.recActive) { flushSpeech(); this.stopMic(); return; }
+          if (!this.primed && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+            try {
+              const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+              s.getTracks().forEach(t => t.stop());
+              this.primed = true;
+              this.ui.micErr.textContent = "";
+            } catch {
+              this.ui.micErr.textContent = "Mic permission denied (Site settings -> Microphone).";
+              return;
+            }
+          }
+          this.restartWanted = true;
+          this.recActive = true;
+          this.ui.mic.classList.add("rec");
+          this.ui.mic.textContent = "Stop";
+          this.ui.micErr.textContent = "";
+          try { rec.start(); } catch {}
+        });
+  
+        rec.onresult = (e) => {
+          let interim = "";
+          for (let i = e.resultIndex; i < e.results.length; i++) {
+            const t = e.results[i][0].transcript;
+            if (e.results[i].isFinal) queueSpeech(t);
+            else interim += t;
+          }
+          showInterim(interim);
+        };
+        rec.onstart = () => showInterim("(listening...)");
+        rec.onsoundstart = () => showInterim("(capturing speech...)");
+        rec.onerror = (ev) => {
+          if (ev.error === "no-speech") this.ui.micErr.textContent = "No speech heard. Try again closer to the mic.";
+          else if (ev.error === "not-allowed" || ev.error === "permission-denied") this.ui.micErr.textContent = "Mic blocked. Allow in Chrome site settings.";
+          else if (ev.error !== "aborted") this.ui.micErr.textContent = "Mic error: " + ev.error;
+        };
+        const finish = () => {
+          this.recActive = false;
+          this.ui.mic.classList.remove("rec");
+          this.ui.mic.textContent = "Mic";
+          showInterim("");
+          if (this.restartWanted) {
+            setTimeout(() => {
+              try { rec.start(); this.recActive = true; this.ui.mic.classList.add("rec"); this.ui.mic.textContent = "Stop"; } catch {}
+            }, 300);
+          }
+        };
+        rec.onend = finish;
+        rec.onaudioend = finish;
+        rec.onspeechend = () => {};
+      }
+  
+      downloadTranscript() {
+        const nodes = this.ui.chat.querySelectorAll("div");
+        let text = "";
+        nodes.forEach(n => { text += n.innerText + "\n"; });
+        const blob = new Blob([text.trim()], { type: "text/plain" });
+        const url = URL.createObjectURL(blob);
+        const a = ce("a", { href: url });
+        a.download = "Waterwheel_Lesson_" + (this.ui.chapter.value || "unknown") + "_" + new Date().toISOString().slice(0, 19) + ".txt";
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(url);
+      }
     }
-  }
+  
+    customElements.define("waterwheel-chat", WaterwheelChat);
+  
+    // Optional auto-mount helper (only if page has #wwv-root)
+    document.addEventListener("DOMContentLoaded", () => {
+      const root = document.getElementById("wwv-root");
+      if (root && !root.querySelector("waterwheel-chat")) {
+        const el = document.createElement("waterwheel-chat");
+        el.setAttribute("backend", DEFAULT_BACKEND);
+        el.setAttribute("voice", "on");
+        root.appendChild(el);
+      }
+    });
+  })();
+  
   
   
       // Lesson
