@@ -187,6 +187,95 @@ const characters = {
   },
 };
 
+// === Canon Version + Lore (aligns with your story) ===
+const WWV_VERSION = "2025.11.12";
+const VILLAGE_LORE = `
+Waterwheel Village (est. 2025) — a living story of hope, resilience, and learning.
+Population ~350. Zero Racism Policy. Shared school (on-site + online).
+Built by refugees, artisans, teachers, and farmers beside a northern Finnish river.
+English is lived via stories, roleplay, and real work.
+Founding dream resumed after 1929; elders formed a council blending traditions.
+Homework is cherished; mistakes are seeds of growth; peace is practiced daily.
+`.trim();
+
+// Validate characters early (fail fast in boot)
+(function validateCharacters() {
+  const ids = Object.keys(characters);
+  if (ids.length !== 10) throw new Error(`Expected 10 characters, found ${ids.length}`);
+  for (const id of ids) {
+    const c = characters[id];
+    for (const k of ["voiceId", "name", "style", "background", "phrases"]) {
+      if (!c[k]) throw new Error(`Character ${id} missing '${k}'`);
+    }
+  }
+})();
+
+// Aliases to detect character switches in user text
+const characterAliases = {
+  mcarthur: ["mr mcarthur","mcarthur","elder","teacher mcarthur","arthur"],
+  johannes: ["johannes","farmer"],
+  nadia: ["nadia","architect"],
+  fatima: ["fatima","healer"],
+  anika: ["anika","seamstress"],
+  liang: ["liang","entrepreneur","tea"],
+  alex: ["aleksanderi","alex","priest","pastor","lutheran"],
+  ibrahim: ["ibrahim","blacksmith","smith"],
+  sophia: ["sophia","teacher from venezuela","venezuelan teacher"],
+  kwame: ["kwame","farmer from ghana","regenerative farmer"],
+};
+
+function findCharacter(text) {
+  const lowered = String(text || "").toLowerCase();
+  for (const key of Object.keys(characterAliases)) {
+    for (const alias of characterAliases[key]) {
+      if (lowered.includes(alias)) return key;
+    }
+    if (lowered.includes(characters[key].name.toLowerCase())) return key;
+  }
+  return null;
+}
+
+// System prompt builder (lore + persona + lesson vocab context)
+function buildSystemPrompt(activeCharacterKey, sessionData, mode) {
+  const c = characters[activeCharacterKey] || characters.sophia;
+  const student = sessionData?.userName || "friend";
+
+  let vocabContext = "";
+  if (Array.isArray(sessionData?.lessonWordlist) && sessionData.lessonWordlist.length) {
+    const sample = sessionData.lessonWordlist.slice(0, 40).join(", ");
+    vocabContext = `\nUse/recirculate these lesson words when natural: ${sample}`;
+  }
+
+  return [
+    `You are an ESL tutor persona from Waterwheel Village (v${WWV_VERSION}).`,
+    VILLAGE_LORE,
+    `Persona: ${c.name}. Speak and think like this person.`,
+    `Style: ${c.style}`,
+    `Backstory: ${c.background}`,
+    `Signature phrases (use sparingly, naturally): ${c.phrases.join(" | ")}`,
+    `Student name: ${student}. Address the student by name.`,
+    `Teaching goals: help the student speak fluently, model correct grammar by recasting (implicit correction), keep tone kind and encouraging.`,
+    `Never say you're an AI or language model. Stay in character.`,
+    `Always end with one short follow-up question to keep the conversation going.`,
+    `If explicitly asked for translation or Finnish, give one short sentence in Finnish first, then continue in simple English.`,
+    mode === "voice"
+      ? `Mode: Voice. Do NOT mention punctuation or capitalization. Correct gently by example.`
+      : `Mode: Text. Correct gently by example (do NOT comment on punctuation).`,
+    vocabContext,
+  ].join("\n");
+}
+
+// History helper: keep last 40 messages
+async function loadHistory(sessionId) {
+  return JSON.parse((await redis.get(`history:${sessionId}`)) || "[]");
+}
+async function saveHistory(sessionId, arr) {
+  const MAX = 40;
+  const trimmed = arr.length > MAX ? arr.slice(arr.length - MAX) : arr;
+  await redis.set(`history:${sessionId}`, JSON.stringify(trimmed));
+  return trimmed;
+}
+
 // === Lessons ===
 const lessonIntros = require("./lessonIntros");
 
@@ -303,7 +392,7 @@ app.get("/lesson/:month/:chapter", async (req, res) => {
   if (welcomeText) initialHistory.push({ role: "assistant", content: welcomeText });
   initialHistory.push({ role: "assistant", content: lessonText });
   try {
-    await redis.set(`history:${sessionId}`, JSON.stringify(initialHistory));
+    await saveHistory(sessionId, initialHistory);
     console.log(`History initialized for ${sessionId}:`, initialHistory);
   } catch (err) {
     console.error(`Failed to save history:${sessionId}:`, err.message);
@@ -311,25 +400,18 @@ app.get("/lesson/:month/:chapter", async (req, res) => {
 
   const voiceId = characters[intro.teacher].voiceId;
 
-  const response = { welcomeText, lessonText, words, sessionId, voiceId, character: intro.teacher };
+  const response = { welcomeText, lessonText, words, sessionId, voiceId, character: intro.teacher, version: WWV_VERSION };
   console.log(`Lesson response:`, response);
+  res.setHeader("X-WWV-Version", WWV_VERSION);
+  res.setHeader("X-WWV-Character", intro.teacher);
   res.json(response);
 });
-
-// Helper function to find a character
-const findCharacter = (text) => {
-  const lowered = text.toLowerCase();
-  for (const key in characters) {
-    if (lowered.includes(characters[key].name.toLowerCase())) return key;
-  }
-  return null;
-};
 
 // === NEW: Weather API Function ===
 async function getWeather(city) {
   try {
     const response = await fetch(
-      `http://api.weatherapi.com/v1/current.json?key=${WEATHERAPI_KEY}&q=${encodeURIComponent(city)}&aqi=no`
+      `https://api.weatherapi.com/v1/current.json?key=${WEATHERAPI_KEY}&q=${encodeURIComponent(city)}&aqi=no`
     );
     const data = await response.json();
     if (response.status !== 200) {
@@ -389,8 +471,9 @@ app.post("/chat", async (req, res) => {
       if (lesson) sessionData.character = lesson.teacher;
     }
 
+    // Allow user to switch character by name/alias
     const requestedCharacterKey = findCharacter(sanitizedText);
-    const requestedCharacter = characters[requestedCharacterKey];
+    const requestedCharacter = requestedCharacterKey ? characters[requestedCharacterKey] : null;
 
     if (requestedCharacter && requestedCharacterKey !== sessionData.character) {
       sessionData.character = requestedCharacterKey;
@@ -399,87 +482,65 @@ app.post("/chat", async (req, res) => {
       sessionData.learnedWords = [];
       sessionData.lessonWordlist = [];
       await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
-      await redis.set(`history:${sessionId}`, JSON.stringify([]));
+      await saveHistory(sessionId, []);
       console.log("🔄 Switched to new character:", requestedCharacterKey);
 
       const introText = `Hello, I am ${requestedCharacter.name}. What would you like to talk about today?`;
-      await redis.set(`history:${sessionId}`, JSON.stringify([{ role: "assistant", content: introText }]));
-      return res.json({ text: introText, character: requestedCharacterKey, voiceId: requestedCharacter.voiceId });
+      await saveHistory(sessionId, [{ role: "assistant", content: introText }]);
+
+      res.setHeader("X-WWV-Version", WWV_VERSION);
+      res.setHeader("X-WWV-Character", requestedCharacterKey);
+      return res.json({ text: introText, character: requestedCharacterKey, voiceId: requestedCharacter.voiceId, version: WWV_VERSION });
     }
 
-// === Word Counting Logic (plural-aware) ===
-function normalizeToken(t) {
-    t = String(t || "").toLowerCase().trim();
-  
-    // handle simple punctuation/quotes already stripped above, but double-sanitize:
-    t = t.replace(/[^\w\s-]/g, "");
-  
-    if (!t) return t;
-  
-    // Basic plural rules:
-    if (t.endsWith("ies") && t.length > 3) {
-      // candies -> candy, tomatoes (not here) handled below
-      return t.slice(0, -3) + "y";
+    // === Word Counting Logic (plural-aware, safer) ===
+    function normalizeToken(t) {
+      t = String(t || "").toLowerCase().trim();
+      t = t.replace(/[^\w\s-]/g, "");
+      if (!t) return t;
+      if (t.length <= 2) return t; // avoid "is"->"i"
+      if (t.endsWith("ies") && t.length > 3) return t.slice(0, -3) + "y";
+      if (t.endsWith("es") && t.length > 3) {
+        const base = t.slice(0, -2);
+        if (/(s|x|z|ch|sh|o)$/.test(base)) return base;
+      }
+      if (t.endsWith("s") && t.length > 3) return t.slice(0, -1);
+      return t;
     }
-    if (t.endsWith("es") && t.length > 2) {
-      // boxes -> box, tomatoes -> tomato, potatoes -> potato
-      const base = t.slice(0, -2);
-      // if the base ends with s, x, z, ch, sh, or 'o' then removal likely correct
-      if (
-        base.endsWith("s") || base.endsWith("x") || base.endsWith("z") ||
-        base.endsWith("ch") || base.endsWith("sh") || base.endsWith("o")
-      ) {
-        return base;
+
+    const userWords = sanitizedText
+      .toLowerCase()
+      .replace(/[^\w\s-]/g, "")
+      .split(/\s+/)
+      .filter((w) => w.length > 0);
+
+    const userSet = new Set();
+    for (const w of userWords) {
+      userSet.add(w);
+      userSet.add(normalizeToken(w));
+    }
+
+    let newlyLearned = [];
+    if (sessionData.lessonWordlist.length > 0) {
+      const wordsRemaining = [];
+      for (const rawWord of sessionData.lessonWordlist) {
+        const lessonWord = String(rawWord || "").toLowerCase().trim();
+        const normLesson = normalizeToken(lessonWord);
+        if ((userSet.has(lessonWord) || userSet.has(normLesson)) && !sessionData.learnedWords.includes(lessonWord)) {
+          sessionData.learnedWords.push(lessonWord);
+          newlyLearned.push(lessonWord);
+        } else {
+          wordsRemaining.push(lessonWord);
+        }
+      }
+      sessionData.lessonWordlist = wordsRemaining;
+      if (sessionData.lessonWordlist.length === 0 && sessionData.learnedWords.length > 0) {
+        newlyLearned.push("\n\n🎉 You've learned all the words for this lesson! Great job!");
       }
     }
-    if (t.endsWith("s") && t.length > 1) {
-      // cars -> car, apples -> apple
-      return t.slice(0, -1);
-    }
-    return t;
-  }
-  
-  const userWords = sanitizedText
-    .toLowerCase()
-    .replace(/[^\w\s-]/g, "")
-    .split(/\s+/)
-    .filter((w) => w.length > 0);
-  
-  // Build a set with both raw and normalized tokens for easier matching
-  const userSet = new Set();
-  for (const w of userWords) {
-    userSet.add(w);
-    userSet.add(normalizeToken(w));
-  }
-  
-  let newlyLearned = [];
-  
-  if (sessionData.lessonWordlist.length > 0) {
-    // normalize the lesson words too (keep original for reporting)
-    const wordsRemaining = [];
-    for (const rawWord of sessionData.lessonWordlist) {
-      const lessonWord = String(rawWord || "").toLowerCase().trim();
-      const normLesson = normalizeToken(lessonWord);
-  
-      if (
-        (userSet.has(lessonWord) || userSet.has(normLesson)) &&
-        !sessionData.learnedWords.includes(lessonWord)
-      ) {
-        sessionData.learnedWords.push(lessonWord);
-        newlyLearned.push(lessonWord);
-      } else {
-        wordsRemaining.push(lessonWord);
-      }
-    }
-    sessionData.lessonWordlist = wordsRemaining;
-  
-    if (sessionData.lessonWordlist.length === 0 && sessionData.learnedWords.length > 0) {
-      newlyLearned.push("\n\n🎉 You've learned all the words for this lesson! Great job!");
-    }
-  }
-  
+
     // === Weather flow ===
-    const weatherKeywords = /(weather|temperature|forecast|sunny|rainy|cloudy|snowy)/i;
+    const weatherKeywords = /\b(weather|temperature|forecast|sunny|rain(y|ing)?|cloud(y|s)?|snow(y|ing)?)\b/i;
 
     if (sessionData.isWeatherQuery) {
       const cleanedCity = sanitizedText.replace(/,/g, "").trim();
@@ -491,29 +552,34 @@ function normalizeToken(t) {
       if (weatherData) {
         const tempC = weatherData.current.temp_c;
         const condition = weatherData.current.condition.text.toLowerCase();
-        const character = characters[sessionData.character];
 
         let weatherReply = "";
         if (sessionData.character === "johannes") {
-          weatherReply = `The soil is always talking, but for a real report on ${cleanedCity}, I see the sky is ${condition} and the temperature is around ${tempC} degrees Celsius. That's a day for working in the fields.`;
+          weatherReply = `The soil is always talking, but for a real report on ${cleanedCity}, I see the sky is ${condition} and the temperature is around ${tempC}°C. That's a day for working in the fields.`;
         } else if (sessionData.character === "mcarthur") {
-          weatherReply = `In ${cleanedCity}, the weather is currently ${condition} and it’s about ${tempC} degrees Celsius. A beautiful day for us here, too.`;
+          weatherReply = `In ${cleanedCity}, the weather is currently ${condition} and it’s about ${tempC}°C. A beautiful day for us here, too.`;
         } else {
-          weatherReply = `Okay! It looks like in ${cleanedCity} the weather is ${condition} and the temperature is ${tempC} degrees Celsius. That's good to know.`;
+          weatherReply = `Okay! In ${cleanedCity} the weather is ${condition} and the temperature is ${tempC}°C. That's good to know.`;
         }
 
-        const messages = JSON.parse((await redis.get(`history:${sessionId}`)) || "[]");
-        messages.push({ role: "user", content: sanitizedText });
-        messages.push({ role: "assistant", content: weatherReply });
-        await redis.set(`history:${sessionId}`, JSON.stringify(messages));
-        return res.json({ text: weatherReply, character: sessionData.character, voiceId: characters[sessionData.character].voiceId });
+        const hist = await loadHistory(sessionId);
+        hist.push({ role: "user", content: sanitizedText });
+        hist.push({ role: "assistant", content: weatherReply });
+        await saveHistory(sessionId, hist);
+
+        res.setHeader("X-WWV-Version", WWV_VERSION);
+        res.setHeader("X-WWV-Character", sessionData.character);
+        return res.json({ text: weatherReply, character: sessionData.character, voiceId: characters[sessionData.character].voiceId, version: WWV_VERSION });
       } else {
         const errorReply = `I am sorry, I could not find the weather for "${cleanedCity}". Is there a different city you would like to check?`;
-        const messages = JSON.parse((await redis.get(`history:${sessionId}`)) || "[]");
-        messages.push({ role: "user", content: sanitizedText });
-        messages.push({ role: "assistant", content: errorReply });
-        await redis.set(`history:${sessionId}`, JSON.stringify(messages));
-        return res.json({ text: errorReply, character: sessionData.character, voiceId: characters[sessionData.character].voiceId });
+        const hist = await loadHistory(sessionId);
+        hist.push({ role: "user", content: sanitizedText });
+        hist.push({ role: "assistant", content: errorReply });
+        await saveHistory(sessionId, hist);
+
+        res.setHeader("X-WWV-Version", WWV_VERSION);
+        res.setHeader("X-WWV-Character", sessionData.character);
+        return res.json({ text: errorReply, character: sessionData.character, voiceId: characters[sessionData.character].voiceId, version: WWV_VERSION });
       }
     }
 
@@ -522,18 +588,20 @@ function normalizeToken(t) {
       await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
       const noCityReply = "I can tell you the weather, but where in the world would you like to know? Please tell me the city.";
 
-      const messages = JSON.parse((await redis.get(`history:${sessionId}`)) || "[]");
-      messages.push({ role: "user", content: sanitizedText });
-      messages.push({ role: "assistant", content: noCityReply });
-      await redis.set(`history:${sessionId}`, JSON.stringify(messages));
+      const hist = await loadHistory(sessionId);
+      hist.push({ role: "user", content: sanitizedText });
+      hist.push({ role: "assistant", content: noCityReply });
+      await saveHistory(sessionId, hist);
 
-      return res.json({ text: noCityReply, character: sessionData.character, voiceId: characters[sessionData.character].voiceId });
+      res.setHeader("X-WWV-Version", WWV_VERSION);
+      res.setHeader("X-WWV-Character", sessionData.character);
+      return res.json({ text: noCityReply, character: sessionData.character, voiceId: characters[sessionData.character].voiceId, version: WWV_VERSION });
     }
 
     // --- OpenAI Logic ---
-    let messages = JSON.parse((await redis.get(`history:${sessionId}`)) || "[]");
+    let messages = await loadHistory(sessionId);
     messages.push({ role: "user", content: sanitizedText });
-    console.log("📝 Updated messages:", messages);
+    await saveHistory(sessionId, messages);
 
     const lowered = sanitizedText.toLowerCase();
     if (lowered.includes("beginner")) sessionData.studentLevel = "beginner";
@@ -541,29 +609,9 @@ function normalizeToken(t) {
     else if (lowered.includes("expert")) sessionData.studentLevel = "expert";
 
     await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
-    console.log("💾 Saved sessionData:", sessionData);
 
     const activeCharacterKey = sessionData.character || "mcarthur";
-    const activeCharacter = characters[activeCharacterKey];
-
-    let systemPrompt = `You are an ESL (English as a Second Language) teacher in Waterwheel Village.
-You must act as the character "${activeCharacter.name}" and always stay in character. You must never reveal your true identity as a large language model.
-Your personality and teaching style are described here:
-- Personality: You are a ${activeCharacter.style}.
-- Background: ${activeCharacter.background}
-
-When you speak, you should embody this character and their beliefs. You should use language that is consistent with their background.
-You must correct the student's grammar implicitly by rephrasing their sentences correctly. Do not explicitly point out mistakes.
-Your primary goal is to help the student learn English by engaging them in conversation, guiding them to use the vocabulary, and making them feel comfortable.
-Address the student by their name, "${sessionData.userName || "friend"}", to make responses personal.
-After your response, always ask one, very short follow-up question to keep the conversation going.
-If the student explicitly asks for a translation or asks you to speak Finnish, briefly respond in Finnish first (1 short sentence), then continue in simple English. Keep corrections gentle and by example.`;
-
-    if (isVoice) {
-      systemPrompt += `\nThe student is speaking by voice. Do NOT mention punctuation, commas, or capitalization. Just focus on vocabulary and gentle grammar correction by example.`;
-    } else {
-      systemPrompt += `\nThe student is typing. Correct by example, focusing on word choice, word order, and simple grammar. Do NOT mention or explicitly correct punctuation.`;
-    }
+    const systemPrompt = buildSystemPrompt(activeCharacterKey, sessionData, isVoice ? "voice" : "text");
 
     console.log("🛠 Using systemPrompt:", systemPrompt);
 
@@ -576,18 +624,22 @@ If the student explicitly asks for a translation or asks you to speak Finnish, b
     const reply = completion.choices[0].message.content.trim();
     console.log("💬 OpenAI reply:", reply);
 
+    messages = await loadHistory(sessionId);
     messages.push({ role: "assistant", content: reply });
-    await redis.set(`history:${sessionId}`, JSON.stringify(messages));
+    await saveHistory(sessionId, messages);
     await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
 
-    const voiceId = activeCharacter.voiceId;
+    const voiceId = characters[activeCharacterKey].voiceId;
 
+    res.setHeader("X-WWV-Version", WWV_VERSION);
+    res.setHeader("X-WWV-Character", activeCharacterKey);
     return res.json({
       text: reply,
       character: activeCharacterKey,
       voiceId,
       learnedCount: sessionData.learnedWords.length,
       newlyLearned,
+      version: WWV_VERSION,
     });
   } catch (err) {
     console.error("❌ Chat error:", err?.message || err, err?.stack || "");
@@ -643,8 +695,18 @@ app.post("/speakbase", async (req, res) => {
   }
 });
 
-// === Health check ===
-app.get("/health", (_req, res) => res.json({ ok: true, status: "Waterwheel backend alive" }));
+// === Meta & Health ===
+app.get("/meta", async (_req, res) => {
+  res.json({
+    ok: true,
+    version: WWV_VERSION,
+    characters: Object.keys(characters),
+    monthlySets: Object.keys(monthlyWordlists),
+    redis: redis.status,
+  });
+});
+
+app.get("/health", (_req, res) => res.json({ ok: true, status: "Waterwheel backend alive", version: WWV_VERSION }));
 
 // === Start server ===
 app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
