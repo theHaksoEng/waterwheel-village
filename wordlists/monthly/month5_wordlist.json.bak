@@ -1,0 +1,14 @@
+{
+  "month": 5,
+  "topic": "Health & Everyday Life",
+  "chapters": {
+    "health_basics": {
+      "topic": "Health & Everyday Life",
+      "words": [
+        { "en": "doctor", "fi": "lääkäri" },
+        { "en": "nurse", "fi": "sairaanhoitaja" },
+        { "en": "medicine", "fi": "lääke" }
+      ]
+    }
+  }
+}

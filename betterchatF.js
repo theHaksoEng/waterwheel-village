@@ -283,32 +283,113 @@ const lessonIntros = require("./lessonIntros");
 const monthlyWordlists = {};
 function loadMonthlyWordlists() {
   const wordlistsDir = path.join(__dirname, "wordlists", "monthly");
+  const nextMap = {}; // build here first
+  let loadedSomething = false;
+
   try {
-    const files = fs.readdirSync(wordlistsDir);
+    const files = fs.readdirSync(wordlistsDir).filter(f => f.endsWith(".json"));
+    console.log("📂 Wordlists dir:", wordlistsDir);
+    console.log("🧾 JSON files found:", files);
+
+    if (!files.length) console.warn(`⚠️ No .json files found in ${wordlistsDir}`);
+
     for (const file of files) {
-      if (file.endsWith(".json")) {
-        const content = fs.readFileSync(path.join(wordlistsDir, file), "utf8");
-        const parsed = JSON.parse(content);
-        const key = parsed.month ? `month${parsed.month}` : path.basename(file, ".json");
-        monthlyWordlists[key] = parsed;
+      const full = path.join(wordlistsDir, file);
+      let parsed;
+      try {
+        parsed = JSON.parse(fs.readFileSync(full, "utf8"));
+      } catch (e) {
+        console.error(`❌ JSON parse error in ${file}: ${e.message}`);
+        continue;
       }
+
+      // Determine month number from "month" or filename
+let m = (parsed && typeof parsed.month === "number") ? parsed.month : undefined;
+if (!Number.isFinite(m)) {
+  const mMatch = file.match(/month(\d{1,2})/i) || file.match(/(\d{1,2})/);
+  if (mMatch) m = Number(mMatch[1]);
+}
+if (!Number.isFinite(m) || m < 1 || m > 12) {
+  console.error(`❌ Skipping ${file}: missing/invalid "month":`, parsed ? parsed.month : undefined);
+  continue;
+}
+const key = `month${m}`;
+
+// Validate + coerce chapters into a keyed object
+let ch = (parsed && parsed.chapters) ? parsed.chapters : null;
+
+if (Array.isArray(ch)) {
+  // Try to convert an array into an object keyed by a slug-like field
+  const out = {};
+  for (const item of ch) {
+    if (!item || typeof item !== "object") continue;
+    const slug =
+      item.slug || item.key || item.name || item.id || item.chapter || item.title;
+    if (typeof slug === "string" && slug.trim()) {
+      out[slug.trim()] = item;
     }
-    console.log("✅ Monthly wordlists loaded:", Object.keys(monthlyWordlists));
-  } catch (err) {
-    console.error("❌ Failed to load monthly wordlists:", err);
+  }
+  if (Object.keys(out).length) {
+    console.warn(`↺ Coerced array 'chapters' to object with keys: ${Object.keys(out).join(", ")}`);
+    ch = out;
+  } else {
+    console.warn(`⚠️ Skipping ${file}: chapters is an array but no usable slug fields found`);
+    continue;
   }
 }
-loadMonthlyWordlists();
+
+if (!ch || typeof ch !== "object" || Array.isArray(ch)) {
+  console.warn(`⚠️ Skipping ${file}: no usable "chapters" object (got ${Array.isArray(ch) ? "array" : typeof ch})`);
+  continue;
+}
+
+// Merge chapters (normalize 'words'/'vocab'/'wordlist' later in endpoints)
+if (!nextMap[key]) nextMap[key] = { month: m, chapters: {} };
+for (const [slug, data] of Object.entries(ch)) {
+  nextMap[key].chapters[slug] = data;
+}
+loadedSomething = true;
+console.log(`📦 Loaded ${file} -> ${key} (${Object.keys(ch).length} chapters)`);
+
+    }
+  } catch (err) {
+    console.error("❌ Failed to scan monthly wordlists:", err.message);
+  }
+
+  if (loadedSomething) {
+    // only swap if we have something valid
+    for (const k of Object.keys(monthlyWordlists)) delete monthlyWordlists[k];
+    Object.assign(monthlyWordlists, nextMap);
+
+    const keys = Object.keys(monthlyWordlists).sort((a,b)=>Number(a.replace("month",""))-Number(b.replace("month","")));
+    console.log("✅ Monthly wordlists loaded:", keys);
+    for (const k of keys) {
+      const chs = Object.keys(monthlyWordlists[k].chapters || {});
+      console.log(`   • ${k}: ${chs.length ? chs.join(", ") : "(no chapters)"}`);
+    }
+  } else {
+    console.warn("⚠️ No valid monthly wordlists loaded; keeping previous in-memory data.");
+  }
+}
 
 // === Wordlist endpoint ===
 app.get("/wordlist/:month/:chapter", (req, res) => {
   const { month, chapter } = req.params;
   const monthData = monthlyWordlists[month];
-  if (monthData && monthData.chapters && monthData.chapters[chapter]) {
-    res.json(monthData.chapters[chapter]);
-  } else {
-    res.status(404).json({ error: `Chapter '${chapter}' not found in ${month}` });
+  const ch = monthData?.chapters?.[chapter];
+
+  if (!ch) {
+    return res.status(404).json({ error: `Chapter '${chapter}' not found in ${month}` });
   }
+
+  // Normalize: prefer arrays under words|vocab|wordlist; else return the chapter object
+  const payload =
+    (Array.isArray(ch.words) && ch.words) ||
+    (Array.isArray(ch.vocab) && ch.vocab) ||
+    (Array.isArray(ch.wordlist) && ch.wordlist) ||
+    ch;
+
+  res.json(payload);
 });
 
 // === Lesson endpoint ===
@@ -319,8 +400,8 @@ app.get("/lesson/:month/:chapter", async (req, res) => {
   const monthData = monthlyWordlists[month];
   const chData = monthData?.chapters?.[chapter];
 
+  // Prefer lessonIntros; fall back to JSON teacher if present
   let intro = lessonIntros[month]?.[chapter];
-
   if (!intro && chData?.teacher && characters[chData.teacher]) {
     intro = {
       teacher: chData.teacher,
@@ -362,13 +443,25 @@ app.get("/lesson/:month/:chapter", async (req, res) => {
     };
   }
 
+  // Name
   const studentName = req.query.name ? decodeURIComponent(req.query.name) : sessionData.userName || "friend";
   sessionData.userName = studentName;
 
-  const words = chData?.words || [];
-  const wordlist = words.map((w) => w.en.toLowerCase());
+  // --- WORDS (accept words | vocab | wordlist) ---
+  const rawList = chData?.words || chData?.vocab || chData?.wordlist || [];
+  const words = Array.isArray(rawList) ? rawList : [];
+  // Build a lowercase list of just the English tokens for matching (strings or {en:...})
+  const wordlist = words
+    .map((w) =>
+      typeof w === "string"
+        ? w.toLowerCase()
+        : (w?.en || w?.word || "").toLowerCase()
+    )
+    .filter(Boolean);
+
   console.log(`Wordlist for ${month}/${chapter}:`, wordlist);
 
+  // Save session state
   sessionData.currentLesson = { month, chapter };
   sessionData.lessonWordlist = wordlist;
   try {
@@ -378,6 +471,7 @@ app.get("/lesson/:month/:chapter", async (req, res) => {
     console.error(`Failed to save session:${sessionId}:`, err.message);
   }
 
+  // Welcome + lesson text
   let welcomeText = "";
   if (chapter !== "greetings_introductions") {
     const pretty = humanizeChapter(chapter);
@@ -388,11 +482,12 @@ app.get("/lesson/:month/:chapter", async (req, res) => {
   const storyText = intro.story.replace(/\[name\]/g, studentName);
   const lessonText = `${teacherText}\n\n${storyText}`;
 
+  // Initialize history
   const initialHistory = [];
   if (welcomeText) initialHistory.push({ role: "assistant", content: welcomeText });
   initialHistory.push({ role: "assistant", content: lessonText });
   try {
-    await saveHistory(sessionId, initialHistory);
+    await redis.set(`history:${sessionId}`, JSON.stringify(initialHistory));
     console.log(`History initialized for ${sessionId}:`, initialHistory);
   } catch (err) {
     console.error(`Failed to save history:${sessionId}:`, err.message);
@@ -400,10 +495,8 @@ app.get("/lesson/:month/:chapter", async (req, res) => {
 
   const voiceId = characters[intro.teacher].voiceId;
 
-  const response = { welcomeText, lessonText, words, sessionId, voiceId, character: intro.teacher, version: WWV_VERSION };
+  const response = { welcomeText, lessonText, words, sessionId, voiceId, character: intro.teacher };
   console.log(`Lesson response:`, response);
-  res.setHeader("X-WWV-Version", WWV_VERSION);
-  res.setHeader("X-WWV-Character", intro.teacher);
   res.json(response);
 });
 
@@ -705,8 +798,18 @@ app.get("/meta", async (_req, res) => {
     redis: redis.status,
   });
 });
+app.get("/months", (_req, res) => {
+  const index = {};
+  for (const [k, v] of Object.entries(monthlyWordlists)) {
+    const ch = v && v.chapters && typeof v.chapters === "object" ? Object.keys(v.chapters) : [];
+    index[k] = ch;
+  }
+  res.json({ months: index });
+});
 
 app.get("/health", (_req, res) => res.json({ ok: true, status: "Waterwheel backend alive", version: WWV_VERSION }));
+// Boot-time load of monthly wordlists
+loadMonthlyWordlists();
 
 // === Start server ===
 app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
