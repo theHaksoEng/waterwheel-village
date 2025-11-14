@@ -1,8 +1,8 @@
-// publicjshint esversion: 9
+/* jshint esversion: 9 */
 console.log('app.js LOADED SUCCESSFULLY');
 
-// === CORRECT API BASE (HARD CODED FOR RENDER) ===
-const API_BASE = 'https://waterwheel-village.onrender.com/api';
+// === CORRECT API BASE (same origin, no /api prefix) ===
+const API_BASE = ''; // backend routes are like /lesson/... and /chat
 
 // === Safe DOM Helper (wait for elements) ===
 function $(id, callback) {
@@ -84,7 +84,7 @@ function speak(text) {
   window.speechSynthesis.speak(u);
 }
 
-// === API ===
+// === API Helper ===
 async function fetchJSON(url, options = {}) {
   const resp = await fetch(url, {
     ...options,
@@ -94,7 +94,7 @@ async function fetchJSON(url, options = {}) {
   return resp.json();
 }
 
-// === Lesson ===
+// === Lessons ===
 window.startLesson = async function(month, chapter) {
   if (!state.name) {
     showScreen('welcome');
@@ -103,17 +103,27 @@ window.startLesson = async function(month, chapter) {
   }
   try {
     setSpinner(true);
-    const url = `${API_BASE}/lesson/${month}/${chapter}?sessionId=${state.sessionId}&name=${encodeURIComponent(state.name)}`;
-    console.log('Fetching:', url);
+    const url =
+      `${API_BASE}/lesson/${month}/${chapter}?sessionId=${state.sessionId}&name=${encodeURIComponent(state.name)}`;
+
+    console.log('Fetching lesson:', url);
     const data = await fetchJSON(url);
 
     state.sessionId = data.sessionId || state.sessionId;
     localStorage.setItem('wwv_session', state.sessionId);
+
     state.currentLesson = { month, chapter };
 
     showScreen('chat');
-    if (data.welcomeText) { addBubble('assistant', data.welcomeText); speak(data.welcomeText); }
-    if (data.lessonText) { addBubble('assistant', data.lessonText); speak(data.lessonText); }
+
+    if (data.welcomeText) {
+      addBubble('assistant', data.welcomeText);
+      speak(data.welcomeText);
+    }
+    if (data.lessonText) {
+      addBubble('assistant', data.lessonText);
+      speak(data.lessonText);
+    }
 
     if (wordProgress && data.words) {
       wordProgress.style.display = 'block';
@@ -121,39 +131,47 @@ window.startLesson = async function(month, chapter) {
     }
   } catch (e) {
     console.error('Lesson failed:', e);
-    addBubble('assistant', `Welcome, ${state.name}! Let's learn.`);
+    addBubble('assistant', `Welcome, ${state.name}! Let's begin.`);
   } finally {
     setSpinner(false);
   }
 };
 
-// === Core Chat Function (The one referenced in the old script) ===
-// Assuming 'sendMessage' contains the core chat logic from the original 'Send Message' block.
+// === Chat ===
 async function sendMessage() {
-    const text = userInput?.value.trim();
-    if (!text) return;
-    userInput.value = '';
-    addBubble('user', text);
-    try {
-        setSpinner(true);
-        const data = await fetchJSON(`${API_BASE}/chat`, {
-            method: 'POST',
-            body: JSON.stringify({ text, sessionId: state.sessionId, name: state.name }),
-        });
-        addBubble('assistant', data.text || '');
-        speak(data.text || '');
-    } catch (e) {
-        addBubble('system', 'Error. Try again.');
-    } finally {
-        setSpinner(false);
-    }
-}
+  const text = userInput?.value.trim();
+  if (!text) return;
 
+  userInput.value = '';
+  addBubble('user', text);
+
+  try {
+    setSpinner(true);
+
+    const data = await fetchJSON(`${API_BASE}/chat`, {
+      method: 'POST',
+      body: JSON.stringify({
+        text,
+        sessionId: state.sessionId,
+        name: state.name
+      }),
+    });
+
+    addBubble('assistant', data.text || '');
+    speak(data.text || '');
+  } catch (e) {
+    console.error(e);
+    addBubble('assistant', 'Error. Please try again.');
+  } finally {
+    setSpinner(false);
+  }
+}
 
 // === DOM Ready ===
 document.addEventListener('DOMContentLoaded', () => {
   console.log('DOM ready, initializing...');
 
+  // Show correct screen on start
   if (state.name) {
     showScreen('contents');
     if (studentNameInput) studentNameInput.value = state.name;
@@ -165,28 +183,22 @@ document.addEventListener('DOMContentLoaded', () => {
   waitFor('start-chat-btn', btn => {
     btn.addEventListener('click', () => {
       const val = studentNameInput?.value.trim();
-      if (!val) { alert('Enter your name'); return; }
+      if (!val) {
+        alert('Enter your name');
+        return;
+      }
       state.name = val;
       localStorage.setItem('studentName', val);
       showScreen('contents');
     });
   });
 
-  // 👇 ❌ OLD/BROKEN CODE REMOVED, REPLACED WITH A NEW, SAFE IMPLEMENTATION 👇
-
-  // === FIXED: Send Message and Enter key listeners ===
-  // We use the safe 'waitFor' logic from your app.js, referencing the new sendMessage function.
+  // SEND button
   waitFor('sendBtn', btn => {
     btn.addEventListener('click', sendMessage);
   });
 
-  waitFor('userInput', input => {
-    input.addEventListener('keypress', e => {
-      if (e.key === 'Enter') sendBtn?.click();
-    });
-  });
-
-  // This is the original Enter key logic from the problematic script, now protected:
+  // ENTER KEY — only one listener (fixed)
   waitFor('userInput', input => {
     input.addEventListener('keypress', e => {
       if (e.key === 'Enter') sendMessage();
