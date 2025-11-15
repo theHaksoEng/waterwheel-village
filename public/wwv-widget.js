@@ -202,7 +202,7 @@
           </div>
         </div>
 
-        <audio id="player" playsinline></audio>
+<audio id="player" controls playsinline></audio>
       `;
 
       // UI refs
