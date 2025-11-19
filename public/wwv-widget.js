@@ -65,7 +65,7 @@
       this.restartWanted = false;
       this.speechBuf = "";
       this.holdTimer = null;
-      this.PAUSE_GRACE_MS = 2500;
+      this.PAUSE_GRACE_MS = 6000;
 
       // Build shadow DOM
       this.attachShadow({ mode: "open" });
