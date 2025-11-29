@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>TTS Cost Calculator</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f4f5f7;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      min-height: 100vh;
+    }
+
+    .container {
+      background: #ffffff;
+      margin: 30px 10px;
+      padding: 24px 20px;
+      max-width: 480px;
+      width: 100%;
+      border-radius: 16px;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
+    }
+
+    h1 {
+      font-size: 1.4rem;
+      margin-top: 0;
+      margin-bottom: 0.5rem;
+      text-align: center;
+    }
+
+    p.subtitle {
+      font-size: 0.9rem;
+      color: #555;
+      text-align: center;
+      margin-top: 0;
+      margin-bottom: 1.5rem;
+    }
+
+    .field-group {
+      margin-bottom: 1rem;
+    }
+
+    label {
+      display: block;
+      font-size: 0.9rem;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    input[type="number"] {
+      width: 100%;
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      font-size: 0.95rem;
+      box-sizing: border-box;
+    }
+
+    input[type="number"]:focus {
+      outline: none;
+      border-color: #2563eb;
+      box-shadow: 0 0 0 1px #2563eb22;
+    }
+
+    .hint {
+      font-size: 0.8rem;
+      color: #777;
+      margin-top: 2px;
+    }
+
+    button {
+      width: 100%;
+      padding: 10px 14px;
+      border-radius: 999px;
+      border: none;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      background: #2563eb;
+      color: white;
+      margin: 8px 0 16px;
+      transition: transform 0.05s ease, box-shadow 0.05s ease, background 0.15s ease;
+      box-shadow: 0 4px 10px rgba(37, 99, 235, 0.3);
+    }
+
+    button:hover {
+      background: #1d4ed8;
+    }
+
+    button:active {
+      transform: translateY(1px);
+      box-shadow: 0 2px 6px rgba(37, 99, 235, 0.4);
+    }
+
+    .results {
+      background: #f9fafb;
+      border-radius: 12px;
+      padding: 12px 12px 6px;
+      border: 1px solid #e5e7eb;
+      font-size: 0.9rem;
+    }
+
+    .result-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 4px;
+    }
+
+    .result-label {
+      color: #555;
+    }
+
+    .result-value {
+      font-weight: 600;
+      color: #111827;
+    }
+
+    .section-title {
+      font-size: 0.9rem;
+      font-weight: 700;
+      margin: 0.8rem 0 0.4rem;
+      color: #111827;
+    }
+
+    .small {
+      font-size: 0.8rem;
+      color: #6b7280;
+      margin-top: 4px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Voice Lesson Cost Calculator</h1>
+    <p class="subtitle">Based on ElevenLabs TTS usage (Scale plan defaults)</p>
+
+    <div class="field-group">
+      <label for="lessonMinutes">Lesson length (minutes)</label>
+      <input id="lessonMinutes" type="number" value="45" min="1" step="1" />
+      <div class="hint">Example: 45-minute conversation lesson.</div>
+    </div>
+
+    <div class="field-group">
+      <label for="teacherPercent">Teacher speaking share (%)</label>
+      <input id="teacherPercent" type="number" value="60" min="1" max="100" step="1" />
+      <div class="hint">How much of the time the bot/teacher is speaking (e.g. 60%).</div>
+    </div>
+
+    <div class="field-group">
+      <label for="costPerThousand">ElevenLabs cost per 1000 characters (USD)</label>
+      <input id="costPerThousand" type="number" value="0.18" min="0" step="0.01" />
+      <div class="hint">Scale plan overage rate is around $0.18 / 1000 characters.</div>
+    </div>
+
+    <div class="field-group">
+      <label for="charsPerMin">Characters per minute of speech</label>
+      <input id="charsPerMin" type="number" value="675" min="100" step="25" />
+      <div class="hint">Slow clear speech ≈ 130–150 words/min ≈ 650–750 characters/min.</div>
+    </div>
+
+    <div class="field-group">
+      <label for="lessonsPerMonth">Lessons per month (per student)</label>
+      <input id="lessonsPerMonth" type="number" value="8" min="1" step="1" />
+      <div class="hint">Example: 2 lessons/week → about 8 per month.</div>
+    </div>
+
+    <div class="field-group">
+      <label for="studentsCount">Number of students</label>
+      <input id="studentsCount" type="number" value="5000" min="1" step="1" />
+      <div class="hint">Total paying users using the chatbot monthly.</div>
+    </div>
+
+    <button type="button" onclick="calculateCosts()">Calculate</button>
+
+    <div class="section-title">Per Lesson</div>
+    <div class="results">
+      <div class="result-row">
+        <div class="result-label">Teacher speaking time:</div>
+        <div class="result-value" id="teacherMinutesOut">–</div>
+      </div>
+      <div class="result-row">
+        <div class="result-label">Characters used (TTS):</div>
+        <div class="result-value" id="charsPerLessonOut">–</div>
+      </div>
+      <div class="result-row">
+        <div class="result-label">Cost per lesson (USD):</div>
+        <div class="result-value" id="costPerLessonOut">–</div>
+      </div>
+    </div>
+
+    <div class="section-title">Per Student / Month</div>
+    <div class="results">
+      <div class="result-row">
+        <div class="result-label">Cost per student / month:</div>
+        <div class="result-value" id="costPerStudentMonthOut">–</div>
+      </div>
+      <div class="result-row">
+        <div class="result-label">Total TTS cost / month:</div>
+        <div class="result-value" id="totalCostOut">–</div>
+      </div>
+    </div>
+
+    <p class="small">
+      Tip: Adjust teacher % and lesson count to see how it changes your costs.
+    </p>
+  </div>
+
+  <script>
+    function formatNumber(num, decimals = 2) {
+      if (isNaN(num)) return "–";
+      return num.toLocaleString(undefined, {
+        minimumFractionDigits: decimals,
+        maximumFractionDigits: decimals
+      });
+    }
+
+    function calculateCosts() {
+      const lessonMinutes = parseFloat(document.getElementById("lessonMinutes").value) || 0;
+      const teacherPercent = parseFloat(document.getElementById("teacherPercent").value) || 0;
+      const costPerThousand = parseFloat(document.getElementById("costPerThousand").value) || 0;
+      const charsPerMin = parseFloat(document.getElementById("charsPerMin").value) || 0;
+      const lessonsPerMonth = parseFloat(document.getElementById("lessonsPerMonth").value) || 0;
+      const studentsCount = parseFloat(document.getElementById("studentsCount").value) || 0;
+
+      // teacher speaking time in minutes
+      const teacherMinutes = lessonMinutes * (teacherPercent / 100);
+
+      // characters used by teacher per lesson
+      const charsPerLesson = teacherMinutes * charsPerMin;
+
+      // cost per character
+      const costPerChar = costPerThousand / 1000;
+
+      // cost per lesson
+      const costPerLesson = charsPerLesson * costPerChar;
+
+      // per student per month (lessons per month)
+      const costPerStudentMonth = costPerLesson * lessonsPerMonth;
+
+      // total cost (all students)
+      const totalCost = costPerStudentMonth * studentsCount;
+
+      // update UI
+      document.getElementById("teacherMinutesOut").textContent =
+        formatNumber(teacherMinutes, 1) + " min";
+      document.getElementById("charsPerLessonOut").textContent =
+        Math.round(charsPerLesson).toLocaleString() + " chars";
+      document.getElementById("costPerLessonOut").textContent =
+        "$" + formatNumber(costPerLesson, 2);
+      document.getElementById("costPerStudentMonthOut").textContent =
+        "$" + formatNumber(costPerStudentMonth, 2);
+      document.getElementById("totalCostOut").textContent =
+        "$" + formatNumber(totalCost, 2);
+    }
+
+    // Auto-calc on load
+    window.addEventListener("load", calculateCosts);
+  </script>
+</body>
+</html>
