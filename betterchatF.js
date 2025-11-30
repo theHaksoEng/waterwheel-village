@@ -1,7 +1,8 @@
 // === Waterwheel Village Backend (CommonJS) — ELEVENLABS-ONLY CLEAN ===
 
 // ✅ Load env first
-require("dotenv").config();
+require("dotenv").config({ override: true });
+const crypto = require("crypto");
 
 // === OpenAI Setup ===
 const OpenAI = require("openai");
@@ -19,6 +20,17 @@ const fetch = (...args) => import("node-fetch").then(({ default: f }) => f(...ar
 // === Express setup (must come BEFORE app.use) ===
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// === Audio Cache Setup ===
+const AUDIO_CACHE_DIR = path.join(__dirname, "cache", "audio");
+fs.mkdirSync(AUDIO_CACHE_DIR, { recursive: true });
+
+function hashTextForCache(text, voiceId) {
+  // normalize text a bit to avoid trivial differences
+  const normalized = String(text || "").trim();
+  return crypto.createHash("sha256").update(voiceId + ":" + normalized).digest("hex");
+}
+
 
 // 🔒 CORS: restrict to your domain (or "*" while testing)
 const allowed = ["https://www.aaronhakso.com"];
@@ -740,7 +752,7 @@ app.post("/chat", async (req, res) => {
   }
 });
 
-// === Speakbase endpoint (ElevenLabs only; no free fallback) ===
+// === Speakbase endpoint (ElevenLabs with disk cache) ===
 app.post("/speakbase", async (req, res) => {
   const { text, voiceId } = req.body || {};
 
@@ -753,38 +765,77 @@ app.post("/speakbase", async (req, res) => {
     return res.status(400).json({ error: "Missing text or voiceId" });
   }
 
-  console.log(`🔊 Generating audio for voice: ${voiceId}`);
+  // 1) Compute cache key & path
+  const key = hashTextForCache(text, voiceId);
+  const cachedPath = path.join(AUDIO_CACHE_DIR, `${key}.mp3`);
 
   try {
+    // 2) If cached, stream file and return (no ElevenLabs cost)
+    if (fs.existsSync(cachedPath)) {
+      console.log(`🔁 Serving cached audio: ${cachedPath}`);
+      res.setHeader("Content-Type", "audio/mpeg");
+      const stream = fs.createReadStream(cachedPath);
+      stream.on("error", (err) => {
+        console.error("❌ Error reading cached audio:", err.message);
+        if (!res.headersSent) {
+          res.status(500).json({ error: "Failed to read cached audio" });
+        } else {
+          res.end();
+        }
+      });
+      return stream.pipe(res);
+    }
+
+    // 3) Not cached → call ElevenLabs, save, then send
+    console.log(`🔊 Generating new audio for cache key: ${key}`);
+
     const response = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream`,
+      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
       {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "xi-api-key": process.env.ELEVENLABS_API_KEY,
+          Accept: "audio/mpeg",
         },
-        body: JSON.stringify({ text, model_id: "eleven_multilingual_v2" }),
+        body: JSON.stringify({
+          text,
+          model_id: "eleven_multilingual_v2", // keep your current model
+        }),
       }
     );
 
     if (!response.ok) {
       const errorText = await response.text();
       console.error("❌ ElevenLabs API error:", response.status, errorText);
-      return res.status(response.status).json({ error: "ElevenLabs generation failed", details: errorText });
+      return res
+        .status(response.status)
+        .json({ error: "ElevenLabs generation failed", details: errorText });
     }
 
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    // 3a) Save to cache
+    try {
+      fs.writeFileSync(cachedPath, buffer);
+      console.log(`✅ Cached new audio at: ${cachedPath}`);
+    } catch (err) {
+      console.error("⚠️ Failed to write audio cache:", err.message);
+      // We still continue and send the audio; caching just fails silently
+    }
+
+    // 3b) Send audio to client
     res.setHeader("Content-Type", "audio/mpeg");
-    res.setHeader("Transfer-Encoding", "chunked");
-
-    if (response.body) {
-      response.body.pipe(res);
-    } else {
-      throw new Error("ElevenLabs response body is empty.");
-    }
+    res.end(buffer);
   } catch (err) {
     console.error("❌ Speakbase processing error:", err.message);
-    return res.status(500).json({ error: "TTS Generation Failed", details: err.message });
+    if (!res.headersSent) {
+      return res
+        .status(500)
+        .json({ error: "TTS Generation Failed", details: err.message });
+    }
+    res.end();
   }
 });
 

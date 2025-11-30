@@ -1,7 +1,7 @@
 // Waterwheel Village — Pro Chat Widget (WordPress-safe, no emojis)
 (() => {
   // Config
-  const DEFAULT_BACKEND = "https://waterwheel-village.onrender.com";
+  const DEFAULT_BACKEND = "http://localhost:3000";
   const MCARTHUR_VOICE = "fEVT2ExfHe1MyjuiIiU9"; // fixed welcome voice
 
   // Utility

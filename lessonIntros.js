@@ -25,6 +25,7 @@ module.exports = {
   month1: {
     greetings_introductions: {
       teacher: "mcarthur",
+      title: "Greetings and Introductions"
       text:
         "Welcome, [name]. I am Mr. McArthur, the village elder here in Waterwheel Village. Today we will take gentle first steps with greetings and introductions.",
       story:
@@ -42,6 +43,7 @@ module.exports = {
 
     numbers_days_questions: {
       teacher: "johannes",
+      title: "Numbers, Days, and Common Questions"
       text:
         "Good day, [name]. I am Johannes, the farmer. Today we will count together and talk about days and simple questions.",
       story:
@@ -67,6 +69,7 @@ module.exports = {
 
     food_drink: {
       teacher: "fatima",
+      title: "Food and Drinks"
       text:
         "Hello, [name]. I am Fatima, the healer in Waterwheel Village. Today we talk about food and drink, slowly and kindly.",
       story:
@@ -88,6 +91,7 @@ module.exports = {
 
     daily_phrases: {
       teacher: "anika",
+      title: "Everyday Phrases"
       text:
         "Hi, [name]. I am Anika, the seamstress. Today we will practice small daily phrases that make life smoother, like good stitches in cloth.",
       story:
@@ -113,11 +117,12 @@ module.exports = {
   },
 
   // -----------------------
-  // MONTH 2 – Home & Heart
+  // MONTH 2 – Home & Feelings
   // -----------------------
   month2: {
     family_members: {
       teacher: "fatima",
+      title: "Family Members and Relatives"
       text:
         "Hello, [name]. I am Fatima, the healer of Waterwheel Village. Today we talk about something very close to my heart: family.",
       story:
@@ -130,6 +135,7 @@ module.exports = {
 
     house_furniture: {
       teacher: "nadia",
+      title: "Home, Rooms, and Furniture"
       text:
         "Hello, [name]. I am Nadia, the architect in Waterwheel Village. Today we will walk through a home together and learn the words for rooms and furniture.",
       story:
@@ -144,6 +150,7 @@ module.exports = {
 
     routines_chores: {
       teacher: "ibrahim",
+      title: "Daily Routines and Household Chores"
       text:
         "Hello, [name]. I am Ibrahim, the blacksmith of Waterwheel Village. Today we talk about daily routines and small chores — the sparks and rhythm that keep our lives strong and steady.",
       story:
@@ -156,6 +163,7 @@ module.exports = {
 
     feelings_emotions: {
       teacher: "sophia",
+      title: "Feelings and Emotions"
       text:
         "Hello, [name]. I am Sophia, the teacher. Today we will speak about feelings and emotions, slowly and honestly.",
       story:
@@ -183,6 +191,7 @@ module.exports = {
   month3: {
     professions_tools: {
       teacher: "ibrahim",
+      title: "Jobs, Professions, and Work Tools"
       text:
         "Welcome, [name]. I am Ibrahim, the blacksmith. Today we learn words for jobs and tools — the work of hands and heart in Waterwheel Village.",
       story:
@@ -199,6 +208,7 @@ module.exports = {
 
     classroom_office: {
       teacher: "sophia",
+      title: "Classroom and Office Language"
       text:
         "Hello again, [name]. I am Sophia, the teacher. Today we step into classrooms and offices — places where people learn, work, and plan.",
       story:
@@ -215,6 +225,7 @@ module.exports = {
 
     common_tasks: {
       teacher: "johannes",
+      title: "Common Work Tasks and Activites"
       text:
         "Good to see you, [name]. I am Johannes, the farmer. Today we talk about simple tasks — small actions we do many times every day.",
       story:
@@ -234,6 +245,7 @@ module.exports = {
 
     workplace_dialogues: {
       teacher: "liang",
+      title: "Workplace Dialogues and Communication"
       text:
         "Welcome, [name]. I am Liang, the entrepreneur. Today we listen to small conversations at work — polite words that keep trust and cooperation alive.",
       story:
@@ -262,6 +274,7 @@ module.exports = {
   month4: {
     transport: {
       teacher: "johannes",
+      title: "Transport and Getting Around"
       text:
         "Hello, [name]. Johannes here again. Today we travel together — by foot, by bus, by train, maybe even by plane.",
       story:
@@ -276,6 +289,7 @@ module.exports = {
 
     shops_money: {
       teacher: "liang",
+      title: "Shops, Money, and Buying Things"
       text:
         "Welcome back, [name]. I am Liang. Today we visit the shops together and talk about money, prices, and also something more important — fairness.",
       story:
@@ -292,6 +306,7 @@ module.exports = {
 
     asking_directions: {
       teacher: "mcarthur",
+      title: "Asking for and Giving Directions"
       text:
         "Greetings, [name]. It is Mr. McArthur. Today we practise asking and giving directions, so you never feel lost in a new place.",
       story:
@@ -308,6 +323,7 @@ module.exports = {
 
     eating_restaurants: {
       teacher: "anika",
+      title: "Eating in Restaurants and Cafes"
       text:
         "Hi again, [name]. Anika here. Today we sit at a small café table and practise words for eating out in restaurants.",
       story:
@@ -333,6 +349,7 @@ module.exports = {
   month5: {
     body_health: {
       teacher: "sophia",
+      title: "The Body and Health Vocabulary"
       text:
         "Hello, [name]. Sophia speaking. Today we listen to our bodies and learn simple words for health and how we feel physically.",
       story:
@@ -347,6 +364,7 @@ module.exports = {
 
     doctor_medicine: {
       teacher: "fatima",
+      title: "Doctor Visits and Medicine"
       text:
         "Welcome, [name]. Fatima here again. Today we will visit the clinic together and learn words for doctors, medicine, and common symptoms.",
       story:
@@ -367,6 +385,7 @@ module.exports = {
 
     community_places: {
       teacher: "nadia",
+      title: "Community Places and Services"
       text:
         "Good day, [name]. I am Nadia, the architect. Today we walk through the village and learn names for important places in the community.",
       story:
@@ -380,6 +399,7 @@ module.exports = {
 
     emergency_phrases: {
       teacher: "alex",
+      title: "Emergency Phrases and Getting Help"
       text:
         "Hello, [name]. I am Aleksanderi, the village priest. Today we talk about emergencies and the words we need when something goes wrong — and also the words that give comfort.",
       story:
@@ -406,6 +426,7 @@ module.exports = {
   month6: {
     weather_seasons: {
       teacher: "kwame",
+      title: "Weather and Seasons"
       text:
         "Welcome, [name]. I am Kwame, the farmer from Ghana. Today we listen to the sky and the seasons — the big rhythms that guide our lives.",
       story:
@@ -418,6 +439,7 @@ module.exports = {
 
     animals_plants_environment: {
       teacher: "kwame",
+      title: "Animals, Plants, and the Environment"
       text:
         "Hello again, [name]. Kwame here. Today we step into nature — animals, plants, and the land that feeds us.",
       story:
@@ -430,6 +452,7 @@ module.exports = {
 
     traditions_celebrations: {
       teacher: "alex",
+      title: "Traditions and Celebrations"
       text:
         "Hello, [name]. Aleksanderi here. Today we talk about traditions and celebrations — the special days that give colour and meaning to our lives.",
       story:
@@ -442,6 +465,7 @@ module.exports = {
 
     review_integration: {
       teacher: "mcarthur",
+      title: "Review and Village Integration"
       text:
         "Hello, [name]. It is Mr. McArthur again. This time we look back at everything you have learned and bring the words together into your own story.",
       story:
