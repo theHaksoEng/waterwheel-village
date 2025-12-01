@@ -483,13 +483,17 @@ app.get("/lesson/:month/:chapter", async (req, res) => {
     console.error(`Failed to save session:${sessionId}:`, err.message);
   }
 
-  // Welcome + lesson text
-  let welcomeText = "";
-  if (chapter !== "greetings_introductions") {
-    const pretty = humanizeChapter(chapter);
-    welcomeText = `Greetings, ${studentName}! I’m Mr. McArthur, the village elder. Welcome to Waterwheel Village, where we learn together like family. Today, you’ll meet ${characters[intro.teacher].name} to explore ${pretty}. Let’s begin!`;
-  }
+    // Welcome + lesson text
+    let welcomeText = "";
 
+    // Prefer explicit title from lessonIntros, fall back to slug-based label
+    const chapterTitle =
+      (intro && intro.title) ? intro.title : humanizeChapter(chapter);
+  
+    if (chapter !== "greetings_introductions") {
+      welcomeText = `Greetings, ${studentName}! I’m Mr. McArthur, the village elder. Welcome to Waterwheel Village, where we learn together like family. Today, you’ll meet ${characters[intro.teacher].name} to explore ${chapterTitle}. Let’s begin!`;
+    }
+  
   const teacherText = intro.text.replace(/\[name\]/g, studentName);
   const storyText = intro.story.replace(/\[name\]/g, studentName);
   const lessonText = `${teacherText}\n\n${storyText}`;
