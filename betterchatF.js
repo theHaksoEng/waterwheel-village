@@ -199,6 +199,33 @@ const characters = {
   },
 };
 
+// --- ASR Normalizer: fix typical "Who is Sophia" type errors ---
+function normalizeTranscript(rawText, activeCharacterKey, isVoice) {
+  if (!rawText || typeof rawText !== "string") return "";
+
+  let text = rawText.trim();
+  const charName = characters[activeCharacterKey]?.name?.toLowerCase() || "";
+
+  if (isVoice) {
+    // Common mis-hearing: "Who is Sophia..." instead of "Hello Sophia..."
+    if (/^who is sophia\b/i.test(text) && charName.includes("sophia")) {
+      text = text.replace(/^who is sophia\b/i, "Hello Sophia");
+    }
+
+    // If you ever talk "as Richard", this can help too
+    if (/^who is richard\b/i.test(text) && charName.includes("richard")) {
+      text = text.replace(/^who is richard\b/i, "Hello Richard");
+    }
+  }
+
+  // Optional: capitalize first letter for nicer logs / UI
+  if (text.length > 1) {
+    text = text[0].toUpperCase() + text.slice(1);
+  }
+
+  return text;
+}
+
 // === Canon Version + Lore (aligns with your story) ===
 const WWV_VERSION = "2025.11.12";
 const VILLAGE_LORE = `
@@ -258,6 +285,11 @@ function buildSystemPrompt(activeCharacterKey, sessionData, mode) {
     vocabContext = `\nUse/recirculate these lesson words when natural: ${sample}`;
   }
 
+  // List all character names once for the "do not switch" rule
+  const allNames = Object.values(characters)
+    .map((ch) => ch.name)
+    .join(", ");
+
   return [
     `You are an ESL tutor persona from Waterwheel Village (v${WWV_VERSION}).`,
     VILLAGE_LORE,
@@ -265,6 +297,12 @@ function buildSystemPrompt(activeCharacterKey, sessionData, mode) {
     `Style: ${c.style}`,
     `Backstory: ${c.background}`,
     `Signature phrases (use sparingly, naturally): ${c.phrases.join(" | ")}`,
+
+    // 🔒 CHARACTER LOCK: never switch to Liang or anyone else
+    `Character lock: In this conversation you MUST remain ${c.name} only.`,
+    `Never speak as or introduce yourself as any other Waterwheel Village character (${allNames}).`,
+    `Even if the student mentions another name (for example: "Who is Sophia?", "Who is Liang?"), you still answer ONLY as ${c.name}.`,
+
     `Student name: ${student}. Address the student by name.`,
     `Teaching goals: help the student speak fluently, model correct grammar by recasting (implicit correction), keep tone kind and encouraging.`,
     `Never say you're an AI or language model. Stay in character.`,
@@ -543,6 +581,7 @@ app.post("/chat", async (req, res) => {
   console.log("📩 Incoming chat request:", { text: sanitizedText, sessionId, isVoice, name: userNameFromFrontend });
 
   try {
+    // --- Load session data ---
     let sessionData;
     try {
       const sessionRaw = await redis.get(`session:${sessionId}`);
@@ -571,17 +610,24 @@ app.post("/chat", async (req, res) => {
       };
     }
 
+    // --- Username sync ---
     if (userNameFromFrontend && userNameFromFrontend !== sessionData.userName) {
       sessionData.userName = decodeURIComponent(userNameFromFrontend);
     }
 
+    // --- Lesson sync: auto-select correct teacher ---
     if (sessionData.currentLesson) {
       const lesson = lessonIntros[sessionData.currentLesson.month]?.[sessionData.currentLesson.chapter];
       if (lesson) sessionData.character = lesson.teacher;
     }
 
-    // Allow user to switch character by name/alias
-    const requestedCharacterKey = findCharacter(sanitizedText);
+    // --- ASR Normalization ---
+    const activeKeyForASR = sessionData.character || "mcarthur";
+    const normalizedText = normalizeTranscript(sanitizedText, activeKeyForASR, !!isVoice);
+    console.log("🔤 Normalized text:", normalizedText);
+
+    // --- Character switching by text trigger ---
+    const requestedCharacterKey = findCharacter(normalizedText);
     const requestedCharacter = requestedCharacterKey ? characters[requestedCharacterKey] : null;
 
     if (requestedCharacter && requestedCharacterKey !== sessionData.character) {
@@ -590,8 +636,10 @@ app.post("/chat", async (req, res) => {
       sessionData.isWeatherQuery = false;
       sessionData.learnedWords = [];
       sessionData.lessonWordlist = [];
+
       await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
       await saveHistory(sessionId, []);
+
       console.log("🔄 Switched to new character:", requestedCharacterKey);
 
       const introText = `Hello, I am ${requestedCharacter.name}. What would you like to talk about today?`;
@@ -599,15 +647,20 @@ app.post("/chat", async (req, res) => {
 
       res.setHeader("X-WWV-Version", WWV_VERSION);
       res.setHeader("X-WWV-Character", requestedCharacterKey);
-      return res.json({ text: introText, character: requestedCharacterKey, voiceId: requestedCharacter.voiceId, version: WWV_VERSION });
+      return res.json({
+        text: introText,
+        character: requestedCharacterKey,
+        voiceId: requestedCharacter.voiceId,
+        version: WWV_VERSION,
+      });
     }
 
-    // === Word Counting Logic (plural-aware, safer) ===
+    // --- Word Counting Logic ---
     function normalizeToken(t) {
       t = String(t || "").toLowerCase().trim();
       t = t.replace(/[^\w\s-]/g, "");
       if (!t) return t;
-      if (t.length <= 2) return t; // avoid "is"->"i"
+      if (t.length <= 2) return t;
       if (t.endsWith("ies") && t.length > 3) return t.slice(0, -3) + "y";
       if (t.endsWith("es") && t.length > 3) {
         const base = t.slice(0, -2);
@@ -617,7 +670,7 @@ app.post("/chat", async (req, res) => {
       return t;
     }
 
-    const userWords = sanitizedText
+    const userWords = normalizedText
       .toLowerCase()
       .replace(/[^\w\s-]/g, "")
       .split(/\s+/)
@@ -648,11 +701,11 @@ app.post("/chat", async (req, res) => {
       }
     }
 
-    // === Weather flow ===
+    // --- Weather Handling ---
     const weatherKeywords = /\b(weather|temperature|forecast|sunny|rain(y|ing)?|cloud(y|s)?|snow(y|ing)?)\b/i;
 
     if (sessionData.isWeatherQuery) {
-      const cleanedCity = sanitizedText.replace(/,/g, "").trim();
+      const cleanedCity = normalizedText.replace(/,/g, "").trim();
       const weatherData = await getWeather(cleanedCity);
 
       sessionData.isWeatherQuery = false;
@@ -672,58 +725,77 @@ app.post("/chat", async (req, res) => {
         }
 
         const hist = await loadHistory(sessionId);
-        hist.push({ role: "user", content: sanitizedText });
+        hist.push({ role: "user", content: normalizedText });
         hist.push({ role: "assistant", content: weatherReply });
         await saveHistory(sessionId, hist);
 
         res.setHeader("X-WWV-Version", WWV_VERSION);
         res.setHeader("X-WWV-Character", sessionData.character);
-        return res.json({ text: weatherReply, character: sessionData.character, voiceId: characters[sessionData.character].voiceId, version: WWV_VERSION });
+        return res.json({
+          text: weatherReply,
+          character: sessionData.character,
+          voiceId: characters[sessionData.character].voiceId,
+          version: WWV_VERSION,
+        });
       } else {
         const errorReply = `I am sorry, I could not find the weather for "${cleanedCity}". Is there a different city you would like to check?`;
+
         const hist = await loadHistory(sessionId);
-        hist.push({ role: "user", content: sanitizedText });
+        hist.push({ role: "user", content: normalizedText });
         hist.push({ role: "assistant", content: errorReply });
         await saveHistory(sessionId, hist);
 
         res.setHeader("X-WWV-Version", WWV_VERSION);
         res.setHeader("X-WWV-Character", sessionData.character);
-        return res.json({ text: errorReply, character: sessionData.character, voiceId: characters[sessionData.character].voiceId, version: WWV_VERSION });
+        return res.json({
+          text: errorReply,
+          character: sessionData.character,
+          voiceId: characters[sessionData.character].voiceId,
+          version: WWV_VERSION,
+        });
       }
     }
 
-    if (weatherKeywords.test(sanitizedText)) {
+    if (weatherKeywords.test(normalizedText)) {
       sessionData.isWeatherQuery = true;
       await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
       const noCityReply = "I can tell you the weather, but where in the world would you like to know? Please tell me the city.";
 
       const hist = await loadHistory(sessionId);
-      hist.push({ role: "user", content: sanitizedText });
+      hist.push({ role: "user", content: normalizedText });
       hist.push({ role: "assistant", content: noCityReply });
       await saveHistory(sessionId, hist);
 
       res.setHeader("X-WWV-Version", WWV_VERSION);
       res.setHeader("X-WWV-Character", sessionData.character);
-      return res.json({ text: noCityReply, character: sessionData.character, voiceId: characters[sessionData.character].voiceId, version: WWV_VERSION });
+      return res.json({
+        text: noCityReply,
+        character: sessionData.character,
+        voiceId: characters[sessionData.character].voiceId,
+        version: WWV_VERSION,
+      });
     }
 
-    // --- OpenAI Logic ---
+    // --- Build message history for OpenAI ---
     let messages = await loadHistory(sessionId);
-    messages.push({ role: "user", content: sanitizedText });
+    messages.push({ role: "user", content: normalizedText });
     await saveHistory(sessionId, messages);
 
-    const lowered = sanitizedText.toLowerCase();
+    // --- Student level detection ---
+    const lowered = normalizedText.toLowerCase();
     if (lowered.includes("beginner")) sessionData.studentLevel = "beginner";
     else if (lowered.includes("intermediate")) sessionData.studentLevel = "intermediate";
     else if (lowered.includes("expert")) sessionData.studentLevel = "expert";
 
     await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
 
+    // --- System prompt ---
     const activeCharacterKey = sessionData.character || "mcarthur";
     const systemPrompt = buildSystemPrompt(activeCharacterKey, sessionData, isVoice ? "voice" : "text");
 
     console.log("🛠 Using systemPrompt:", systemPrompt);
 
+    // --- OpenAI request ---
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [{ role: "system", content: systemPrompt }, ...messages],
@@ -733,9 +805,11 @@ app.post("/chat", async (req, res) => {
     const reply = completion.choices[0].message.content.trim();
     console.log("💬 OpenAI reply:", reply);
 
+    // --- Save response ---
     messages = await loadHistory(sessionId);
     messages.push({ role: "assistant", content: reply });
     await saveHistory(sessionId, messages);
+
     await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
 
     const voiceId = characters[activeCharacterKey].voiceId;
@@ -750,6 +824,7 @@ app.post("/chat", async (req, res) => {
       newlyLearned,
       version: WWV_VERSION,
     });
+
   } catch (err) {
     console.error("❌ Chat error:", err?.message || err, err?.stack || "");
     return res.status(500).json({ error: "Chat failed", details: err?.message || "Unknown error" });
