@@ -54,6 +54,10 @@
       this.lastVoiceId = null;
       this.audioReady = true;
 
+      // Milestone flags (per lesson)
+      this._milestone10 = false;
+      this._milestoneComplete = false;
+
       // TTS queue
       this.ttsQueue = [];
       this.ttsPlaying = false;
@@ -240,7 +244,6 @@
         progLbl: qs(this.shadowRoot, "#progLbl"),
         player: qs(this.shadowRoot, "#player"),
         vocabPanel: qs(this.shadowRoot, ".col-words"),
-
       };
     }
 
@@ -372,43 +375,72 @@
       });
       this.renderWordlist();
     }
-    mergeNewlyLearned(list) {
-      if (!Array.isArray(list)) return;
-      list.forEach((w) => {
-        if (!w || typeof w !== "string") return;
-        const s = w.trim().toLowerCase();
-        if (!s || s.indexOf("you've learned all") >= 0) return;
-        if (this.wordsetEn.has(s)) this.learned.add(s);
-      });
-      this.renderWordlist();
-    }
 
-    // 🔔 Handle backend milestones: flash vocab panel + play bell
-    handleMilestones(data) {
-      if (!data) return;
+    // 🔔 Handle milestones entirely on the frontend
+    handleMilestones(_data) {
+      const total = this.wordlist.length;
+      const learnedCount = this.learned.size;
+      if (!total) return;
 
-      const panel = this.ui.vocabPanel;
-      const bell = document.getElementById("milestone-sound"); // from index.html
+      const name = (this.ui.name.value || "friend").trim();
 
-      const hit10 = !!data.milestone10;
-      const chapterDone = !!data.chapterComplete;
+      // First time hitting 10 learned words in this chapter
+      if (!this._milestone10 && learnedCount >= 10) {
+        this._milestone10 = true;
 
-      if (!hit10 && !chapterDone) return;
+        this.addMsg(
+          "bot",
+          `${name}, you’ve already used 10 new words from this unit! 🎉 Great progress!`
+        );
 
-      // Bell sound
-      if (bell) {
-        try {
-          bell.currentTime = 0;
-          bell.play().catch(() => {});
-        } catch {
-          // ignore
+        const bell = document.getElementById("milestone-sound");
+        if (bell) {
+          try {
+            bell.currentTime = 0;
+            bell.play().catch(() => {});
+          } catch {
+            // ignore
+          }
+        }
+
+        if (this.ui.vocabPanel) {
+          this.ui.vocabPanel.classList.add("flash-border");
+          setTimeout(() => this.ui.vocabPanel.classList.remove("flash-border"), 2000);
         }
       }
 
-      // Flash vocab panel border
-      if (panel) {
-        panel.classList.add("flash-border");
-        setTimeout(() => panel.classList.remove("flash-border"), 2000);
+      // When all words in this chapter are learned
+      if (!this._milestoneComplete && learnedCount === total && total > 0) {
+        this._milestoneComplete = true;
+
+        const slug = this.ui.chapter.value || "this_lesson";
+        const pretty = slug
+          .split("_")
+          .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : ""))
+          .join(" ");
+        const badgeTitle = `${pretty} Explorer of Waterwheel Village 🏅`;
+
+        this.addMsg(
+          "bot",
+          `🎉 You’ve learned all the words for this lesson!\n\n` +
+            `(C) talk freely about your week?\n\n` +
+            `You are now a ${badgeTitle}`
+        );
+
+        const bell = document.getElementById("milestone-sound");
+        if (bell) {
+          try {
+            bell.currentTime = 0;
+            bell.play().catch(() => {});
+          } catch {
+            // ignore
+          }
+        }
+
+        if (this.ui.vocabPanel) {
+          this.ui.vocabPanel.classList.add("flash-border");
+          setTimeout(() => this.ui.vocabPanel.classList.remove("flash-border"), 2000);
+        }
       }
     }
 
@@ -534,6 +566,8 @@
       this.wordlist = [];
       this.wordsetEn = new Set();
       this.learned.clear();
+      this._milestone10 = false;
+      this._milestoneComplete = false;
       this.renderWordlist();
 
       // Clear chat UI for a fresh lesson
@@ -573,6 +607,8 @@
         this.wordlist = [];
         this.wordsetEn = new Set();
         this.learned.clear();
+        this._milestone10 = false;
+        this._milestoneComplete = false;
         this.renderWordlist();
       }
 
@@ -645,10 +681,9 @@
 
         if (d.newlyLearned) this.mergeNewlyLearned(d.newlyLearned);
 
-        // 🔔 Trigger visual/audio celebration for milestones
+        // 🔔 Trigger visual/audio celebration for milestones (frontend-only)
         this.handleMilestones(d);
       } catch (e) {
-
         this.addTyping(false);
         this.addMsg(
           "bot",
@@ -831,9 +866,3 @@
     }
   });
 })();
-
-  
-  
-  
-  
-  
