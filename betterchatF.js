@@ -662,24 +662,63 @@ app.post("/chat", async (req, res) => {
       userSet.add(normalizeToken(w));
     }
 
-    let newlyLearned = [];
-    if (sessionData.lessonWordlist.length > 0) {
-      const wordsRemaining = [];
-      for (const rawWord of sessionData.lessonWordlist) {
-        const lessonWord = String(rawWord || "").toLowerCase().trim();
-        const normLesson = normalizeToken(lessonWord);
-        if ((userSet.has(lessonWord) || userSet.has(normLesson)) && !sessionData.learnedWords.includes(lessonWord)) {
-          sessionData.learnedWords.push(lessonWord);
-          newlyLearned.push(lessonWord);
-        } else {
-          wordsRemaining.push(lessonWord);
+      // --- Word tracking + milestones ---
+      let newlyLearned = [];
+      let milestone10 = false;
+      let chapterComplete = false;
+      let badgeTitle = null;
+  
+      const previousLearnedCount = sessionData.learnedWords.length;
+      const previousWordsRemaining = sessionData.lessonWordlist.length;
+  
+      if (sessionData.lessonWordlist.length > 0) {
+        const wordsRemaining = [];
+        for (const rawWord of sessionData.lessonWordlist) {
+          const lessonWord = String(rawWord || "").toLowerCase().trim();
+          const normLesson = normalizeToken(lessonWord);
+          if ((userSet.has(lessonWord) || userSet.has(normLesson)) && !sessionData.learnedWords.includes(lessonWord)) {
+            sessionData.learnedWords.push(lessonWord);
+            newlyLearned.push(lessonWord); // individual words, as before
+          } else {
+            wordsRemaining.push(lessonWord);
+          }
+        }
+        sessionData.lessonWordlist = wordsRemaining;
+  
+        // 🎯 Milestone: first time they reach 10 learned words in this chapter
+        if (previousLearnedCount < 10 && sessionData.learnedWords.length >= 10) {
+          milestone10 = true;
+          // You can hard-code Sally or use sessionData.userName:
+          const studentName = sessionData.userName || "friend";
+          newlyLearned.push(`\n\nSally, you’ve already used 10 new words from this unit! 🎉`);
+          // (If you prefer dynamic name: use ${studentName} instead of "Sally")
+        }
+  
+        // 🎯 Milestone: chapter complete (all words used at least once)
+        if (
+          sessionData.lessonWordlist.length === 0 &&   // no words left
+          previousWordsRemaining > 0 &&                // there *were* words before
+          sessionData.learnedWords.length > 0
+        ) {
+          chapterComplete = true;
+  
+          const chapterName = sessionData.currentLesson
+            ? humanizeChapter(sessionData.currentLesson.chapter)
+            : "this lesson";
+  
+          badgeTitle = `${chapterName} Explorer`; // e.g. "Body And Health Vocabulary Explorer"
+  
+          newlyLearned.push(
+            `\n\n🎉 You've learned all the words for this lesson! Great job!\n\n` +
+            `You are now a ${badgeTitle} of Waterwheel Village 🏅\n\n` +
+            `If you like, we can:\n` +
+            ` (A) review these words again,\n` +
+            ` (B) write a short story using them, or\n` +
+            ` (C) talk freely about your week.`
+          );
         }
       }
-      sessionData.lessonWordlist = wordsRemaining;
-      if (sessionData.lessonWordlist.length === 0 && sessionData.learnedWords.length > 0) {
-        newlyLearned.push("\n\n🎉 You've learned all the words for this lesson! Great job!");
-      }
-    }
+  
 
     // --- Build message history for OpenAI ---
     let messages = await loadHistory(sessionId);
@@ -727,8 +766,12 @@ app.post("/chat", async (req, res) => {
       voiceId,
       learnedCount: sessionData.learnedWords.length,
       newlyLearned,
+      milestone10,
+      chapterComplete,
+      badgeTitle,
       version: WWV_VERSION,
     });
+
 
   } catch (err) {
     console.error("❌ Chat error:", err?.message || err, err?.stack || "");

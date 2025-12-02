@@ -77,6 +77,19 @@
           .grid { display:flex; gap:0; align-items:stretch }
           .col-chat { flex:2; min-width:0; border-right:1px solid #e5e7eb }
           .col-words { flex:1; min-width:260px; background:#fff }
+
+          /* 🔔 Flash animation for vocab panel on milestones */
+          .col-words.flash-border {
+            animation: flash-border 2s ease-in-out;
+          }
+          @keyframes flash-border {
+            0%   { box-shadow: 0 0 0 0 rgba(255, 215, 0, 0.0); }
+            25%  { box-shadow: 0 0 10px 3px rgba(255, 215, 0, 0.9); }
+            50%  { box-shadow: 0 0 0 0 rgba(255, 215, 0, 0.0); }
+            75%  { box-shadow: 0 0 10px 3px rgba(255, 215, 0, 0.9); }
+            100% { box-shadow: 0 0 0 0 rgba(255, 215, 0, 0.0); }
+          }
+
           .pane { display:flex; gap:8px; padding:10px 12px; background:#f8fafc; border-bottom:1px solid #e5e7eb; flex-wrap:wrap; align-items:center }
           .pane input, .pane select { border:1px solid #d1d5db; border-radius:10px; padding:8px 10px; outline:none; min-width:140px }
           .btn { border:0; background:#0ea5e9; color:#fff; padding:9px 12px; border-radius:10px; cursor:pointer; font-weight:600 }
@@ -226,6 +239,8 @@
         progBar: qs(this.shadowRoot, "#progBar"),
         progLbl: qs(this.shadowRoot, "#progLbl"),
         player: qs(this.shadowRoot, "#player"),
+        vocabPanel: qs(this.shadowRoot, ".col-words"),
+
       };
     }
 
@@ -356,6 +371,45 @@
         if (this.wordsetEn.has(s)) this.learned.add(s);
       });
       this.renderWordlist();
+    }
+    mergeNewlyLearned(list) {
+      if (!Array.isArray(list)) return;
+      list.forEach((w) => {
+        if (!w || typeof w !== "string") return;
+        const s = w.trim().toLowerCase();
+        if (!s || s.indexOf("you've learned all") >= 0) return;
+        if (this.wordsetEn.has(s)) this.learned.add(s);
+      });
+      this.renderWordlist();
+    }
+
+    // 🔔 Handle backend milestones: flash vocab panel + play bell
+    handleMilestones(data) {
+      if (!data) return;
+
+      const panel = this.ui.vocabPanel;
+      const bell = document.getElementById("milestone-sound"); // from index.html
+
+      const hit10 = !!data.milestone10;
+      const chapterDone = !!data.chapterComplete;
+
+      if (!hit10 && !chapterDone) return;
+
+      // Bell sound
+      if (bell) {
+        try {
+          bell.currentTime = 0;
+          bell.play().catch(() => {});
+        } catch {
+          // ignore
+        }
+      }
+
+      // Flash vocab panel border
+      if (panel) {
+        panel.classList.add("flash-border");
+        setTimeout(() => panel.classList.remove("flash-border"), 2000);
+      }
     }
 
     // Audio / TTS
@@ -590,7 +644,11 @@
         if (this.voice && d.voiceId) this.enqueueSpeak(reply, d.voiceId);
 
         if (d.newlyLearned) this.mergeNewlyLearned(d.newlyLearned);
+
+        // 🔔 Trigger visual/audio celebration for milestones
+        this.handleMilestones(d);
       } catch (e) {
+
         this.addTyping(false);
         this.addMsg(
           "bot",
