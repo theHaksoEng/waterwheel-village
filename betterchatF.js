@@ -98,9 +98,6 @@ console.log("✅ Using Redis at:", redisUrl);
   }
 })();
 
-// === WeatherAPI Setup ===
-const WEATHERAPI_KEY = process.env.WEATHERAPI_KEY;
-console.log("WeatherAPI Key loaded:", WEATHERAPI_KEY ? "Yes" : "No");
 
 // === Character Data ===
 const characters = {
@@ -554,23 +551,6 @@ app.get("/lesson/:month/:chapter", async (req, res) => {
   res.json(response);
 });
 
-// === NEW: Weather API Function ===
-async function getWeather(city) {
-  try {
-    const response = await fetch(
-      `https://api.weatherapi.com/v1/current.json?key=${WEATHERAPI_KEY}&q=${encodeURIComponent(city)}&aqi=no`
-    );
-    const data = await response.json();
-    if (response.status !== 200) {
-      console.error("❌ Weather API error:", data?.error?.message || "unknown");
-      return null;
-    }
-    return data;
-  } catch (error) {
-    console.error("❌ Failed to fetch weather data:", error);
-    return null;
-  }
-}
 
 // === CHAT endpoint (text-only response; no free/fallback TTS) ===
 app.post("/chat", async (req, res) => {
@@ -591,7 +571,7 @@ app.post("/chat", async (req, res) => {
             character: "mcarthur",
             studentLevel: null,
             currentLesson: null,
-            isWeatherQuery: false,
+            isWeatherQuery: false, // can stay, just unused
             learnedWords: [],
             userName: null,
             lessonWordlist: [],
@@ -701,81 +681,6 @@ app.post("/chat", async (req, res) => {
       }
     }
 
-    // --- Weather Handling ---
-    const weatherKeywords = /\b(weather|temperature|forecast|sunny|rain(y|ing)?|cloud(y|s)?|snow(y|ing)?)\b/i;
-
-    if (sessionData.isWeatherQuery) {
-      const cleanedCity = normalizedText.replace(/,/g, "").trim();
-      const weatherData = await getWeather(cleanedCity);
-
-      sessionData.isWeatherQuery = false;
-      await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
-
-      if (weatherData) {
-        const tempC = weatherData.current.temp_c;
-        const condition = weatherData.current.condition.text.toLowerCase();
-
-        let weatherReply = "";
-        if (sessionData.character === "johannes") {
-          weatherReply = `The soil is always talking, but for a real report on ${cleanedCity}, I see the sky is ${condition} and the temperature is around ${tempC}°C. That's a day for working in the fields.`;
-        } else if (sessionData.character === "mcarthur") {
-          weatherReply = `In ${cleanedCity}, the weather is currently ${condition} and it’s about ${tempC}°C. A beautiful day for us here, too.`;
-        } else {
-          weatherReply = `Okay! In ${cleanedCity} the weather is ${condition} and the temperature is ${tempC}°C. That's good to know.`;
-        }
-
-        const hist = await loadHistory(sessionId);
-        hist.push({ role: "user", content: normalizedText });
-        hist.push({ role: "assistant", content: weatherReply });
-        await saveHistory(sessionId, hist);
-
-        res.setHeader("X-WWV-Version", WWV_VERSION);
-        res.setHeader("X-WWV-Character", sessionData.character);
-        return res.json({
-          text: weatherReply,
-          character: sessionData.character,
-          voiceId: characters[sessionData.character].voiceId,
-          version: WWV_VERSION,
-        });
-      } else {
-        const errorReply = `I am sorry, I could not find the weather for "${cleanedCity}". Is there a different city you would like to check?`;
-
-        const hist = await loadHistory(sessionId);
-        hist.push({ role: "user", content: normalizedText });
-        hist.push({ role: "assistant", content: errorReply });
-        await saveHistory(sessionId, hist);
-
-        res.setHeader("X-WWV-Version", WWV_VERSION);
-        res.setHeader("X-WWV-Character", sessionData.character);
-        return res.json({
-          text: errorReply,
-          character: sessionData.character,
-          voiceId: characters[sessionData.character].voiceId,
-          version: WWV_VERSION,
-        });
-      }
-    }
-
-    if (weatherKeywords.test(normalizedText)) {
-      sessionData.isWeatherQuery = true;
-      await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
-      const noCityReply = "I can tell you the weather, but where in the world would you like to know? Please tell me the city.";
-
-      const hist = await loadHistory(sessionId);
-      hist.push({ role: "user", content: normalizedText });
-      hist.push({ role: "assistant", content: noCityReply });
-      await saveHistory(sessionId, hist);
-
-      res.setHeader("X-WWV-Version", WWV_VERSION);
-      res.setHeader("X-WWV-Character", sessionData.character);
-      return res.json({
-        text: noCityReply,
-        character: sessionData.character,
-        voiceId: characters[sessionData.character].voiceId,
-        version: WWV_VERSION,
-      });
-    }
-
     // --- Build message history for OpenAI ---
     let messages = await loadHistory(sessionId);
     messages.push({ role: "user", content: normalizedText });
@@ -830,6 +735,7 @@ app.post("/chat", async (req, res) => {
     return res.status(500).json({ error: "Chat failed", details: err?.message || "Unknown error" });
   }
 });
+
 
 // === Speakbase endpoint (ElevenLabs with disk cache) ===
 app.post("/speakbase", async (req, res) => {
