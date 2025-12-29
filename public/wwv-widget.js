@@ -33,6 +33,14 @@
       .replace(/[_~]/g, "")            // stray emphasis markers
       .trim();
   }
+// ===============================
+// Static lesson intro audio (no ElevenLabs)
+// ===============================
+function playLessonIntro(month, chapter) {
+  const src = `/audio_lessons/${month}_${chapter}_intro.mp3`;
+  const audio = new Audio(src);
+  return audio.play();
+}
 
   class WaterwheelChat extends HTMLElement {
     constructor() {
@@ -559,6 +567,9 @@
         alert("Pick Month and Chapter first");
         return;
       }
+            // ✅ Play STATIC intro MP3 (no ElevenLabs credits)
+      playLessonIntro(m, c).catch(() => {});
+
       const name = (this.ui.name.value || "friend").trim();
       localStorage.setItem("wwv-name", name);
 
@@ -631,13 +642,13 @@
 
         // McArthur welcome (fixed voice), then teacher lesson (d.voiceId)
         if (d.welcomeText) {
-          this.addMsg("bot", d.welcomeText);
-          if (this.voice) this.enqueueSpeak(d.welcomeText, MCARTHUR_VOICE);
-        }
-        if (d.lessonText) {
-          this.addMsg("bot", d.lessonText);
-          if (this.voice && d.voiceId) this.enqueueSpeak(d.lessonText, d.voiceId);
-        }
+  this.addMsg("bot", d.welcomeText);
+  // 🔇 no TTS here (static MP3 handles intro)
+}
+if (d.lessonText) {
+  this.addMsg("bot", d.lessonText);
+  // 🔇 no TTS here (static MP3 handles intro)
+}
         if (d.voiceId) this.lastVoiceId = d.voiceId;
 
         this.setStatus("");
