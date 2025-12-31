@@ -1,7 +1,7 @@
 // Waterwheel Village — Pro Chat Widget (WordPress-safe, no emojis)
 (() => {
   // Config
-const DEFAULT_BACKEND = "https://waterwheel-village.onrender.com";
+  const DEFAULT_BACKEND = "https://waterwheel-village.onrender.com";
   const MCARTHUR_VOICE = "fEVT2ExfHe1MyjuiIiU9"; // fixed welcome voice
 
   // Utility
@@ -37,26 +37,17 @@ const DEFAULT_BACKEND = "https://waterwheel-village.onrender.com";
   class WaterwheelChat extends HTMLElement {
     constructor() {
       super();
-      // Attributes
-const attrBackend = (this.getAttribute("backend") || "").trim();
-const base = (attrBackend || DEFAULT_BACKEND || "").trim();
 
-// Normalize (remove trailing slashes)
-this.backend = base.replace(/\/+$/, "");
+      // Attributes / backend normalize
+      const attrBackend = (this.getAttribute("backend") || "").trim();
+      const base = (attrBackend || DEFAULT_BACKEND || "").trim();
+      this.backend = base.replace(/\/+$/, "");
 
-// Hard failsafe: if empty or localhost, force Render
-if (!this.backend || /localhost|127\.0\.0\.1/i.test(this.backend)) {
-  this.backend = "https://waterwheel-village.onrender.com";
-}
+      // Hard failsafe: if empty or localhost, force Render
+      if (!this.backend || /localhost|127\.0\.0\.1/i.test(this.backend)) {
+        this.backend = DEFAULT_BACKEND;
+      }
 
-// Debug (you can remove later)
-console.log("WWV backend =", this.backend);
-
-// HARD FAILSAFE: if backend is missing or localhost, force Render
-if (!this.getAttribute("backend") || /localhost|127\.0\.0\.1/i.test(this.backend)) {
-  this.backend = "https://waterwheel-village.onrender.com";
-}
-console.log("WWV BACKEND (final):", this.backend);      
       this.voice = (this.getAttribute("voice") || "on") === "on";
 
       // Session
@@ -70,13 +61,14 @@ console.log("WWV BACKEND (final):", this.backend);
       this.wordsetEn = new Set();    // lowercased english words
       this.learned = new Set();      // learned lowercased words
       this.lastVoiceId = null;
-          // === Demo mode (safe + cheap) ===
-    this.demo = true;                 // set false for paid school
-    this.demoVoiceMax = 8;            // total voiced replies per session
-    this.demoVoiceUsed = 0;
-    this.demoVoicedByCharacter = {};  // limit per character
-    this.demoMaxChars = 220;          // max chars spoken in demo
-    this.activeCharacter = "mcarthur";
+
+      // === Demo mode (safe + cheap) ===
+      this.demo = true;                 // set false for paid school
+      this.demoVoiceMax = 8;            // total voiced replies per session
+      this.demoVoiceUsed = 0;
+      this.demoVoicedByCharacter = {};  // limit per character
+      this.demoMaxChars = 220;          // max chars spoken in demo
+      this.activeCharacter = "mcarthur";
 
       this.audioReady = true;
 
@@ -108,10 +100,8 @@ console.log("WWV BACKEND (final):", this.backend);
           .col-chat { flex:2; min-width:0; border-right:1px solid #e5e7eb }
           .col-words { flex:1; min-width:260px; background:#fff }
 
-          /* 🔔 Flash animation for vocab panel on milestones */
-          .col-words.flash-border {
-            animation: flash-border 2s ease-in-out;
-          }
+          /* Flash animation for vocab panel on milestones */
+          .col-words.flash-border { animation: flash-border 2s ease-in-out; }
           @keyframes flash-border {
             0%   { box-shadow: 0 0 0 0 rgba(255, 215, 0, 0.0); }
             25%  { box-shadow: 0 0 10px 3px rgba(255, 215, 0, 0.9); }
@@ -149,41 +139,37 @@ console.log("WWV BACKEND (final):", this.backend);
           .pill.learned { background:#dcfce7; color:#065f46; border-color:#86efac }
           .pill .say { margin-left:6px; border:0; background:#e2e8f0; color:#0f172a; border-radius:9999px; padding:2px 8px; font-size:12px; cursor:pointer }
           .pill .say:hover { background:#cbd5e1 }
+
           /* Demo character buttons */
-.char{
-  border:1px solid #e2e8f0;
-  background:#ffffff;
-  color:#0f172a;
-  border-radius:9999px;
-  padding:8px 12px;
-  cursor:pointer;
-  font-weight:600;
-  transition: background .2s ease, color .2s ease;
-}
-
-.char:hover{
-  background:#f1f5f9;
-}
-
-.char.active{
-  background:#0ea5e9;
-  color:#ffffff;
-  border-color:#0ea5e9;
-}
+          .demoRow { display:flex; gap:10px; flex-wrap:wrap; align-items:center; padding:10px 12px; border-bottom:1px solid #e5e7eb; background:#ffffff }
+          .char{
+            border:1px solid #e2e8f0;
+            background:#ffffff;
+            color:#0f172a;
+            border-radius:9999px;
+            padding:8px 12px;
+            cursor:pointer;
+            font-weight:600;
+            transition: background .2s ease, color .2s ease;
+          }
+          .char:hover{ background:#f1f5f9; }
+          .char.active{
+            background:#0ea5e9;
+            color:#ffffff;
+            border-color:#0ea5e9;
+          }
         </style>
 
         <div class="wrap" role="region" aria-label="Waterwheel Village Chat">
           <div class="top">Waterwheel Village</div>
-          <div class="pane" style="gap:10px">
-  <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center">
-    <button class="char" data-char="mcarthur" type="button">🎓 McArthur</button>
-    <button class="char" data-char="kwame" type="button">🌾 Kwame</button>
-    <button class="char" data-char="nadia" type="button">🏛️ Nadia</button>
-    <button class="char" data-char="sophia" type="button">📚 Sophia</button>
-  </div>
-  <span class="hint" id="demoHint">Demo: voice replies are short + limited.</span>
-</div>
 
+          <div class="demoRow">
+            <button class="char" data-char="mcarthur" type="button">McArthur</button>
+            <button class="char" data-char="kwame" type="button">Kwame</button>
+            <button class="char" data-char="nadia" type="button">Nadia</button>
+            <button class="char" data-char="sophia" type="button">Sophia</button>
+            <span class="hint" id="demoHint">Demo: voice replies are short + limited.</span>
+          </div>
 
           <div class="pane">
             <input id="name" placeholder="Your name" />
@@ -276,7 +262,8 @@ console.log("WWV BACKEND (final):", this.backend);
           </div>
         </div>
 
-<audio id="player" controls playsinline></audio>
+        <audio id="player" controls playsinline></audio>
+        <audio id="milestone-sound" preload="auto"></audio>
       `;
 
       // UI refs
@@ -301,82 +288,80 @@ console.log("WWV BACKEND (final):", this.backend);
         progLbl: qs(this.shadowRoot, "#progLbl"),
         player: qs(this.shadowRoot, "#player"),
         vocabPanel: qs(this.shadowRoot, ".col-words"),
+        demoHint: qs(this.shadowRoot, "#demoHint"),
       };
     }
 
-  connectedCallback() {
-  const savedName = localStorage.getItem("wwv-name") || "friend";
-  this.ui.name.value = savedName;
+    connectedCallback() {
+      const savedName = localStorage.getItem("wwv-name") || "friend";
+      this.ui.name.value = savedName;
 
-  this.ui.name.addEventListener("change", () =>
-    localStorage.setItem("wwv-name", this.ui.name.value.trim())
-  );
+      this.ui.name.addEventListener("change", () =>
+        localStorage.setItem("wwv-name", this.ui.name.value.trim())
+      );
 
-  this.ui.start.addEventListener("click", async () => {
-    const m = this.ui.month.value;
-    const c = this.ui.chapter.value;
-    if (!m || !c) {
-      alert("Pick Month and Chapter first");
-      return;
+      // Character picker MUST be inside connectedCallback
+      const allChars = Array.from(this.shadowRoot.querySelectorAll(".char"));
+      const highlight = () => {
+        allChars.forEach((b) => b.classList.toggle("active", (b.getAttribute("data-char") || "") === this.activeCharacter));
+      };
+
+      allChars.forEach((btn) => {
+        btn.addEventListener("click", () => {
+          this.activeCharacter = btn.getAttribute("data-char") || "mcarthur";
+          highlight();
+          this.addMsg("bot", `Demo character set to: ${this.activeCharacter}. Say hello!`);
+        });
+      });
+
+      // default highlight
+      if (!this.activeCharacter) this.activeCharacter = "mcarthur";
+      highlight();
+
+      this.ui.start.addEventListener("click", async () => {
+        const m = this.ui.month.value;
+        const c = this.ui.chapter.value;
+        if (!m || !c) {
+          alert("Pick Month and Chapter first");
+          return;
+        }
+
+        // Prime audio + try intro, but never block the lesson
+        await this.unlockAudio();
+        try {
+          await this.playLessonIntro(m, c);
+        } catch (e) {
+          console.warn("Intro failed:", e);
+        }
+
+        await this.startLesson();
+      });
+
+      this.ui.voiceToggle.addEventListener("click", () => {
+        this.voice = !this.voice;
+        this.ui.voiceToggle.textContent = this.voice ? "Voice: ON" : "Voice: OFF";
+      });
+
+      this.ui.voiceTest.addEventListener("click", () => {
+        const vid = this.lastVoiceId || MCARTHUR_VOICE;
+        this.enqueueSpeak("Voice test: hello from Waterwheel Village.", vid);
+      });
+
+      this.ui.download.addEventListener("click", () => this.downloadTranscript());
+      this.ui.send.addEventListener("click", () => this.send());
+
+      this.ui.input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          this.send();
+        }
+      });
+
+      this.ui.showFi.addEventListener("change", () => this.renderWordlist());
+      this.setupMic();
     }
 
-    // Prime audio + try intro, but never block the lesson
-    await this.unlockAudio();
-    try {
-      await this.playLessonIntro(m, c);
-    } catch (e) {
-      console.warn("Intro failed:", e);
-    }
-
-    await this.startLesson();
-  });
-
-  this.ui.voiceToggle.addEventListener("click", () => {
-    this.voice = !this.voice;
-    this.ui.voiceToggle.textContent = this.voice ? "Voice: ON" : "Voice: OFF";
-  });
-
-  this.ui.voiceTest.addEventListener("click", () => {
-    const vid = this.lastVoiceId || MCARTHUR_VOICE;
-    this.enqueueSpeak("Voice test: hello from Waterwheel Village.", vid);
-  });
-
-  this.ui.download.addEventListener("click", () => this.downloadTranscript());
-  this.ui.send.addEventListener("click", () => this.send());
-
-  this.ui.input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      this.send();
-    }
-  });
-
-  this.ui.showFi.addEventListener("change", () => this.renderWordlist());
-  this.setupMic();
-}
-// Character picker
-this.shadowRoot.querySelectorAll(".char").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    this.activeCharacter = btn.getAttribute("data-char") || "mcarthur";
-
-    // UI highlight
-    this.shadowRoot.querySelectorAll(".char").forEach(b => b.classList.remove("active"));
-    btn.classList.add("active");
-
-    // Reset demo voice counters when switching (optional)
-    // this.demoVoiceUsed = 0;
-    // this.demoVoicedByCharacter = {};
-
-    this.addMsg("bot", `Demo character set to: ${this.activeCharacter}. Say hello!`);
-  });
-});
-
-// default active highlight
-const first = this.shadowRoot.querySelector('.char[data-char="mcarthur"]');
-if (first) first.classList.add("active");
-
-
-       setStatus(msg) {
+    setStatus(msg) {
       this.ui.status.textContent = msg || "";
     }
 
@@ -385,7 +370,6 @@ if (first) first.classList.add("active");
       if (!p) return;
       try {
         p.muted = true;
-        // tiny silent play/pause to satisfy mobile autoplay policies
         const pr = p.play();
         if (pr && pr.catch) await pr.catch(() => {});
         p.pause();
@@ -402,10 +386,6 @@ if (first) first.classList.add("active");
       const base = String(this.backend || "").replace(/\/+$/, "");
       const src = `${base}/audio_lessons/${month}_${chapter}_intro.mp3`;
 
-      console.log("INTRO URL:", src);
-      console.log("INTRO SRC:", src);
-
-
       try { p.pause(); } catch {}
       try { p.currentTime = 0; } catch {}
 
@@ -415,16 +395,13 @@ if (first) first.classList.add("active");
       p.src = src;
       p.load();
 
-      // Wait until it can play or errors
       await new Promise((resolve) => {
         const ok = () => resolve();
-        const bad = () => resolve(); // resolve so lesson still starts
-
+        const bad = () => resolve();
         p.addEventListener("canplaythrough", ok, { once: true });
         p.addEventListener("error", bad, { once: true });
       });
 
-      // Try to play, but never block lesson start
       try {
         const pr = p.play();
         if (pr && pr.catch) await pr.catch(() => {});
@@ -458,11 +435,12 @@ if (first) first.classList.add("active");
       }
     }
 
-    // Wordlist UI (with “Say” buttons)
+    // Wordlist UI
     renderWordlist() {
       const wrap = this.ui.wordsWrap;
       wrap.innerHTML = "";
       const showFi = this.ui.showFi.checked;
+
       this.wordlist.forEach(({ en, fi }) => {
         const key = String(en || "").toLowerCase();
         const pill = ce("div", { className: "pill", role: "group" });
@@ -473,7 +451,6 @@ if (first) first.classList.add("active");
         });
         pill.appendChild(label);
 
-        // Say button
         const sayBtn = ce("button", {
           className: "say",
           type: "button",
@@ -482,7 +459,6 @@ if (first) first.classList.add("active");
         sayBtn.addEventListener("click", () => this.pronounceWord(en));
         pill.appendChild(sayBtn);
 
-        // Click pill to insert into input (but not when clicking Say button)
         pill.addEventListener("click", (ev) => {
           if (ev.target === sayBtn) return;
           this.ui.input.value =
@@ -492,6 +468,7 @@ if (first) first.classList.add("active");
 
         wrap.appendChild(pill);
       });
+
       const total = this.wordlist.length;
       const got = this.learned.size;
       const pct = total ? Math.round((got * 100) / total) : 0;
@@ -499,7 +476,6 @@ if (first) first.classList.add("active");
       this.ui.progLbl.textContent = `${got} / ${total} learned (${pct}%)`;
     }
 
-    // Optimistic highlight on client side from free text
     updateLearnedFromText(text) {
       if (!text) return;
       const toks = text
@@ -507,12 +483,14 @@ if (first) first.classList.add("active");
         .replace(/[^\w\s-]/g, "")
         .split(/\s+/)
         .filter(Boolean);
+
       toks.forEach((tok) => {
         const raw = tok;
         const norm = normalizeToken(tok);
         if (this.wordsetEn.has(raw)) this.learned.add(raw);
         else if (this.wordsetEn.has(norm)) this.learned.add(norm);
       });
+
       this.renderWordlist();
     }
 
@@ -527,67 +505,25 @@ if (first) first.classList.add("active");
       this.renderWordlist();
     }
 
-    // 🔔 Handle milestones entirely on the frontend
-    handleMilestones(_data) {
+    handleMilestones() {
       const total = this.wordlist.length;
       const learnedCount = this.learned.size;
       if (!total) return;
 
       const name = (this.ui.name.value || "friend").trim();
 
-      // First time hitting 10 learned words in this chapter
       if (!this._milestone10 && learnedCount >= 10) {
         this._milestone10 = true;
-
-        this.addMsg(
-          "bot",
-          `${name}, you’ve already used 10 new words from this unit! 🎉 Great progress!`
-        );
-
-const bell = this.shadowRoot.getElementById("milestone-sound");
-        if (bell) {
-          try {
-            bell.currentTime = 0;
-            bell.play().catch(() => {});
-          } catch {
-            // ignore
-          }
-        }
-
+        this.addMsg("bot", `${name}, you’ve already used 10 new words from this unit! Great progress!`);
         if (this.ui.vocabPanel) {
           this.ui.vocabPanel.classList.add("flash-border");
           setTimeout(() => this.ui.vocabPanel.classList.remove("flash-border"), 2000);
         }
       }
 
-      // When all words in this chapter are learned
       if (!this._milestoneComplete && learnedCount === total && total > 0) {
         this._milestoneComplete = true;
-
-        const slug = this.ui.chapter.value || "this_lesson";
-        const pretty = slug
-          .split("_")
-          .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : ""))
-          .join(" ");
-        const badgeTitle = `${pretty} Explorer of Waterwheel Village 🏅`;
-
-        this.addMsg(
-          "bot",
-          `🎉 You’ve learned all the words for this lesson!\n\n` +
-            `(C) talk freely about your week?\n\n` +
-            `You are now a ${badgeTitle}`
-        );
-
-const bell = this.shadowRoot.getElementById("milestone-sound");
-        if (bell) {
-          try {
-            bell.currentTime = 0;
-            bell.play().catch(() => {});
-          } catch {
-            // ignore
-          }
-        }
-
+        this.addMsg("bot", `You’ve learned all the words for this lesson. Nice work.`);
         if (this.ui.vocabPanel) {
           this.ui.vocabPanel.classList.add("flash-border");
           setTimeout(() => this.ui.vocabPanel.classList.remove("flash-border"), 2000);
@@ -595,15 +531,10 @@ const bell = this.shadowRoot.getElementById("milestone-sound");
       }
     }
 
-    // Audio / TTS
     stopMic() {
       this.restartWanted = false;
       if (this.recActive && this.rec) {
-        try {
-          this.rec.stop();
-        } catch {
-          // ignore
-        }
+        try { this.rec.stop(); } catch {}
       }
     }
 
@@ -619,51 +550,46 @@ const bell = this.shadowRoot.getElementById("milestone-sound");
       if (this.ttsPlaying || !this.ttsQueue.length || !this.audioReady) return;
       const { text, voiceId } = this.ttsQueue.shift();
       this.ttsPlaying = true;
-      this.stopMic(); // prevent echo
+      this.stopMic();
+
       try {
         const r = await fetch(this.backend + "/speakbase", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ text, voiceId }),
         });
+
         if (!r.ok) {
-          this.addMsg("bot", "(Audio error)");
           this.ttsPlaying = false;
           setTimeout(() => this.playNextSpeak(), 120);
           return;
         }
+
         const blob = await r.blob();
         const url = URL.createObjectURL(blob);
         this.ui.player.src = url;
+
         await new Promise((resolve) => {
           const done = () => {
-            this.ui.player.removeEventListener("ended", done);
-            this.ui.player.removeEventListener("error", done);
             URL.revokeObjectURL(url);
             resolve();
           };
           this.ui.player.addEventListener("ended", done, { once: true });
           this.ui.player.addEventListener("error", done, { once: true });
           const p = this.ui.player.play();
-          if (p && p.catch) {
-            p.catch(() =>
-              this.setStatus("If muted, click page once to allow audio.")
-            );
-          }
+          if (p && p.catch) p.catch(() => this.setStatus("If muted, click page once to allow audio."));
         });
       } catch {
-        this.addMsg("bot", "(Audio unavailable)");
+        // ignore
       } finally {
         this.ttsPlaying = false;
         setTimeout(() => this.playNextSpeak(), 120);
       }
     }
 
-    // Speak a word once, mark it as learned, and ask the teacher for a one-line tip
     async pronounceWord(word) {
       if (!word) return;
 
-      // Mark as learned when "Say" is clicked
       const key = String(word || "").toLowerCase().trim();
       if (key && this.wordsetEn && this.wordsetEn.has(key)) {
         this.learned.add(key);
@@ -687,45 +613,40 @@ const bell = this.shadowRoot.getElementById("milestone-sound");
             sessionId: this.sessionId,
             isVoice: false,
             name: this.ui.name.value || "friend",
+            character: this.activeCharacter,
+            demo: !!this.demo,
           }),
         });
+
         const d = await r.json().catch(() => ({}));
         this.addTyping(false);
-        if (r.ok && d.text) {
-          this.addMsg("bot", d.text);
-        } else {
-          this.addMsg("bot", "Say: " + word);
-        }
-           } catch {
+        if (r.ok && d.text) this.addMsg("bot", d.text);
+        else this.addMsg("bot", "Say: " + word);
+      } catch {
         this.addTyping(false);
         this.addMsg("bot", "Say: " + word);
       }
     }
 
     // Lesson
-    sync startLesson() {
-      const m = this.ui.month.value,
-        c = this.ui.chapter.value;
+    async startLesson() {
+      const m = this.ui.month.value;
+      const c = this.ui.chapter.value;
       if (!m || !c) {
         alert("Pick Month and Chapter first");
         return;
       }
-            // ✅ Play STATIC intro MP3 (no ElevenLabs credits)
 
       const name = (this.ui.name.value || "friend").trim();
-      // ▶️ Play static intro audio (NO ElevenLabs)
-
       localStorage.setItem("wwv-name", name);
 
-      // Reset wordlist state
+      // Reset
       this.wordlist = [];
       this.wordsetEn = new Set();
       this.learned.clear();
       this._milestone10 = false;
       this._milestoneComplete = false;
       this.renderWordlist();
-
-      // Clear chat UI for a fresh lesson
       this.ui.chat.innerHTML = "";
       this._typing = null;
       this._interimNode = null;
@@ -746,30 +667,27 @@ const bell = this.shadowRoot.getElementById("milestone-sound");
           : Array.isArray(data && data.words)
           ? data.words
           : [];
+
         this.wordlist = raw
           .map((w) => ({
             en: String((w && w.en) || "").trim(),
             fi: String((w && w.fi) || "").trim(),
           }))
           .filter((w) => w.en);
+
         this.wordsetEn = new Set(this.wordlist.map((w) => w.en.toLowerCase()));
         this.renderWordlist();
-        if (this.wordlist.length === 0)
-          this.setStatus("No wordlist found for this chapter.");
+        if (this.wordlist.length === 0) this.setStatus("No wordlist found for this chapter.");
       } catch (e) {
         console.error("Wordlist fetch failed:", e);
         this.setStatus("Could not load wordlist.");
-        this.wordlist = [];
-        this.wordsetEn = new Set();
-        this.learned.clear();
-        this._milestone10 = false;
-        this._milestoneComplete = false;
-        this.renderWordlist();
       }
 
       // Start lesson
       try {
         this.setStatus("Starting lesson...");
+
+        // IMPORTANT: send character + demo so backend can lock persona/voice
         const url =
           this.backend +
           "/lesson/" +
@@ -779,42 +697,32 @@ const bell = this.shadowRoot.getElementById("milestone-sound");
           "?sessionId=" +
           encodeURIComponent(this.sessionId) +
           "&name=" +
-          encodeURIComponent(name);
+          encodeURIComponent(name) +
+          "&character=" +
+          encodeURIComponent(this.activeCharacter) +
+          "&demo=" +
+          encodeURIComponent(this.demo ? "1" : "0");
+
         const r = await fetch(url);
         const d = await r.json();
         if (!r.ok) throw new Error((d && d.error) || "Lesson failed");
 
-       // Show intro text
-// ▶️ PLAY STATIC INTRO AUDIO FIRST
-try {
-} catch (e) {
-  console.warn("Intro audio failed or blocked:", e);
-}
+        // Intro text + voice
+        if (d.welcomeText) {
+          this.addMsg("bot", d.welcomeText);
+          if (this.voice) this.enqueueSpeak(d.welcomeText, MCARTHUR_VOICE);
+        }
 
-// 📝 Show intro text (no TTS)
-if (d.welcomeText) {
-  this.addMsg("bot", d.welcomeText);
+        if (d.lessonText) {
+          this.addMsg("bot", d.lessonText);
+          if (this.voice && d.voiceId) this.enqueueSpeak(d.lessonText, d.voiceId);
+        }
 
-  // 🔊 Mr. McArthur voice (intro only)
-  if (this.voice) {
-    this.enqueueSpeak(d.welcomeText, MCARTHUR_VOICE);
-  }
-}
-
-if (d.lessonText) {
-  this.addMsg("bot", d.lessonText);
-
-  // 🔊 Teacher voice (Ibrahim, Nadia, etc.)
-  if (this.voice && d.voiceId) {
-    this.enqueueSpeak(d.lessonText, d.voiceId);
-  }
-}
-
-// Save teacher voice for later conversation
-if (d.voiceId) this.lastVoiceId = d.voiceId;
+        if (d.voiceId) this.lastVoiceId = d.voiceId;
 
         this.setStatus("");
       } catch (e) {
+        console.error(e);
         this.setStatus("Could not start lesson.");
         this.addMsg("bot", "Sorry, I could not start the lesson.");
       }
@@ -825,9 +733,9 @@ if (d.voiceId) this.lastVoiceId = d.voiceId;
       const text = this.ui.input.value.trim();
       if (!text) return;
       this.addMsg("user", text);
-      this.updateLearnedFromText(text); // optimistic highlight
+      this.updateLearnedFromText(text);
       this.ui.input.value = "";
-      await this.sendText(text, false); // typed input => isVoice=false
+      await this.sendText(text, false);
     }
 
     async sendText(text, isVoice) {
@@ -841,55 +749,51 @@ if (d.voiceId) this.lastVoiceId = d.voiceId;
             sessionId: this.sessionId,
             isVoice: !!isVoice,
             name: this.ui.name.value || "friend",
+            character: this.activeCharacter,
+            demo: !!this.demo,
           }),
         });
+
         const d = await r.json().catch(() => ({}));
         this.addTyping(false);
         if (!r.ok) throw new Error((d && d.error) || "Chat failed");
-const reply = d.text || "(no response)";
-if (d.voiceId) this.lastVoiceId = d.voiceId;
 
-this.addMsg("bot", reply);
+        const reply = d.text || "(no response)";
+        if (d.voiceId) this.lastVoiceId = d.voiceId;
 
-// === DEMO VOICE GATE (cheap + safe) ===
-const charKey = d.character || this.activeCharacter || "mcarthur";
-const usedByChar = this.demoVoicedByCharacter[charKey] || 0;
+        this.addMsg("bot", reply);
 
-const canVoice =
-  this.voice &&
-  d.voiceId &&
-  (
-    !this.demo || // paid mode → always voice
-    (
-      this.demoVoiceUsed < this.demoVoiceMax && // total cap
-      usedByChar < 2                             // per-character cap
-    )
-  );
+        // === DEMO VOICE GATE (cheap + safe) ===
+        const charKey = d.character || this.activeCharacter || "mcarthur";
+        const usedByChar = this.demoVoicedByCharacter[charKey] || 0;
 
-if (canVoice) {
-  // keep spoken replies short in demo
-  const spoken = this.demo
-    ? reply.slice(0, this.demoMaxChars)
-    : reply;
+        const canVoice =
+          this.voice &&
+          d.voiceId &&
+          (
+            !this.demo ||
+            (
+              this.demoVoiceUsed < this.demoVoiceMax &&
+              usedByChar < 2
+            )
+          );
 
-  this.enqueueSpeak(spoken, d.voiceId);
+        if (canVoice) {
+          const spoken = this.demo ? reply.slice(0, this.demoMaxChars) : reply;
+          this.enqueueSpeak(spoken, d.voiceId);
 
-  if (this.demo) {
-    this.demoVoiceUsed++;
-    this.demoVoicedByCharacter[charKey] = usedByChar + 1;
-  }
-}
+          if (this.demo) {
+            this.demoVoiceUsed++;
+            this.demoVoicedByCharacter[charKey] = usedByChar + 1;
+          }
+        }
 
         if (d.newlyLearned) this.mergeNewlyLearned(d.newlyLearned);
-
-        // 🔔 Trigger visual/audio celebration for milestones (frontend-only)
-        this.handleMilestones(d);
+        this.handleMilestones();
       } catch (e) {
+        console.error(e);
         this.addTyping(false);
-        this.addMsg(
-          "bot",
-          "Sorry, something went wrong sending your message."
-        );
+        this.addMsg("bot", "Sorry, something went wrong sending your message.");
       }
     }
 
@@ -908,8 +812,7 @@ if (canVoice) {
         return;
       }
       if (!isTop) {
-        this.ui.micInfo.textContent =
-          "Open the published page (not the editor) to use the mic.";
+        this.ui.micInfo.textContent = "Open the published page (not the editor) to use the mic.";
         return;
       }
 
@@ -920,8 +823,7 @@ if (canVoice) {
       rec.maxAlternatives = 1;
       this.rec = rec;
 
-      this.ui.micInfo.textContent =
-        "Click mic, speak, pause to send, click again to stop.";
+      this.ui.micInfo.textContent = "Click mic, speak, pause to send, click again to stop.";
 
       const showInterim = (t) => {
         if (!this._interimNode) {
@@ -944,15 +846,14 @@ if (canVoice) {
           this.addMsg("user", toSend);
           this.updateLearnedFromText(toSend);
           this.ui.input.value = "";
-          this.sendText(toSend, true); // mic => isVoice=true
+          this.sendText(toSend, true);
           this.stopMic();
         }
       };
 
       const queueSpeech = (finalChunk) => {
         if (finalChunk && finalChunk.trim()) {
-          this.speechBuf +=
-            (this.speechBuf ? " " : "") + finalChunk.trim();
+          this.speechBuf += (this.speechBuf ? " " : "") + finalChunk.trim();
         }
         clearTimeout(this.holdTimer);
         this.holdTimer = setTimeout(flushSpeech, this.PAUSE_GRACE_MS);
@@ -971,21 +872,17 @@ if (canVoice) {
             this.primed = true;
             this.ui.micErr.textContent = "";
           } catch {
-            this.ui.micErr.textContent =
-              "Mic permission denied (Site settings -> Microphone).";
+            this.ui.micErr.textContent = "Mic permission denied (Site settings -> Microphone).";
             return;
           }
         }
+
         this.restartWanted = true;
         this.recActive = true;
         this.ui.mic.classList.add("rec");
         this.ui.mic.textContent = "Stop";
         this.ui.micErr.textContent = "";
-        try {
-          rec.start();
-        } catch {
-          // ignore
-        }
+        try { rec.start(); } catch {}
       });
 
       rec.onresult = (e) => {
@@ -997,18 +894,15 @@ if (canVoice) {
         }
         showInterim(interim);
       };
+
       rec.onstart = () => showInterim("(listening...)");
       rec.onsoundstart = () => showInterim("(capturing speech...)");
       rec.onerror = (ev) => {
-        if (ev.error === "no-speech")
-          this.ui.micErr.textContent =
-            "No speech heard. Try again closer to the mic.";
-        else if (ev.error === "not-allowed" || ev.error === "permission-denied")
-          this.ui.micErr.textContent =
-            "Mic blocked. Allow in Chrome site settings.";
-        else if (ev.error !== "aborted")
-          this.ui.micErr.textContent = "Mic error: " + ev.error;
+        if (ev.error === "no-speech") this.ui.micErr.textContent = "No speech heard. Try again closer to the mic.";
+        else if (ev.error === "not-allowed" || ev.error === "permission-denied") this.ui.micErr.textContent = "Mic blocked. Allow in browser site settings.";
+        else if (ev.error !== "aborted") this.ui.micErr.textContent = "Mic error: " + ev.error;
       };
+
       const finish = () => {
         this.recActive = false;
         this.ui.mic.classList.remove("rec");
@@ -1021,23 +915,19 @@ if (canVoice) {
               this.recActive = true;
               this.ui.mic.classList.add("rec");
               this.ui.mic.textContent = "Stop";
-            } catch {
-              // ignore
-            }
+            } catch {}
           }, 300);
         }
       };
+
       rec.onend = finish;
       rec.onaudioend = finish;
-      rec.onspeechend = () => {};
     }
 
     downloadTranscript() {
       const nodes = this.ui.chat.querySelectorAll("div");
       let text = "";
-      nodes.forEach((n) => {
-        text += n.innerText + "\n";
-      });
+      nodes.forEach((n) => { text += n.innerText + "\n"; });
       const blob = new Blob([text.trim()], { type: "text/plain" });
       const url = URL.createObjectURL(blob);
       const a = ce("a", { href: url });
@@ -1056,12 +946,10 @@ if (canVoice) {
 
   customElements.define("waterwheel-chat", WaterwheelChat);
 
-  // Optional auto-mount helper (only if page has #wwv-root)
   document.addEventListener("DOMContentLoaded", () => {
     const root = document.getElementById("wwv-root");
     if (root && !root.querySelector("waterwheel-chat")) {
       const el = document.createElement("waterwheel-chat");
-// Do NOT force backend here; allow your shortcode/embed to set it.
       el.setAttribute("voice", "on");
       root.appendChild(el);
     }
