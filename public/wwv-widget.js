@@ -636,11 +636,12 @@ const bell = this.shadowRoot.getElementById("milestone-sound");
         } else {
           this.addMsg("bot", "Say: " + word);
         }
-      } catch {
+           } catch {
         this.addTyping(false);
         this.addMsg("bot", "Say: " + word);
       }
     }
+
     // Lesson
     async startLesson() {
       const m = this.ui.month.value,

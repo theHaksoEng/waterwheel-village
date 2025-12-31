@@ -22,6 +22,8 @@ const fetch = (...args) => import("node-fetch").then(({ default: f }) => f(...ar
 
 // === Express setup (must come BEFORE app.use) ===
 const app = express();
+app.use("/audio_lessons", express.static(path.join(__dirname, "audio_lessons")));
+
 console.log("ROUTES will include /debug/static");
 
 const PORT = process.env.PORT || 3000;
