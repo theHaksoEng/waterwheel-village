@@ -1,7 +1,7 @@
 // Waterwheel Village — Pro Chat Widget (WordPress-safe, no emojis)
 (() => {
   // Config
-  const DEFAULT_BACKEND = "http://localhost:3000";
+const DEFAULT_BACKEND = "https://waterwheel-village.onrender.com";
   const MCARTHUR_VOICE = "fEVT2ExfHe1MyjuiIiU9"; // fixed welcome voice
 
   // Utility
@@ -33,20 +33,30 @@
       .replace(/[_~]/g, "")            // stray emphasis markers
       .trim();
   }
-// ===============================
-// Static lesson intro audio (no ElevenLabs)
-// ===============================
-function playLessonIntro(month, chapter) {
-  const src = `/audio_lessons/${month}_${chapter}_intro.mp3`;
-  const audio = new Audio(src);
-  return audio.play();
-}
 
   class WaterwheelChat extends HTMLElement {
     constructor() {
       super();
       // Attributes
-      this.backend = this.getAttribute("backend") || DEFAULT_BACKEND;
+const attrBackend = (this.getAttribute("backend") || "").trim();
+const base = (attrBackend || DEFAULT_BACKEND || "").trim();
+
+// Normalize (remove trailing slashes)
+this.backend = base.replace(/\/+$/, "");
+
+// Hard failsafe: if empty or localhost, force Render
+if (!this.backend || /localhost|127\.0\.0\.1/i.test(this.backend)) {
+  this.backend = "https://waterwheel-village.onrender.com";
+}
+
+// Debug (you can remove later)
+console.log("WWV backend =", this.backend);
+
+// HARD FAILSAFE: if backend is missing or localhost, force Render
+if (!this.getAttribute("backend") || /localhost|127\.0\.0\.1/i.test(this.backend)) {
+  this.backend = "https://waterwheel-village.onrender.com";
+}
+console.log("WWV BACKEND (final):", this.backend);      
       this.voice = (this.getAttribute("voice") || "on") === "on";
 
       // Session
@@ -255,39 +265,113 @@ function playLessonIntro(month, chapter) {
       };
     }
 
-    connectedCallback() {
-      const savedName = localStorage.getItem("wwv-name") || "friend";
-      this.ui.name.value = savedName;
+  connectedCallback() {
+  const savedName = localStorage.getItem("wwv-name") || "friend";
+  this.ui.name.value = savedName;
 
-      // Handlers
-      this.ui.name.addEventListener("change", () =>
-        localStorage.setItem("wwv-name", this.ui.name.value.trim())
-      );
-      this.ui.start.addEventListener("click", () => this.startLesson());
-      this.ui.voiceToggle.addEventListener("click", () => {
-        this.voice = !this.voice;
-        this.ui.voiceToggle.textContent = this.voice ? "Voice: ON" : "Voice: OFF";
-      });
-      this.ui.voiceTest.addEventListener("click", () => {
-        const vid = this.lastVoiceId || MCARTHUR_VOICE;
-        this.enqueueSpeak("Voice test: hello from Waterwheel Village.", vid);
-      });
-      this.ui.download.addEventListener("click", () => this.downloadTranscript());
+  this.ui.name.addEventListener("change", () =>
+    localStorage.setItem("wwv-name", this.ui.name.value.trim())
+  );
 
-      this.ui.send.addEventListener("click", () => this.send());
-      this.ui.input.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" && !e.shiftKey) {
-          e.preventDefault();
-          this.send();
-        }
-      });
-      this.ui.showFi.addEventListener("change", () => this.renderWordlist());
-
-      this.setupMic();
+  this.ui.start.addEventListener("click", async () => {
+    const m = this.ui.month.value;
+    const c = this.ui.chapter.value;
+    if (!m || !c) {
+      alert("Pick Month and Chapter first");
+      return;
     }
 
-    setStatus(msg) {
+    // Prime audio + try intro, but never block the lesson
+    await this.unlockAudio();
+    try {
+      await this.playLessonIntro(m, c);
+    } catch (e) {
+      console.warn("Intro failed:", e);
+    }
+
+    await this.startLesson();
+  });
+
+  this.ui.voiceToggle.addEventListener("click", () => {
+    this.voice = !this.voice;
+    this.ui.voiceToggle.textContent = this.voice ? "Voice: ON" : "Voice: OFF";
+  });
+
+  this.ui.voiceTest.addEventListener("click", () => {
+    const vid = this.lastVoiceId || MCARTHUR_VOICE;
+    this.enqueueSpeak("Voice test: hello from Waterwheel Village.", vid);
+  });
+
+  this.ui.download.addEventListener("click", () => this.downloadTranscript());
+  this.ui.send.addEventListener("click", () => this.send());
+
+  this.ui.input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      this.send();
+    }
+  });
+
+  this.ui.showFi.addEventListener("change", () => this.renderWordlist());
+  this.setupMic();
+}
+
+       setStatus(msg) {
       this.ui.status.textContent = msg || "";
+    }
+
+    async unlockAudio() {
+      const p = this.ui.player;
+      if (!p) return;
+      try {
+        p.muted = true;
+        // tiny silent play/pause to satisfy mobile autoplay policies
+        const pr = p.play();
+        if (pr && pr.catch) await pr.catch(() => {});
+        p.pause();
+        p.currentTime = 0;
+      } catch {
+        // ignore
+      } finally {
+        p.muted = false;
+      }
+    }
+
+    async playLessonIntro(month, chapter) {
+      const p = this.ui.player;
+
+      const base = String(this.backend || "").replace(/\/+$/, "");
+      const src = `${base}/audio_lessons/${month}_${chapter}_intro.mp3`;
+
+      console.log("INTRO URL:", src);
+      console.log("INTRO SRC:", src);
+
+
+      try { p.pause(); } catch {}
+      try { p.currentTime = 0; } catch {}
+
+      p.preload = "auto";
+      p.muted = false;
+      p.volume = 1;
+      p.src = src;
+      p.load();
+
+      // Wait until it can play or errors
+      await new Promise((resolve) => {
+        const ok = () => resolve();
+        const bad = () => resolve(); // resolve so lesson still starts
+
+        p.addEventListener("canplaythrough", ok, { once: true });
+        p.addEventListener("error", bad, { once: true });
+      });
+
+      // Try to play, but never block lesson start
+      try {
+        const pr = p.play();
+        if (pr && pr.catch) await pr.catch(() => {});
+      } catch {
+        // ignore
+      }
     }
 
     // Chat bubbles
@@ -401,7 +485,7 @@ function playLessonIntro(month, chapter) {
           `${name}, you’ve already used 10 new words from this unit! 🎉 Great progress!`
         );
 
-        const bell = document.getElementById("milestone-sound");
+const bell = this.shadowRoot.getElementById("milestone-sound");
         if (bell) {
           try {
             bell.currentTime = 0;
@@ -435,7 +519,7 @@ function playLessonIntro(month, chapter) {
             `You are now a ${badgeTitle}`
         );
 
-        const bell = document.getElementById("milestone-sound");
+const bell = this.shadowRoot.getElementById("milestone-sound");
         if (bell) {
           try {
             bell.currentTime = 0;
@@ -558,7 +642,7 @@ function playLessonIntro(month, chapter) {
         this.addMsg("bot", "Say: " + word);
       }
     }
-
+}
     // Lesson
     async startLesson() {
       const m = this.ui.month.value,
@@ -568,9 +652,10 @@ function playLessonIntro(month, chapter) {
         return;
       }
             // ✅ Play STATIC intro MP3 (no ElevenLabs credits)
-      playLessonIntro(m, c).catch(() => {});
 
       const name = (this.ui.name.value || "friend").trim();
+      // ▶️ Play static intro audio (NO ElevenLabs)
+
       localStorage.setItem("wwv-name", name);
 
       // Reset wordlist state
@@ -640,16 +725,24 @@ function playLessonIntro(month, chapter) {
         const d = await r.json();
         if (!r.ok) throw new Error((d && d.error) || "Lesson failed");
 
-        // McArthur welcome (fixed voice), then teacher lesson (d.voiceId)
-        if (d.welcomeText) {
-  this.addMsg("bot", d.welcomeText);
-  // 🔇 no TTS here (static MP3 handles intro)
+       // Show intro text
+// ▶️ PLAY STATIC INTRO AUDIO FIRST
+try {
+} catch (e) {
+  console.warn("Intro audio failed or blocked:", e);
 }
+
+// 📝 Show intro text (no TTS)
+if (d.welcomeText) {
+  this.addMsg("bot", d.welcomeText);
+}
+
 if (d.lessonText) {
   this.addMsg("bot", d.lessonText);
-  // 🔇 no TTS here (static MP3 handles intro)
 }
-        if (d.voiceId) this.lastVoiceId = d.voiceId;
+
+// Save teacher voice for later conversation
+if (d.voiceId) this.lastVoiceId = d.voiceId;
 
         this.setStatus("");
       } catch (e) {
@@ -871,7 +964,7 @@ if (d.lessonText) {
     const root = document.getElementById("wwv-root");
     if (root && !root.querySelector("waterwheel-chat")) {
       const el = document.createElement("waterwheel-chat");
-      el.setAttribute("backend", DEFAULT_BACKEND);
+// Do NOT force backend here; allow your shortcode/embed to set it.
       el.setAttribute("voice", "on");
       root.appendChild(el);
     }
