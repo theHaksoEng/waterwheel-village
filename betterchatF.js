@@ -2,6 +2,9 @@
 
 // ✅ Load env first
 require("dotenv").config({ override: true });
+console.log("BOOT FILE:", __filename);
+console.log("BOOT BUILD:", "2025-12-31-DEBUG1");
+
 const crypto = require("crypto");
 
 // === OpenAI Setup ===
@@ -19,6 +22,8 @@ const fetch = (...args) => import("node-fetch").then(({ default: f }) => f(...ar
 
 // === Express setup (must come BEFORE app.use) ===
 const app = express();
+console.log("ROUTES will include /debug/static");
+
 const PORT = process.env.PORT || 3000;
 
 // === Audio Cache Setup ===
@@ -39,6 +44,8 @@ app.use(cors({ origin: allowed, credentials: false }));
 // Middleware
 app.use(bodyParser.json({ limit: "10mb" }));
 app.use(bodyParser.urlencoded({ extended: false }));
+app.use("/audio_lessons", express.static(path.join(__dirname, "audio_lessons")));
+
 
 // === Uploads (Multer, memory) ===
 const multer = require("multer");
@@ -57,6 +64,55 @@ try {
 
 // Serve static frontend
 app.use(express.static(path.join(__dirname, "public")));
+// ✅ Debug + hard static serving (prevents HTML/nosniff issues)
+
+app.get("/debug/static", (_req, res) => {
+  const widgetPath = path.join(__dirname, "public", "wwv-widget.js");
+  const audioDir = path.join(__dirname, "audio_lessons");
+
+  res.json({
+    ok: true,
+    running: __filename,
+    widgetPath,
+    widgetExists: fs.existsSync(widgetPath),
+    widgetSize: fs.existsSync(widgetPath) ? fs.statSync(widgetPath).size : 0,
+    audioDir,
+    audioLessonsDirExists: fs.existsSync(audioDir),
+  });
+});
+
+// Force correct MIME for widget JS (prevents "nosniff" when HTML is returned)
+app.get("/wwv-widget.js", (req, res) => {
+  const f = path.join(__dirname, "public", "wwv-widget.js");
+  if (!fs.existsSync(f)) {
+    return res.status(404).type("text/plain").send("wwv-widget.js not found in /public");
+  }
+  res.type("application/javascript");
+  return res.sendFile(f);
+});
+
+// Serve widget JS with correct MIME (prevents "nosniff" HTML issues)
+app.get("/wwv-widget.js", (req, res) => {
+  const f = path.join(__dirname, "public", "wwv-widget.js");
+  if (!fs.existsSync(f)) {
+    return res.status(404).type("text/plain").send("wwv-widget.js not found in /public");
+  }
+  res.type("application/javascript");
+  return res.sendFile(f);
+});
+
+// 🔍 Debug endpoint: verify static files exist on Render
+app.get("/debug/static", (_req, res) => {
+  const widgetPath = path.join(__dirname, "public", "wwv-widget.js");
+  const audioDir = path.join(__dirname, "audio_lessons");
+
+  res.json({
+    widgetExists: fs.existsSync(widgetPath),
+    widgetSize: fs.existsSync(widgetPath) ? fs.statSync(widgetPath).size : 0,
+    audioLessonsDirExists: fs.existsSync(audioDir),
+  });
+});
+
 app.get("/", (_req, res) => {
   const indexPath = path.join(__dirname, "public", "index.html");
   if (fs.existsSync(indexPath)) return res.sendFile(indexPath);
