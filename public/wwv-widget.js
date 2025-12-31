@@ -339,7 +339,6 @@ console.log("WWV BACKEND (final):", this.backend);
 
     async playLessonIntro(month, chapter) {
       const p = this.ui.player;
-
       const base = String(this.backend || "").replace(/\/+$/, "");
       const src = `${base}/audio_lessons/${month}_${chapter}_intro.mp3`;
 
@@ -642,7 +641,6 @@ const bell = this.shadowRoot.getElementById("milestone-sound");
         this.addMsg("bot", "Say: " + word);
       }
     }
-}
     // Lesson
     async startLesson() {
       const m = this.ui.month.value,
