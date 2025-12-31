@@ -141,10 +141,41 @@ console.log("WWV BACKEND (final):", this.backend);
           .pill.learned { background:#dcfce7; color:#065f46; border-color:#86efac }
           .pill .say { margin-left:6px; border:0; background:#e2e8f0; color:#0f172a; border-radius:9999px; padding:2px 8px; font-size:12px; cursor:pointer }
           .pill .say:hover { background:#cbd5e1 }
+          /* Demo character buttons */
+.char{
+  border:1px solid #e2e8f0;
+  background:#ffffff;
+  color:#0f172a;
+  border-radius:9999px;
+  padding:8px 12px;
+  cursor:pointer;
+  font-weight:600;
+  transition: background .2s ease, color .2s ease;
+}
+
+.char:hover{
+  background:#f1f5f9;
+}
+
+.char.active{
+  background:#0ea5e9;
+  color:#ffffff;
+  border-color:#0ea5e9;
+}
         </style>
 
         <div class="wrap" role="region" aria-label="Waterwheel Village Chat">
           <div class="top">Waterwheel Village</div>
+          <div class="pane" style="gap:10px">
+  <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center">
+    <button class="char" data-char="mcarthur" type="button">🎓 McArthur</button>
+    <button class="char" data-char="kwame" type="button">🌾 Kwame</button>
+    <button class="char" data-char="nadia" type="button">🏛️ Nadia</button>
+    <button class="char" data-char="sophia" type="button">📚 Sophia</button>
+  </div>
+  <span class="hint" id="demoHint">Demo: voice replies are short + limited.</span>
+</div>
+
 
           <div class="pane">
             <input id="name" placeholder="Your name" />
@@ -643,7 +674,7 @@ const bell = this.shadowRoot.getElementById("milestone-sound");
     }
 
     // Lesson
-    async startLesson() {
+    sync startLesson() {
       const m = this.ui.month.value,
         c = this.ui.chapter.value;
       if (!m || !c) {
@@ -734,10 +765,20 @@ try {
 // 📝 Show intro text (no TTS)
 if (d.welcomeText) {
   this.addMsg("bot", d.welcomeText);
+
+  // 🔊 Mr. McArthur voice (intro only)
+  if (this.voice) {
+    this.enqueueSpeak(d.welcomeText, MCARTHUR_VOICE);
+  }
 }
 
 if (d.lessonText) {
   this.addMsg("bot", d.lessonText);
+
+  // 🔊 Teacher voice (Ibrahim, Nadia, etc.)
+  if (this.voice && d.voiceId) {
+    this.enqueueSpeak(d.lessonText, d.voiceId);
+  }
 }
 
 // Save teacher voice for later conversation
