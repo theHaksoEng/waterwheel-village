@@ -70,6 +70,14 @@ console.log("WWV BACKEND (final):", this.backend);
       this.wordsetEn = new Set();    // lowercased english words
       this.learned = new Set();      // learned lowercased words
       this.lastVoiceId = null;
+          // === Demo mode (safe + cheap) ===
+    this.demo = true;                 // set false for paid school
+    this.demoVoiceMax = 8;            // total voiced replies per session
+    this.demoVoiceUsed = 0;
+    this.demoVoicedByCharacter = {};  // limit per character
+    this.demoMaxChars = 220;          // max chars spoken in demo
+    this.activeCharacter = "mcarthur";
+
       this.audioReady = true;
 
       // Milestone flags (per lesson)
@@ -346,6 +354,27 @@ console.log("WWV BACKEND (final):", this.backend);
   this.ui.showFi.addEventListener("change", () => this.renderWordlist());
   this.setupMic();
 }
+// Character picker
+this.shadowRoot.querySelectorAll(".char").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    this.activeCharacter = btn.getAttribute("data-char") || "mcarthur";
+
+    // UI highlight
+    this.shadowRoot.querySelectorAll(".char").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+
+    // Reset demo voice counters when switching (optional)
+    // this.demoVoiceUsed = 0;
+    // this.demoVoicedByCharacter = {};
+
+    this.addMsg("bot", `Demo character set to: ${this.activeCharacter}. Say hello!`);
+  });
+});
+
+// default active highlight
+const first = this.shadowRoot.querySelector('.char[data-char="mcarthur"]');
+if (first) first.classList.add("active");
+
 
        setStatus(msg) {
       this.ui.status.textContent = msg || "";
@@ -817,11 +846,39 @@ if (d.voiceId) this.lastVoiceId = d.voiceId;
         const d = await r.json().catch(() => ({}));
         this.addTyping(false);
         if (!r.ok) throw new Error((d && d.error) || "Chat failed");
+const reply = d.text || "(no response)";
+if (d.voiceId) this.lastVoiceId = d.voiceId;
 
-        const reply = d.text || "(no response)";
-        if (d.voiceId) this.lastVoiceId = d.voiceId;
-        this.addMsg("bot", reply);
-        if (this.voice && d.voiceId) this.enqueueSpeak(reply, d.voiceId);
+this.addMsg("bot", reply);
+
+// === DEMO VOICE GATE (cheap + safe) ===
+const charKey = d.character || this.activeCharacter || "mcarthur";
+const usedByChar = this.demoVoicedByCharacter[charKey] || 0;
+
+const canVoice =
+  this.voice &&
+  d.voiceId &&
+  (
+    !this.demo || // paid mode → always voice
+    (
+      this.demoVoiceUsed < this.demoVoiceMax && // total cap
+      usedByChar < 2                             // per-character cap
+    )
+  );
+
+if (canVoice) {
+  // keep spoken replies short in demo
+  const spoken = this.demo
+    ? reply.slice(0, this.demoMaxChars)
+    : reply;
+
+  this.enqueueSpeak(spoken, d.voiceId);
+
+  if (this.demo) {
+    this.demoVoiceUsed++;
+    this.demoVoicedByCharacter[charKey] = usedByChar + 1;
+  }
+}
 
         if (d.newlyLearned) this.mergeNewlyLearned(d.newlyLearned);
 
