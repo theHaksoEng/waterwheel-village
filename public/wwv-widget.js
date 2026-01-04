@@ -140,36 +140,72 @@
           .pill .say { margin-left:6px; border:0; background:#e2e8f0; color:#0f172a; border-radius:9999px; padding:2px 8px; font-size:12px; cursor:pointer }
           .pill .say:hover { background:#cbd5e1 }
 
-          /* Demo character buttons */
-          .demoRow { display:flex; gap:10px; flex-wrap:wrap; align-items:center; padding:10px 12px; border-bottom:1px solid #e5e7eb; background:#ffffff }
-          .char{
-            border:1px solid #e2e8f0;
-            background:#ffffff;
-            color:#0f172a;
-            border-radius:9999px;
-            padding:8px 12px;
-            cursor:pointer;
-            font-weight:600;
-            transition: background .2s ease, color .2s ease;
-          }
-          .char:hover{ background:#f1f5f9; }
-          .char.active{
-            background:#0ea5e9;
-            color:#ffffff;
-            border-color:#0ea5e9;
-          }
+          /* Demo character buttons w/ avatars */
+.demoRow { display:flex; gap:10px; flex-wrap:wrap; align-items:center; padding:10px 12px; border-bottom:1px solid #e5e7eb; background:#ffffff }
+
+.char{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  border:1px solid #e2e8f0;
+  background:#ffffff;
+  color:#0f172a;
+  border-radius:9999px;
+  padding:8px 12px 8px 8px;
+  cursor:pointer;
+  font-weight:700;
+  transition: background .2s ease, color .2s ease, border-color .2s ease;
+}
+
+.char:hover{ background:#f1f5f9; }
+
+.char.active{
+  background:#0ea5e9;
+  color:#ffffff;
+  border-color:#0ea5e9;
+}
+
+.char img{
+  width:32px;
+  height:32px;
+  border-radius:9999px;
+  border:1px solid #e2e8f0;
+  object-fit:cover;
+  flex:0 0 32px;
+}
+
+.char.active img{
+  border-color: rgba(255,255,255,.55);
+}
+
         </style>
 
         <div class="wrap" role="region" aria-label="Waterwheel Village Chat">
           <div class="top">Waterwheel Village</div>
 
           <div class="demoRow">
-            <button class="char" data-char="mcarthur" type="button">McArthur</button>
-            <button class="char" data-char="kwame" type="button">Kwame</button>
-            <button class="char" data-char="nadia" type="button">Nadia</button>
-            <button class="char" data-char="sophia" type="button">Sophia</button>
-            <span class="hint" id="demoHint">Demo: voice replies are short + limited.</span>
-          </div>
+  <button class="char" data-char="mcarthur" type="button">
+    <img src="/avatars/mcarthur.png" alt="Mr. McArthur">
+    <span>McArthur</span>
+  </button>
+
+  <button class="char" data-char="kwame" type="button">
+    <img src="/avatars/kwame.png" alt="Kwame">
+    <span>Kwame</span>
+  </button>
+
+  <button class="char" data-char="nadia" type="button">
+    <img src="/avatars/nadia.png" alt="Nadia">
+    <span>Nadia</span>
+  </button>
+
+  <button class="char" data-char="sophia" type="button">
+    <img src="/avatars/sophia.png" alt="Sophia">
+    <span>Sophia</span>
+  </button>
+
+  <span class="hint" id="demoHint">Demo: voice replies are short + limited.</span>
+</div>
 
           <div class="pane">
             <input id="name" placeholder="Your name" />
@@ -359,6 +395,13 @@
 
       this.ui.showFi.addEventListener("change", () => this.renderWordlist());
       this.setupMic();
+      // Avatar fallback if an image fails to load
+this.shadowRoot.querySelectorAll(".demoRow img").forEach((img) => {
+  img.addEventListener("error", () => {
+    img.src = "/avatars/mcarthur.png"; // safe fallback
+  });
+});
+
     }
 
     setStatus(msg) {
