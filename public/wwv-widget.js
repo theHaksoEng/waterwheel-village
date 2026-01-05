@@ -38,6 +38,7 @@ console.log("WWV script loaded ✅", new Date().toISOString());
   class WaterwheelChat extends HTMLElement {
     constructor() {
       super();
+this.starting = false;
 
       // Attributes / backend normalize
       const attrBackend = (this.getAttribute("backend") || "").trim();
@@ -688,6 +689,9 @@ this.shadowRoot.querySelectorAll(".demoRow img").forEach((img) => {
 
     // Lesson
     async startLesson() {
+      if (this.starting) return;
+this.starting = true;
+
       const m = this.ui.month.value;
       const c = this.ui.chapter.value;
       if (!m || !c) {
@@ -775,7 +779,6 @@ this.shadowRoot.querySelectorAll(".demoRow img").forEach((img) => {
           this.addMsg("bot", d.lessonText);
           if (this.voice && d.voiceId) this.enqueueSpeak(d.lessonText, d.voiceId);
         }
-
         if (d.voiceId) this.lastVoiceId = d.voiceId;
 
         this.setStatus("");
@@ -783,6 +786,8 @@ this.shadowRoot.querySelectorAll(".demoRow img").forEach((img) => {
         console.error(e);
         this.setStatus("Could not start lesson.");
         this.addMsg("bot", "Sorry, I could not start the lesson.");
+      } finally {
+        this.starting = false;   // 🔓 unlock startLesson
       }
     }
 
@@ -1003,44 +1008,26 @@ this.shadowRoot.querySelectorAll(".demoRow img").forEach((img) => {
   }
 customElements.define("waterwheel-chat", WaterwheelChat);
 
-document.addEventListener("DOMContentLoaded", () => {
-  const root = document.getElementById("wwv-root");
+ // ✅ Start Lesson button hook (works even if the button is created later)
+document.addEventListener("click", (e) => {
+  const hit = e.target.closest("#start");
+  if (!hit) return;
 
-  if (root && !root.querySelector("waterwheel-chat")) {
-    const el = document.createElement("waterwheel-chat");
-    el.setAttribute("voice", "on");
-    root.appendChild(el);
+  e.preventDefault();
+
+  const chat = document.querySelector("waterwheel-chat");
+  if (!chat) {
+    console.warn("waterwheel-chat not found");
+    return;
   }
 
-  // ✅ Start Lesson button hook (works even if the button is created later)
-  document.addEventListener("click", (e) => {
-    const hit = e.target.closest("#start"); // Start Lesson button
-    if (!hit) return;
+  if (typeof chat.startLesson === "function") {
+    chat.startLesson();
+  } else {
+    chat.dispatchEvent(
+      new CustomEvent("wwv-start-lesson", { bubbles: true, composed: true })
+    );
+  }
+}, true);
 
-    e.preventDefault();
-    console.log("Start Lesson clicked");
-
-    // Option A: global function
-    if (typeof window.startLesson === "function") {
-      window.startLesson();
-      return;
-    }
-
-    // Option B: call method or dispatch event on the component
-    const chat = root?.querySelector("waterwheel-chat");
-    if (!chat) return;
-
-    if (typeof chat.startLesson === "function") {
-      chat.startLesson();
-    } else {
-      chat.dispatchEvent(
-        new CustomEvent("wwv-start-lesson", {
-          bubbles: true,
-          composed: true
-        })
-      );
-    }
-  }, true);
-});
 })();
-
