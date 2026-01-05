@@ -1,4 +1,5 @@
 // Waterwheel Village — Pro Chat Widget (WordPress-safe, no emojis)
+console.log("WWV script loaded ✅", new Date().toISOString());
 (() => {
   // Config
   const DEFAULT_BACKEND = "https://waterwheel-village.onrender.com";
@@ -1000,15 +1001,44 @@ this.shadowRoot.querySelectorAll(".demoRow img").forEach((img) => {
       URL.revokeObjectURL(url);
     }
   }
+customElements.define("waterwheel-chat", WaterwheelChat);
 
-  customElements.define("waterwheel-chat", WaterwheelChat);
+document.addEventListener("DOMContentLoaded", () => {
+  const root = document.getElementById("wwv-root");
 
-  document.addEventListener("DOMContentLoaded", () => {
-    const root = document.getElementById("wwv-root");
-    if (root && !root.querySelector("waterwheel-chat")) {
-      const el = document.createElement("waterwheel-chat");
-      el.setAttribute("voice", "on");
-      root.appendChild(el);
+  if (root && !root.querySelector("waterwheel-chat")) {
+    const el = document.createElement("waterwheel-chat");
+    el.setAttribute("voice", "on");
+    root.appendChild(el);
+  }
+
+  // ✅ Start Lesson button hook (works even if the button is created later)
+  document.addEventListener("click", (e) => {
+    const hit = e.target.closest("#start"); // Start Lesson button
+    if (!hit) return;
+
+    e.preventDefault();
+    console.log("Start Lesson clicked");
+
+    // Option A: global function
+    if (typeof window.startLesson === "function") {
+      window.startLesson();
+      return;
     }
-  });
-})();
+
+    // Option B: call method or dispatch event on the component
+    const chat = root?.querySelector("waterwheel-chat");
+    if (!chat) return;
+
+    if (typeof chat.startLesson === "function") {
+      chat.startLesson();
+    } else {
+      chat.dispatchEvent(
+        new CustomEvent("wwv-start-lesson", {
+          bubbles: true,
+          composed: true
+        })
+      );
+    }
+  }, true);
+})
