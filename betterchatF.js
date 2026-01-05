@@ -20,36 +20,44 @@ const path = require("path");
 const { v4: uuidv4 } = require("uuid");
 const fetch = (...args) => import("node-fetch").then(({ default: f }) => f(...args));
 
-// === Express setup (must come BEFORE app.use) ===
+// === Express setup ===
 const app = express();
-
-app.use(express.static(path.join(__dirname, "public")));
-app.use("/audio_lessons", express.static(path.join(__dirname, "audio_lessons")));
 
 console.log("ROUTES will include /debug/static");
 
 const PORT = process.env.PORT || 3000;
+
+// 🔒 CORS MUST come before static files (so /app.js works from WordPress)
+const allowed = ["https://www.aaronhakso.com", "https://aaronhakso.com"];
+app.use(
+  cors({
+    origin: function (origin, cb) {
+      if (!origin) return cb(null, true); // allow no-origin requests
+      if (allowed.includes(origin)) return cb(null, true);
+      return cb(new Error("Not allowed by CORS: " + origin));
+    },
+    credentials: false,
+  })
+);
+
+// Middleware
+app.use(bodyParser.json({ limit: "10mb" }));
+app.use(bodyParser.urlencoded({ extended: false }));
+
+// ✅ Serve static frontend AFTER CORS
+app.use(express.static(path.join(__dirname, "public")));
+
+// ✅ Serve lessons audio (only once)
+app.use("/audio_lessons", express.static(path.join(__dirname, "audio_lessons")));
 
 // === Audio Cache Setup ===
 const AUDIO_CACHE_DIR = path.join(__dirname, "cache", "audio");
 fs.mkdirSync(AUDIO_CACHE_DIR, { recursive: true });
 
 function hashTextForCache(text, voiceId) {
-  // normalize text a bit to avoid trivial differences
   const normalized = String(text || "").trim();
   return crypto.createHash("sha256").update(voiceId + ":" + normalized).digest("hex");
 }
-
-
-// 🔒 CORS: restrict to your domain (or "*" while testing)
-const allowed = ["https://www.aaronhakso.com"];
-app.use(cors({ origin: allowed, credentials: false }));
-
-// Middleware
-app.use(bodyParser.json({ limit: "10mb" }));
-app.use(bodyParser.urlencoded({ extended: false }));
-app.use("/audio_lessons", express.static(path.join(__dirname, "audio_lessons")));
-
 
 // === Uploads (Multer, memory) ===
 const multer = require("multer");
@@ -66,8 +74,6 @@ try {
   if (!global.File) global.File = File;
 } catch (_) {}
 
-// Serve static frontend
-app.use(express.static(path.join(__dirname, "public")));
 // ✅ Debug + hard static serving (prevents HTML/nosniff issues)
 
 app.get("/debug/static", (_req, res) => {
