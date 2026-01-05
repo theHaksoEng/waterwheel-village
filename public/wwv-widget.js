@@ -109,6 +109,19 @@
             75%  { box-shadow: 0 0 10px 3px rgba(255, 215, 0, 0.9); }
             100% { box-shadow: 0 0 0 0 rgba(255, 215, 0, 0.0); }
           }
+            .avatar{
+  width:40px;
+  height:40px;
+  border-radius:50%;
+  object-fit:cover;
+  margin-right:6px;
+}
+.char{
+  display:flex;
+  align-items:center;
+  gap:6px;
+}
+
 
           .pane { display:flex; gap:8px; padding:10px 12px; background:#f8fafc; border-bottom:1px solid #e5e7eb; flex-wrap:wrap; align-items:center }
           .pane input, .pane select { border:1px solid #d1d5db; border-radius:10px; padding:8px 10px; outline:none; min-width:140px }
@@ -183,28 +196,26 @@
         <div class="wrap" role="region" aria-label="Waterwheel Village Chat">
           <div class="top">Waterwheel Village</div>
 
-          <div class="demoRow">
-  <button class="char" data-char="mcarthur" type="button">
-    <img src="/avatars/mcarthur.png" alt="Mr. McArthur">
+<div class="demoRow">
+  <button class="char" data-char="mcarthur">
+    <img class="avatar" src="${this.avatarUrl("mcarthur")}" alt="Mr. McArthur">
     <span>McArthur</span>
   </button>
 
-  <button class="char" data-char="kwame" type="button">
-    <img src="/avatars/kwame.png" alt="Kwame">
+  <button class="char" data-char="kwame">
+    <img class="avatar" src="${this.avatarUrl("kwame")}" alt="Kwame">
     <span>Kwame</span>
   </button>
 
-  <button class="char" data-char="nadia" type="button">
-    <img src="/avatars/nadia.png" alt="Nadia">
+  <button class="char" data-char="nadia">
+    <img class="avatar" src="${this.avatarUrl("nadia")}" alt="Nadia">
     <span>Nadia</span>
   </button>
 
-  <button class="char" data-char="sophia" type="button">
-    <img src="/avatars/sophia.png" alt="Sophia">
+  <button class="char" data-char="sophia">
+    <img class="avatar" src="${this.avatarUrl("sophia")}" alt="Sophia">
     <span>Sophia</span>
   </button>
-
-  <span class="hint" id="demoHint">Demo: voice replies are short + limited.</span>
 </div>
 
           <div class="pane">
@@ -327,6 +338,9 @@
         demoHint: qs(this.shadowRoot, "#demoHint"),
       };
     }
+avatarUrl(name) {
+  return `${this.backend}/avatars/${name}.png`;
+}
 
     connectedCallback() {
       const savedName = localStorage.getItem("wwv-name") || "friend";
