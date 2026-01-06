@@ -371,24 +371,17 @@ avatarUrl(name) {
       highlight();
 
       this.ui.start.addEventListener("click", async () => {
-        const m = this.ui.month.value;
-        const c = this.ui.chapter.value;
-        if (!m || !c) {
-          alert("Pick Month and Chapter first");
-          return;
-        }
+  const m = this.ui.month.value;
+  const c = this.ui.chapter.value;
+  if (!m || !c) {
+    alert("Pick Month and Chapter first");
+    return;
+  }
 
-        // Prime audio + try intro, but never block the lesson
-        await this.unlockAudio();
-        try {
-          await this.playLessonIntro(m, c);
-        } catch (e) {
-          console.warn("Intro failed:", e);
-        }
-
-        await this.startLesson();
-      });
-
+  // Prime audio (helps autoplay restrictions), then start lesson
+  await this.unlockAudio();
+  await this.startLesson();
+});
       this.ui.voiceToggle.addEventListener("click", () => {
         this.voice = !this.voice;
         this.ui.voiceToggle.textContent = this.voice ? "Voice: ON" : "Voice: OFF";
