@@ -818,6 +818,11 @@ this.starting = true;
         if (d.voiceId) this.lastVoiceId = d.voiceId;
 
         this.addMsg("bot", reply);
+                // 🔊 Speak bot reply (TTS) if voice is ON
+        if (this.voice) {
+          const vid = d.voiceId || this.lastVoiceId || MCARTHUR_VOICE;
+          this.enqueueSpeak(reply, vid);
+        }
 
         // === DEMO VOICE GATE (cheap + safe) ===
         const charKey = d.character || this.activeCharacter || "mcarthur";
