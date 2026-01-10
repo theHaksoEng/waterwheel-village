@@ -4,6 +4,18 @@ console.log("WWV script loaded ✅", new Date().toISOString());
   // Config
   const DEFAULT_BACKEND = "https://waterwheel-village.onrender.com";
   const MCARTHUR_VOICE = "fEVT2ExfHe1MyjuiIiU9"; // fixed welcome voice
+  const VOICE_BY_CHAR = Object.freeze({
+  mcarthur: "fEVT2ExfHe1MyjuiIiU9",
+  kwame:    "dhwafD61uVd8h85wAZSE",
+  nadia:    "a1KZUXKFVFDOb33I1uqr",
+  sophia:   "0q9TlrIoQJIdxZP9oZh7",
+  liang:    "gAMZphRyrWJnLMDnom6H",
+  fatima:   "JMbCR4ujfEfGaawA1YtC",
+  ibrahim:  "tlETan7Okc4pzjD0z62P",
+  alex:     "tIFPE2y0DAU6xfZn3Fka",
+  anika:    "GCPLhb1XrVwcoKUJYcvz",
+  johannes: "JgHmW3ojZwT0NDP5D1JJ"
+});
 
   // Utility
   const qs = (root, sel) => root.querySelector(sel);
@@ -389,7 +401,7 @@ avatarUrl(name) {
 
       this.ui.voiceTest.addEventListener("click", async () => {
   await this.unlockAudio(); // ✅ makes this click a valid user gesture
-  const vid = this.lastVoiceId || MCARTHUR_VOICE;
+const vid = VOICE_BY_CHAR[this.activeCharacter] || this.lastVoiceId || MCARTHUR_VOICE;
   this.enqueueSpeak("Voice test. If you hear this, TTS works.", vid);
 });
 
