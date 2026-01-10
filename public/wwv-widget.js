@@ -387,10 +387,11 @@ avatarUrl(name) {
         this.ui.voiceToggle.textContent = this.voice ? "Voice: ON" : "Voice: OFF";
       });
 
-      this.ui.voiceTest.addEventListener("click", () => {
-        const vid = this.lastVoiceId || MCARTHUR_VOICE;
-        this.enqueueSpeak("Voice test: hello from Waterwheel Village.", vid);
-      });
+      this.ui.voiceTest.addEventListener("click", async () => {
+  await this.unlockAudio(); // ✅ makes this click a valid user gesture
+  const vid = this.lastVoiceId || MCARTHUR_VOICE;
+  this.enqueueSpeak("Voice test. If you hear this, TTS works.", vid);
+});
 
       this.ui.download.addEventListener("click", () => this.downloadTranscript());
       this.ui.send.addEventListener("click", () => this.send());
@@ -762,19 +763,26 @@ this.starting = true;
         const d = await r.json();
         if (!r.ok) throw new Error((d && d.error) || "Lesson failed");
 
-        // Intro text + voice
-        if (d.welcomeText) {
-          this.addMsg("bot", d.welcomeText);
-          if (this.voice) this.enqueueSpeak(d.welcomeText, MCARTHUR_VOICE);
-        }
+// Intro text + voice
+if (d.welcomeText) {
+  this.addMsg("bot", d.welcomeText);
+  if (this.voice) {
+    await this.unlockAudio(); // ✅ Fix B: ensure audio is allowed right now
+    this.enqueueSpeak(d.welcomeText, MCARTHUR_VOICE);
+  }
+}
 
-        if (d.lessonText) {
-          this.addMsg("bot", d.lessonText);
-          if (this.voice && d.voiceId) this.enqueueSpeak(d.lessonText, d.voiceId);
-        }
-        if (d.voiceId) this.lastVoiceId = d.voiceId;
+if (d.lessonText) {
+  this.addMsg("bot", d.lessonText);
+  if (this.voice && d.voiceId) {
+    await this.unlockAudio(); // ✅ Fix B: same here
+    this.enqueueSpeak(d.lessonText, d.voiceId);
+  }
+}
 
-        this.setStatus("");
+if (d.voiceId) this.lastVoiceId = d.voiceId;
+
+this.setStatus("");
       } catch (e) {
         console.error(e);
         this.setStatus("Could not start lesson.");
@@ -782,7 +790,7 @@ this.starting = true;
       } finally {
         this.starting = false;   // 🔓 unlock startLesson
       }
-    }
+    } // ✅ end startLesson
 
     // Chat
     async send() {
