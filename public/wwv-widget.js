@@ -357,6 +357,9 @@ avatarUrl(name) {
 }
 
     connectedCallback() {
+      if (this._didInit) return;
+      this._didInit = true;
+
       const savedName = localStorage.getItem("wwv-name") || "friend";
       this.ui.name.value = savedName;
 
@@ -603,54 +606,149 @@ this.shadowRoot.querySelectorAll(".demoRow img").forEach((img) => {
       }
     }
 
-    enqueueSpeak(text, voiceId) {
-      if (!text) return;
-      const clean = sanitizeForTTS(text);
-      if (!clean) return;
-      this.ttsQueue.push({ text: clean, voiceId });
-      this.playNextSpeak();
+enqueueSpeak(text, voiceId) {
+  if (!text) return;
+
+  // 1) sanitize
+  let clean = sanitizeForTTS(text);
+  if (!clean) return;
+
+  // 2) DEMO voice limits (minimal, copy-paste)
+  if (this.demo) {
+    // total voice limit
+    if (this.demoVoiceUsed >= this.demoVoiceMax) {
+      this.setStatus("Demo voice limit reached. Turn Voice OFF or upgrade.");
+      return;
     }
 
-    async playNextSpeak() {
-      if (this.ttsPlaying || !this.ttsQueue.length || !this.audioReady) return;
-      const { text, voiceId } = this.ttsQueue.shift();
-      this.ttsPlaying = true;
-      this.stopMic();
+    // per-character count (optional, keeps stats)
+    const ch = this.activeCharacter || "mcarthur";
+    this.demoVoicedByCharacter = this.demoVoicedByCharacter || {};
+    this.demoVoicedByCharacter[ch] = (this.demoVoicedByCharacter[ch] || 0) + 1;
 
-      try {
-        const r = await fetch(this.backend + "/speakbase", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text, voiceId }),
-        });
+    // max chars spoken per clip
+    if (clean.length > this.demoMaxChars) {
+      clean = clean.slice(0, this.demoMaxChars) + "...";
+    }
+  }
 
-        if (!r.ok) {
-          this.ttsPlaying = false;
-          setTimeout(() => this.playNextSpeak(), 120);
-          return;
-        }
+  // 3) DEDUPE: skip if same exact thing already queued (or currently playing)
+  const dedupeKey = `${voiceId || ""}::${clean}`;
+  this._speakDedup = this._speakDedup || new Set();
+  if (this._speakDedup.has(dedupeKey)) return;
 
-        const blob = await r.blob();
-        const url = URL.createObjectURL(blob);
-        this.ui.player.src = url;
+  // keep dedupe set from growing forever
+  if (this._speakDedup.size > 200) {
+    this._speakDedup.clear();
+  }
+  this._speakDedup.add(dedupeKey);
 
-        await new Promise((resolve) => {
-          const done = () => {
-            URL.revokeObjectURL(url);
-            resolve();
-          };
-          this.ui.player.addEventListener("ended", done, { once: true });
-          this.ui.player.addEventListener("error", done, { once: true });
-          const p = this.ui.player.play();
-          if (p && p.catch) p.catch(() => this.setStatus("If muted, click page once to allow audio."));
-        });
-      } catch {
-        // ignore
-      } finally {
-        this.ttsPlaying = false;
-        setTimeout(() => this.playNextSpeak(), 120);
+  // 4) queue item
+  this.speakQueue = this.speakQueue || [];
+  this.speakQueue.push({ text: clean, voiceId, dedupeKey });
+
+  // 5) kick the player
+  if (!this.isSpeaking) {
+    this.playSpeakQueue();
+  }
+}
+enqueueSpeak(text, voiceId) {
+  if (!text) return;
+
+  let clean = sanitizeForTTS(text);
+  if (!clean) return;
+
+  if (this.demo) {
+    if (this.demoVoiceUsed >= this.demoVoiceMax) {
+      this.setStatus("Demo voice limit reached. Turn Voice OFF or upgrade.");
+      return;
+    }
+
+    const ch = this.activeCharacter || "mcarthur";
+    this.demoVoicedByCharacter = this.demoVoicedByCharacter || {};
+    this.demoVoicedByCharacter[ch] = (this.demoVoicedByCharacter[ch] || 0) + 1;
+
+    if (clean.length > this.demoMaxChars) {
+      clean = clean.slice(0, this.demoMaxChars) + "...";
+    }
+  }
+
+  const dedupeKey = `${voiceId || ""}::${clean}`;
+  this._speakDedup = this._speakDedup || new Set();
+  if (this._speakDedup.has(dedupeKey)) return;
+
+  if (this._speakDedup.size > 200) this._speakDedup.clear();
+  this._speakDedup.add(dedupeKey);
+
+  this.speakQueue = this.speakQueue || [];
+  this.speakQueue.push({ text: clean, voiceId, dedupeKey });
+
+  if (!this.isSpeaking) {
+    this.playSpeakQueue(); // ✅ this will run the async method below
+  }
+}
+
+// ✅ PASTE THIS RIGHT AFTER enqueueSpeak() INSIDE THE CLASS
+async playSpeakQueue() {
+  if (this.isSpeaking) return;
+  this.isSpeaking = true;
+
+  try {
+    while (this.speakQueue && this.speakQueue.length) {
+      const { text, voiceId, dedupeKey } = this.speakQueue.shift();
+
+      // If Voice is OFF, skip audio
+      if (!this.voice) {
+        this._speakDedup?.delete(dedupeKey);
+        continue;
       }
+
+      const base = String(this.backend || "").replace(/\/+$/, "");
+      const r = await fetch(`${base}/speak`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, voiceId }),
+      });
+
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      await new Promise((resolve) => {
+        let settled = false;
+        const done = () => {
+          if (settled) return;
+          settled = true;
+          try { URL.revokeObjectURL(url); } catch {}
+          resolve();
+        };
+
+        const timer = setTimeout(done, 15000);
+
+        const a = new Audio(url);
+        a.playsInline = true;
+
+        a.addEventListener("ended", () => { clearTimeout(timer); done(); }, { once: true });
+        a.addEventListener("error", () => { clearTimeout(timer); done(); }, { once: true });
+
+        const pr = a.play();
+        if (pr && pr.catch) {
+          pr.catch(() => {
+            clearTimeout(timer);
+            this.setStatus("Audio blocked. Click Voice Test once to enable.");
+            done();
+          });
+        }
+      });
+
+      // ✅ allow same exact line later again
+      this._speakDedup?.delete(dedupeKey);
     }
+  } catch (e) {
+    console.error("TTS error:", e);
+    this.setStatus("TTS error. Check backend / network.");
+  } finally {
+    this.isSpeaking = false;
+  }
+}
 
     async pronounceWord(word) {
       if (!word) return;
@@ -1025,27 +1123,4 @@ this.setStatus("");
     }
   }
 customElements.define("waterwheel-chat", WaterwheelChat);
-
- // ✅ Start Lesson button hook (works even if the button is created later)
-document.addEventListener("click", (e) => {
-  const hit = e.target.closest("#start");
-  if (!hit) return;
-
-  e.preventDefault();
-
-  const chat = document.querySelector("waterwheel-chat");
-  if (!chat) {
-    console.warn("waterwheel-chat not found");
-    return;
-  }
-
-  if (typeof chat.startLesson === "function") {
-    chat.startLesson();
-  } else {
-    chat.dispatchEvent(
-      new CustomEvent("wwv-start-lesson", { bubbles: true, composed: true })
-    );
-  }
-}, true);
-
 })();
