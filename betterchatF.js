@@ -932,6 +932,11 @@ app.post("/speakbase", async (req, res) => {
     res.end();
   }
 });
+// Alias so frontend can POST /speak
+app.post("/speak", (req, res) => {
+  req.url = "/speakbase";
+  app._router.handle(req, res);
+});
 
 // === Meta & Health ===
 app.get("/meta", async (_req, res) => {

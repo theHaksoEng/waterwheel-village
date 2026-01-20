@@ -609,51 +609,8 @@ this.shadowRoot.querySelectorAll(".demoRow img").forEach((img) => {
 enqueueSpeak(text, voiceId) {
   if (!text) return;
 
-  // 1) sanitize
-  let clean = sanitizeForTTS(text);
-  if (!clean) return;
-
-  // 2) DEMO voice limits (minimal, copy-paste)
-  if (this.demo) {
-    // total voice limit
-    if (this.demoVoiceUsed >= this.demoVoiceMax) {
-      this.setStatus("Demo voice limit reached. Turn Voice OFF or upgrade.");
-      return;
-    }
-
-    // per-character count (optional, keeps stats)
-    const ch = this.activeCharacter || "mcarthur";
-    this.demoVoicedByCharacter = this.demoVoicedByCharacter || {};
-    this.demoVoicedByCharacter[ch] = (this.demoVoicedByCharacter[ch] || 0) + 1;
-
-    // max chars spoken per clip
-    if (clean.length > this.demoMaxChars) {
-      clean = clean.slice(0, this.demoMaxChars) + "...";
-    }
-  }
-
-  // 3) DEDUPE: skip if same exact thing already queued (or currently playing)
-  const dedupeKey = `${voiceId || ""}::${clean}`;
-  this._speakDedup = this._speakDedup || new Set();
-  if (this._speakDedup.has(dedupeKey)) return;
-
-  // keep dedupe set from growing forever
-  if (this._speakDedup.size > 200) {
-    this._speakDedup.clear();
-  }
-  this._speakDedup.add(dedupeKey);
-
-  // 4) queue item
-  this.speakQueue = this.speakQueue || [];
-  this.speakQueue.push({ text: clean, voiceId, dedupeKey });
-
-  // 5) kick the player
-  if (!this.isSpeaking) {
-    this.playSpeakQueue();
-  }
-}
-enqueueSpeak(text, voiceId) {
-  if (!text) return;
+  // ✅ Ensure we ALWAYS have a voiceId (backend requires it)
+  const vid = voiceId || this.lastVoiceId || MCARTHUR_VOICE;
 
   let clean = sanitizeForTTS(text);
   if (!clean) return;
@@ -673,7 +630,7 @@ enqueueSpeak(text, voiceId) {
     }
   }
 
-  const dedupeKey = `${voiceId || ""}::${clean}`;
+  const dedupeKey = `${vid || ""}::${clean}`;
   this._speakDedup = this._speakDedup || new Set();
   if (this._speakDedup.has(dedupeKey)) return;
 
@@ -681,7 +638,7 @@ enqueueSpeak(text, voiceId) {
   this._speakDedup.add(dedupeKey);
 
   this.speakQueue = this.speakQueue || [];
-  this.speakQueue.push({ text: clean, voiceId, dedupeKey });
+  this.speakQueue.push({ text: clean, voiceId: vid, dedupeKey });
 
   if (!this.isSpeaking) {
     this.playSpeakQueue(); // ✅ this will run the async method below
@@ -704,14 +661,26 @@ async playSpeakQueue() {
       }
 
       const base = String(this.backend || "").replace(/\/+$/, "");
-      const r = await fetch(`${base}/speak`, {
+
+      // ✅ Use /speakbase because your backend currently has that endpoint
+      const r = await fetch(`${base}/speakbase`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text, voiceId }),
       });
 
+      // ✅ If backend returns error, log it and continue (prevents dead queue)
+      if (!r.ok) {
+        const err = await r.text().catch(() => "");
+        console.error("TTS failed:", r.status, err);
+        this.setStatus("TTS failed (" + r.status + ")");
+        this._speakDedup?.delete(dedupeKey);
+        continue;
+      }
+
       const blob = await r.blob();
       const url = URL.createObjectURL(blob);
+
       await new Promise((resolve) => {
         let settled = false;
         const done = () => {
