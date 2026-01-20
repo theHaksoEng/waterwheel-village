@@ -356,127 +356,88 @@ avatarUrl(name) {
   return `${this.backend}/avatars/${name}.png`;
 }
 
-    connectedCallback() {
-      if (this._didInit) return;
-      this._didInit = true;
+connectedCallback() {
+  if (this._didInit) return;
+  this._didInit = true;
 
-      const savedName = localStorage.getItem("wwv-name") || "friend";
-      this.ui.name.value = savedName;
+  // 1. Setup Name & LocalStorage
+  const savedName = localStorage.getItem("wwv-name") || "friend";
+  this.ui.name.value = savedName;
+  this.ui.name.addEventListener("change", () =>
+    localStorage.setItem("wwv-name", this.ui.name.value.trim())
+  );
 
-      this.ui.name.addEventListener("change", () =>
-        localStorage.setItem("wwv-name", this.ui.name.value.trim())
-      );
+  // 2. Character Picker Logic
+  const allChars = Array.from(this.shadowRoot.querySelectorAll(".char"));
+  const highlight = () => {
+    allChars.forEach((b) => b.classList.toggle("active", (b.getAttribute("data-char") || "") === this.activeCharacter));
+  };
 
-      // Character picker MUST be inside connectedCallback
-      const allChars = Array.from(this.shadowRoot.querySelectorAll(".char"));
-      const highlight = () => {
-        allChars.forEach((b) => b.classList.toggle("active", (b.getAttribute("data-char") || "") === this.activeCharacter));
-      };
-
-      allChars.forEach((btn) => {
-        btn.addEventListener("click", () => {
-          this.activeCharacter = btn.getAttribute("data-char") || "mcarthur";
-          highlight();
-          this.addMsg("bot", `Demo character set to: ${this.activeCharacter}. Say hello!`);
-        });
-      });
-
-      // default highlight
-      if (!this.activeCharacter) this.activeCharacter = "mcarthur";
+  allChars.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      this.activeCharacter = btn.getAttribute("data-char") || "mcarthur";
       highlight();
-
-      this.ui.start.addEventListener("click", async () => {
-  const m = this.ui.month.value;
-  const c = this.ui.chapter.value;
-  if (!m || !c) {
-    alert("Pick Month and Chapter first");
-    return;
-  }
-
-  // Prime audio (helps autoplay restrictions), then start lesson
-  await this.unlockAudio();
-  await this.startLesson();
-});
-      this.ui.voiceToggle.addEventListener("click", () => {
-        this.voice = !this.voice;
-        this.ui.voiceToggle.textContent = this.voice ? "Voice: ON" : "Voice: OFF";
-      });
-
-      this.ui.voiceTest.addEventListener("click", async () => {
-  await this.unlockAudio(); // ✅ makes this click a valid user gesture
-const vid = VOICE_BY_CHAR[this.activeCharacter] || this.lastVoiceId || MCARTHUR_VOICE;
-  this.enqueueSpeak("Voice test. If you hear this, TTS works.", vid);
-});
-
-      this.ui.download.addEventListener("click", () => this.downloadTranscript());
-      this.ui.send.addEventListener("click", () => this.send());
-
-      this.ui.input.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" && !e.shiftKey) {
-          e.preventDefault();
-          this.send();
-        }
-      });
-
-      this.ui.showFi.addEventListener("change", () => this.renderWordlist());
-      this.setupMic();
-      // Avatar fallback if an image fails to load
-this.shadowRoot.querySelectorAll(".demoRow img").forEach((img) => {
-  img.addEventListener("error", () => {
-    img.src = "/avatars/mcarthur.png"; // safe fallback
+      this.addMsg("bot", `Demo character set to: ${this.activeCharacter}. Say hello!`);
+    });
   });
-});
 
+  if (!this.activeCharacter) this.activeCharacter = "mcarthur";
+  highlight();
+
+  // 3. The "Start Lesson" Logic (With Guard)
+  this.ui.start.addEventListener("click", async () => {
+    if (this._lessonStarting) return; // Prevent double-click start
+    const m = this.ui.month.value;
+    const c = this.ui.chapter.value;
+    if (!m || !c) { alert("Pick Month and Chapter first"); return; }
+
+    this._lessonStarting = true;
+    await this.unlockAudio();
+    await this.startLesson();
+    this._lessonStarting = false;
+  });
+
+  // 4. Voice Controls
+  this.ui.voiceToggle.addEventListener("click", () => {
+    this.voice = !this.voice;
+    this.ui.voiceToggle.textContent = this.voice ? "Voice: ON" : "Voice: OFF";
+  });
+
+  this.ui.voiceTest.addEventListener("click", async () => {
+    await this.unlockAudio();
+    const vid = VOICE_BY_CHAR[this.activeCharacter] || this.lastVoiceId || MCARTHUR_VOICE;
+    this.enqueueSpeak("Voice test. If you hear this, TTS works.", vid);
+  });
+
+  // 5. Send & Input Logic (CRITICAL FIX)
+  this.ui.send.addEventListener("click", () => this.handleSendAction());
+
+  this.ui.input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      this.handleSendAction();
     }
+  });
 
-    setStatus(msg) {
-      this.ui.status.textContent = msg || "";
-    }
+  // 6. Others
+  this.ui.download.addEventListener("click", () => this.downloadTranscript());
+  this.ui.showFi.addEventListener("change", () => this.renderWordlist());
+  
+  this.setupMic();
 
-    async unlockAudio() {
-      const p = this.ui.player;
-      if (!p) return;
-      try {
-        p.muted = true;
-        const pr = p.play();
-        if (pr && pr.catch) await pr.catch(() => {});
-        p.pause();
-        p.currentTime = 0;
-      } catch {
-        // ignore
-      } finally {
-        p.muted = false;
-      }
-    }
+  this.shadowRoot.querySelectorAll(".demoRow img").forEach((img) => {
+    img.addEventListener("error", () => { img.src = "/avatars/mcarthur.png"; });
+  });
+}
 
-    async playLessonIntro(month, chapter) {
-      const p = this.ui.player;
-      const base = String(this.backend || "").replace(/\/+$/, "");
-      const src = `${base}/audio_lessons/${month}_${chapter}_intro.mp3`;
-
-      try { p.pause(); } catch {}
-      try { p.currentTime = 0; } catch {}
-
-      p.preload = "auto";
-      p.muted = false;
-      p.volume = 1;
-      p.src = src;
-      p.load();
-
-      await new Promise((resolve) => {
-        const ok = () => resolve();
-        const bad = () => resolve();
-        p.addEventListener("canplaythrough", ok, { once: true });
-        p.addEventListener("error", bad, { once: true });
-      });
-
-      try {
-        const pr = p.play();
-        if (pr && pr.catch) await pr.catch(() => {});
-      } catch {
-        // ignore
-      }
-    }
+// Helper to prevent the "Double Trigger"
+async handleSendAction() {
+  const text = this.ui.input.value.trim();
+  if (!text || this.isProcessing) return; // Ignore if empty or already working
+  
+  this.ui.input.value = ""; // Clear input IMMEDIATELY to prevent double-send
+  await this.send(text);    // Pass the text to your actual send function
+}
 
     // Chat bubbles
     addMsg(role, text) {
@@ -881,69 +842,61 @@ this.setStatus("");
       await this.sendText(text, false);
     }
 
-    async sendText(text, isVoice) {
-      this.addTyping(true);
-      try {
-        const r = await fetch(this.backend + "/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            text,
-            sessionId: this.sessionId,
-            isVoice: !!isVoice,
-            name: this.ui.name.value || "friend",
-            character: this.activeCharacter,
-            demo: !!this.demo,
-          }),
-        });
+ async sendText(text, isVoice) {
+  this.addTyping(true);
+  try {
+    const r = await fetch(this.backend + "/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text,
+        sessionId: this.sessionId,
+        isVoice: !!isVoice,
+        name: this.ui.name.value || "friend",
+        character: this.activeCharacter,
+        demo: !!this.demo,
+      }),
+    });
 
-        const d = await r.json().catch(() => ({}));
-        this.addTyping(false);
-        if (!r.ok) throw new Error((d && d.error) || "Chat failed");
+    const d = await r.json().catch(() => ({}));
+    this.addTyping(false);
+    if (!r.ok) throw new Error((d && d.error) || "Chat failed");
 
-        const reply = d.text || "(no response)";
-        if (d.voiceId) this.lastVoiceId = d.voiceId;
+    const reply = d.text || "(no response)";
+    if (d.voiceId) this.lastVoiceId = d.voiceId;
 
-        this.addMsg("bot", reply);
-                // 🔊 Speak bot reply (TTS) if voice is ON
-        if (this.voice) {
-          const vid = d.voiceId || this.lastVoiceId || MCARTHUR_VOICE;
-          this.enqueueSpeak(reply, vid);
-        }
+    this.addMsg("bot", reply);
 
-        // === DEMO VOICE GATE (cheap + safe) ===
-        const charKey = d.character || this.activeCharacter || "mcarthur";
-        const usedByChar = this.demoVoicedByCharacter[charKey] || 0;
+    // === FIXED VOICE LOGIC (Only one trigger!) ===
+    const charKey = d.character || this.activeCharacter || "mcarthur";
+    const usedByChar = this.demoVoicedByCharacter[charKey] || 0;
 
-        const canVoice =
-          this.voice &&
-          d.voiceId &&
-          (
-            !this.demo ||
-            (
-              this.demoVoiceUsed < this.demoVoiceMax &&
-              usedByChar < 2
-            )
-          );
+    // Check if we are allowed to speak
+    const canVoice = this.voice && (
+      !this.demo || 
+      (this.demoVoiceUsed < this.demoVoiceMax && usedByChar < 2)
+    );
 
-        if (canVoice) {
-          const spoken = this.demo ? reply.slice(0, this.demoMaxChars) : reply;
-          this.enqueueSpeak(spoken, d.voiceId);
+    if (canVoice) {
+      const vid = d.voiceId || this.lastVoiceId || MCARTHUR_VOICE;
+      const spokenText = this.demo ? reply.slice(0, this.demoMaxChars) : reply;
+      
+      this.enqueueSpeak(spokenText, vid);
 
-          if (this.demo) {
-            this.demoVoiceUsed++;
-            this.demoVoicedByCharacter[charKey] = usedByChar + 1;
-          }
-        }
-
-        if (d.newlyLearned) this.mergeNewlyLearned(d.newlyLearned);
-        this.handleMilestones();
-      } catch (e) {
-        console.error(e);
-        this.addTyping(false);
-        this.addMsg("bot", "Sorry, something went wrong sending your message.");
+      if (this.demo) {
+        this.demoVoiceUsed++;
+        this.demoVoicedByCharacter[charKey] = usedByChar + 1;
       }
     }
+
+    if (d.newlyLearned) this.mergeNewlyLearned(d.newlyLearned);
+    this.handleMilestones();
+  } catch (e) {
+    console.error(e);
+    this.addTyping(false);
+    this.addMsg("bot", "Sorry, something went wrong sending your message.");
+  }
+}
 
     // Mic with pause buffer
     setupMic() {
