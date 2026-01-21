@@ -670,8 +670,9 @@ async playSpeakQueue() {
 
         const timer = setTimeout(done, 15000);
 
-        const a = new Audio(url);
-        a.playsInline = true;
+       // ✅ NEW FIXED CODE
+const a = new Audio(url);
+a.setAttribute("playsinline", ""); // Use setAttribute for better compatibility
 
         a.addEventListener("ended", () => { clearTimeout(timer); done(); }, { once: true });
         a.addEventListener("error", () => { clearTimeout(timer); done(); }, { once: true });
@@ -740,7 +741,7 @@ async playSpeakQueue() {
 async unlockAudio() {
   // Standard pattern to unlock Web Audio on user gesture (mobile-friendly)
   const silentBuffer = new Audio("data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=");
-  silentBuffer playsInline = true;
+  silentBuffer.playsInline = true;
   try {
     await silentBuffer.play();
   } catch (e) {
