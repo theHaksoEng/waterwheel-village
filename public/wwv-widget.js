@@ -77,7 +77,7 @@ this.starting = false;
       this.lastVoiceId = null;
 
       // === Demo mode (safe + cheap) ===
-      this.demo = true;                 // set false for paid school
+      this.demo = false; // unlimited voice for full use
       this.demoVoiceMax = 8;            // total voiced replies per session
       this.demoVoiceUsed = 0;
       this.demoVoicedByCharacter = {};  // limit per character
@@ -373,13 +373,30 @@ connectedCallback() {
     allChars.forEach((b) => b.classList.toggle("active", (b.getAttribute("data-char") || "") === this.activeCharacter));
   };
 
-  allChars.forEach((btn) => {
-    btn.addEventListener("click", () => {
-      this.activeCharacter = btn.getAttribute("data-char") || "mcarthur";
-      highlight();
-      this.addMsg("bot", `Demo character set to: ${this.activeCharacter}. Say hello!`);
-    });
+ allChars.forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    const newChar = btn.getAttribute("data-char") || "mcarthur";
+    if (newChar === this.activeCharacter) return;
+    this.activeCharacter = newChar;
+    highlight();
+
+    // Map char key to full name for reliable switching
+    const nameMap = {
+      mcarthur: "Mr. McArthur",
+      kwame: "Kwame",
+      nadia: "Nadia",
+      sophia: "Sophia"
+    };
+    const fullName = nameMap[newChar] || newChar;
+
+    this.addMsg("bot", `Switched to ${fullName}. Say hello!`);
+
+    // Auto-send a greeting to trigger backend character switch (uses findCharacter + intro)
+    const greeting = `Hello ${fullName}`;
+    this.addMsg("user", greeting);
+    await this.sendText(greeting, false); // false = not from mic
   });
+});
 
   if (!this.activeCharacter) this.activeCharacter = "mcarthur";
   highlight();
@@ -720,7 +737,16 @@ async playSpeakQueue() {
         this.addMsg("bot", "Say: " + word);
       }
     }
-
+async unlockAudio() {
+  // Standard pattern to unlock Web Audio on user gesture (mobile-friendly)
+  const silentBuffer = new Audio("data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=");
+  silentBuffer playsInline = true;
+  try {
+    await silentBuffer.play();
+  } catch (e) {
+    console.warn("Audio unlock failed (may be already unlocked):", e);
+  }
+}
     // Lesson
     async startLesson() {
       if (this.starting) return;
