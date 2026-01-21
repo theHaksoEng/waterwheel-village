@@ -854,6 +854,12 @@ this.setStatus("");
         console.error(e);
         this.setStatus("Could not start lesson.");
         this.addMsg("bot", "Sorry, I could not start the lesson.");
+        setStatus(msg = "", isError = false) {
+  if (!this.ui || !this.ui.status) return;
+  this.ui.status.textContent = msg;
+  this.ui.status.className = isError ? "err" : "hint";
+  this.ui.status.style.color = isError ? "#b91c1c" : "#334155";
+}
       } finally {
         this.starting = false;   // 🔓 unlock startLesson
       }
