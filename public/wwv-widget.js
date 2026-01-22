@@ -75,6 +75,7 @@ this.starting = false;
       this.wordsetEn = new Set();    // lowercased english words
       this.learned = new Set();      // learned lowercased words
       this.lastVoiceId = null;
+      this._lastAudioUrl = null;
 
       // === Demo mode (safe + cheap) ===
       this.demo = false; // unlimited voice for full use
@@ -657,6 +658,12 @@ async playSpeakQueue() {
       }
 
       const blob = await r.blob();
+      // Safari/iOS fix: Revoke old URLs early & force new context
+if (this._lastAudioUrl) {
+  URL.revokeObjectURL(this._lastAudioUrl);
+}
+this._lastAudioUrl = URL.createObjectURL(blob);
+const url = this._lastAudioUrl;
       const url = URL.createObjectURL(blob);
 
       await new Promise((resolve) => {
@@ -749,66 +756,80 @@ async unlockAudio() {
   }
 }
     // Lesson
-    async startLesson() {
-      if (this.starting) return;
-this.starting = true;
+ async startLesson() {
+  if (this.starting) return;
+  this.starting = true;
+  this.setStatus("Starting lesson...");
+  const m = this.ui.month.value;
+  const c = this.ui.chapter.value;
+  if (!m || !c) {
+    alert("Pick Month and Chapter first");
+    this.starting = false;
+    return;
+  }
+  const name = (this.ui.name.value || "friend").trim();
+  localStorage.setItem("wwv-name", name);
 
-      const m = this.ui.month.value;
-      const c = this.ui.chapter.value;
-      if (!m || !c) {
-        alert("Pick Month and Chapter first");
-        return;
+  // Reset UI
+  this.wordlist = [];
+  this.wordsetEn = new Set();
+  this.learned.clear();
+  this._milestone10 = false;
+  this._milestoneComplete = false;
+  this.renderWordlist();
+  this.ui.chat.innerHTML = "";
+  this.addTyping(false);
+
+  try {
+    // Load wordlist first
+    const wlRes = await fetch(`${this.backend}/wordlist/${encodeURIComponent(m)}/${encodeURIComponent(c)}`);
+    if (!wlRes.ok) throw new Error(`Wordlist HTTP ${wlRes.status}`);
+    const data = await wlRes.json();
+    const raw = Array.isArray(data) ? data : (data.words || data.vocab || data.wordlist || []);
+    this.wordlist = raw.map(w => ({
+      en: String(w?.en || w || "").trim(),
+      fi: String(w?.fi || "").trim()
+    })).filter(w => w.en);
+    this.wordsetEn = new Set(this.wordlist.map(w => w.en.toLowerCase()));
+    this.renderWordlist();
+    console.log("Wordlist loaded:", this.wordlist.length, "words");
+
+    // Start lesson
+    const url = `${this.backend}/lesson/${encodeURIComponent(m)}/${encodeURIComponent(c)}?sessionId=${encodeURIComponent(this.sessionId)}&name=${encodeURIComponent(name)}&character=${encodeURIComponent(this.activeCharacter)}&demo=${this.demo ? "1" : "0"}`;
+    console.log("Fetching lesson:", url);
+    const r = await fetch(url);
+    if (!r.ok) {
+      const errText = await r.text().catch(() => "");
+      throw new Error(`Lesson HTTP ${r.status}: ${errText}`);
+    }
+    const d = await r.json();
+    console.log("Lesson response:", d);
+
+    if (d.welcomeText) {
+      this.addMsg("bot", d.welcomeText);
+      if (this.voice) {
+        await this.unlockAudio();
+        this.enqueueSpeak(d.welcomeText, MCARTHUR_VOICE); // Mr. McArthur intro
       }
-
-      const name = (this.ui.name.value || "friend").trim();
-      localStorage.setItem("wwv-name", name);
-
-      // Reset
-      this.wordlist = [];
-      this.wordsetEn = new Set();
-      this.learned.clear();
-      this._milestone10 = false;
-      this._milestoneComplete = false;
-      this.renderWordlist();
-      this.ui.chat.innerHTML = "";
-      this._typing = null;
-      this._interimNode = null;
-
-      // Load wordlist
-      try {
-        const wlRes = await fetch(
-          this.backend +
-            "/wordlist/" +
-            encodeURIComponent(m) +
-            "/" +
-            encodeURIComponent(c)
-        );
-        if (!wlRes.ok) throw new Error("HTTP " + wlRes.status);
-        const data = await wlRes.json();
-        const raw = Array.isArray(data)
-          ? data
-          : Array.isArray(data && data.words)
-          ? data.words
-          : [];
-
-        this.wordlist = raw
-          .map((w) => ({
-            en: String((w && w.en) || "").trim(),
-            fi: String((w && w.fi) || "").trim(),
-          }))
-          .filter((w) => w.en);
-
-        this.wordsetEn = new Set(this.wordlist.map((w) => w.en.toLowerCase()));
-        this.renderWordlist();
-        if (this.wordlist.length === 0) this.setStatus("No wordlist found for this chapter.");
-      } catch (e) {
-        console.error("Wordlist fetch failed:", e);
-        this.setStatus("Could not load wordlist.");
+    }
+    if (d.lessonText) {
+      this.addMsg("bot", d.lessonText);
+      if (this.voice && d.voiceId) {
+        await this.unlockAudio();
+        this.enqueueSpeak(d.lessonText, d.voiceId);
       }
+    }
+    if (d.voiceId) this.lastVoiceId = d.voiceId;
 
-      // Start lesson
-      try {
-        this.setStatus("Starting lesson...");
+    this.setStatus("");
+  } catch (e) {
+    console.error("Start lesson failed:", e);
+    this.setStatus("Could not start lesson: " + e.message, true);
+    this.addMsg("bot", "Sorry, lesson failed to load. Try again or check connection.");
+  } finally {
+    this.starting = false;
+  }
+}
 
         // IMPORTANT: send character + demo so backend can lock persona/voice
         const url =
