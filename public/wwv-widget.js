@@ -856,7 +856,14 @@ async startLesson() {
       this.addMsg("bot", d.lessonText);
       if (this.voice && d.voiceId) {
         await this.unlockAudio();
-        this.enqueueSpeak(d.lessonText, d.voiceId);
+const parts = String(d.lessonText || "")
+  .split(/\n\s*\n/)     // paragraphs
+  .map(s => s.trim())
+  .filter(Boolean);
+
+for (const p of parts) {
+  this.enqueueSpeak(p, d.voiceId);
+}
       }
     }
 
@@ -916,7 +923,14 @@ async sendText(text, isVoice) {
     if (canVoice) {
       const vid = d.voiceId || this.lastVoiceId || MCARTHUR_VOICE;
       const spokenText = this.demo ? reply.slice(0, this.demoMaxChars) : reply;
-      this.enqueueSpeak(spokenText, vid);
+      const parts = String(reply || "")
+       .split(/(?<=[.!?])\s+/)   // sentences
+       .map(s => s.trim())
+        .filter(Boolean);
+
+      for (const p of parts) {
+      this.enqueueSpeak(p, vid);
+}
       if (this.demo) {
         this.demoVoiceUsed++;
         this.demoVoicedByCharacter[charKey] = usedByChar + 1;
