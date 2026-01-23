@@ -640,22 +640,18 @@ async playSpeakQueue() {
     while (this.speakQueue && this.speakQueue.length) {
       const { text, voiceId, dedupeKey } = this.speakQueue.shift();
 
-      // If Voice is OFF, skip audio
       if (!this.voice) {
         this._speakDedup?.delete(dedupeKey);
         continue;
       }
 
       const base = String(this.backend || "").replace(/\/+$/, "");
-
-      // ✅ Use /speakbase because your backend currently has that endpoint
       const r = await fetch(`${base}/speakbase`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text, voiceId }),
       });
 
-      // ✅ If backend returns error, log it and continue (prevents dead queue)
       if (!r.ok) {
         const err = await r.text().catch(() => "");
         console.error("TTS failed:", r.status, err);
@@ -665,11 +661,12 @@ async playSpeakQueue() {
       }
 
       const blob = await r.blob();
-      // Safari/iOS fix: Revoke old URLs early & force new context
-if (this._lastAudioUrl) {
-  URL.revokeObjectURL(this._lastAudioUrl);
-}
-this._lastAudioUrl = URL.createObjectURL(blob);
+
+      if (this._lastAudioUrl) {
+        URL.revokeObjectURL(this._lastAudioUrl);
+      }
+      this._lastAudioUrl = URL.createObjectURL(blob);
+      const url = this._lastAudioUrl;
 
       await new Promise((resolve) => {
         let settled = false;
@@ -679,13 +676,10 @@ this._lastAudioUrl = URL.createObjectURL(blob);
           try { URL.revokeObjectURL(url); } catch {}
           resolve();
         };
-
         const timer = setTimeout(done, 15000);
 
-       // ✅ NEW FIXED CODE
-const a = new Audio(url);
-a.setAttribute("playsinline", ""); // Use setAttribute for better compatibility
-
+        const a = new Audio(url);
+        a.setAttribute("playsinline", "");
         a.addEventListener("ended", () => { clearTimeout(timer); done(); }, { once: true });
         a.addEventListener("error", () => { clearTimeout(timer); done(); }, { once: true });
 
@@ -699,7 +693,6 @@ a.setAttribute("playsinline", ""); // Use setAttribute for better compatibility
         }
       });
 
-      // ✅ allow same exact line later again
       this._speakDedup?.delete(dedupeKey);
     }
   } catch (e) {
@@ -853,7 +846,6 @@ async startLesson() {
 }
 
     // No more duplicate intro block here – it was already handled inside startLesson()
-//@ts-nocheck
   } catch (e) {
     console.error("Start lesson failed:", e);
     this.setStatus("Could not start lesson: " + e.message, true);
