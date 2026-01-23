@@ -1,3 +1,5 @@
+// @ts-nocheck
+// CACHE BUST 20260123 - v80
 // Waterwheel Village — Pro Chat Widget (WordPress-safe, no emojis)
 console.log("WWV script loaded ✅", new Date().toISOString());
 (() => {
@@ -552,7 +554,7 @@ async handleSendAction() {
       this.renderWordlist();
     }
 
-  handleMilestones() {
+ handleMilestones() {
   const total = this.wordlist.length;
   const learnedCount = this.learned.size;
   if (!total) return;
@@ -584,7 +586,7 @@ stopMic() {
     try {
       this.rec.stop();
     } catch (err) {
-      console.warn("Error stopping mic:", err);
+      console.warn("Error stopping microphone:", err);
     }
   }
 }
@@ -592,40 +594,40 @@ stopMic() {
 enqueueSpeak(text, voiceId) {
   if (!text) return;
 
-  // Always ensure a valid voiceId (backend requires it)
+  // Ensure valid voiceId (fallback chain)
   const vid = voiceId || this.lastVoiceId || MCARTHUR_VOICE;
 
   let clean = sanitizeForTTS(text);
   if (!clean) return;
 
+  // Demo mode limits
   if (this.demo) {
     if (this.demoVoiceUsed >= this.demoVoiceMax) {
       this.setStatus("Demo voice limit reached. Turn Voice OFF or upgrade.");
       return;
     }
 
-    // Optional: per-character limit check (if you still want it)
-    const ch = this.activeCharacter || "mcarthur";
+    // Optional: per-character limit (remove if not needed)
+    const char = this.activeCharacter || "mcarthur";
     this.demoVoicedByCharacter = this.demoVoicedByCharacter || {};
-    const usedByChar = this.demoVoicedByCharacter[ch] || 0;
-    if (usedByChar >= 2) {  // example per-char limit
+    const used = this.demoVoicedByCharacter[char] || 0;
+    if (used >= 2) {
       this.setStatus("Voice limit for this character in demo mode.");
       return;
     }
   }
 
-  // Deduplication
+  // Deduplication to avoid spamming same audio
   const dedupeKey = `${vid || ""}::${clean}`;
   this._speakDedup = this._speakDedup || new Set();
   if (this._speakDedup.has(dedupeKey)) return;
   if (this._speakDedup.size > 200) this._speakDedup.clear();
   this._speakDedup.add(dedupeKey);
 
-  // Queue it
+  // Queue and start playback if idle
   this.speakQueue = this.speakQueue || [];
   this.speakQueue.push({ text: clean, voiceId: vid, dedupeKey });
 
-  // Start playback if not already running
   if (!this.isSpeaking) {
     this.playSpeakQueue();
   }
@@ -1062,7 +1064,7 @@ downloadTranscript() {
   a.remove();
   URL.revokeObjectURL(url);
 }
-}
+
 
 customElements.define("waterwheel-chat", WaterwheelChat);
-})();  // ← end of IIFE
+)();  // ← end of IIFE
