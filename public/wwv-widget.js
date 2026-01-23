@@ -552,43 +552,47 @@ async handleSendAction() {
       this.renderWordlist();
     }
 
-    handleMilestones() {
-      const total = this.wordlist.length;
-      const learnedCount = this.learned.size;
-      if (!total) return;
+  handleMilestones() {
+  const total = this.wordlist.length;
+  const learnedCount = this.learned.size;
+  if (!total) return;
 
-      const name = (this.ui.name.value || "friend").trim();
+  const name = (this.ui.name.value || "friend").trim();
 
-      if (!this._milestone10 && learnedCount >= 10) {
-        this._milestone10 = true;
-        this.addMsg("bot", `${name}, you’ve already used 10 new words from this unit! Great progress!`);
-        if (this.ui.vocabPanel) {
-          this.ui.vocabPanel.classList.add("flash-border");
-          setTimeout(() => this.ui.vocabPanel.classList.remove("flash-border"), 2000);
-        }
-      }
-
-      if (!this._milestoneComplete && learnedCount === total && total > 0) {
-        this._milestoneComplete = true;
-        this.addMsg("bot", `You’ve learned all the words for this lesson. Nice work.`);
-        if (this.ui.vocabPanel) {
-          this.ui.vocabPanel.classList.add("flash-border");
-          setTimeout(() => this.ui.vocabPanel.classList.remove("flash-border"), 2000);
-        }
-      }
+  if (!this._milestone10 && learnedCount >= 10) {
+    this._milestone10 = true;
+    this.addMsg("bot", `${name}, you’ve already used 10 new words from this unit! Great progress!`);
+    if (this.ui.vocabPanel) {
+      this.ui.vocabPanel.classList.add("flash-border");
+      setTimeout(() => this.ui.vocabPanel.classList.remove("flash-border"), 2000);
     }
+  }
 
-    stopMic() {
-      this.restartWanted = false;
-      if (this.recActive && this.rec) {
-        try { this.rec.stop(); } catch {}
-      }
+  if (!this._milestoneComplete && learnedCount === total && total > 0) {
+    this._milestoneComplete = true;
+    this.addMsg("bot", `You’ve learned all the words for this lesson. Nice work!`);
+    if (this.ui.vocabPanel) {
+      this.ui.vocabPanel.classList.add("flash-border");
+      setTimeout(() => this.ui.vocabPanel.classList.remove("flash-border"), 2000);
     }
+  }
+}
+
+stopMic() {
+  this.restartWanted = false;
+  if (this.recActive && this.rec) {
+    try {
+      this.rec.stop();
+    } catch (err) {
+      console.warn("Error stopping mic:", err);
+    }
+  }
+}
 
 enqueueSpeak(text, voiceId) {
   if (!text) return;
 
-  // ✅ Ensure we ALWAYS have a voiceId (backend requires it)
+  // Always ensure a valid voiceId (backend requires it)
   const vid = voiceId || this.lastVoiceId || MCARTHUR_VOICE;
 
   let clean = sanitizeForTTS(text);
@@ -600,27 +604,30 @@ enqueueSpeak(text, voiceId) {
       return;
     }
 
+    // Optional: per-character limit check (if you still want it)
     const ch = this.activeCharacter || "mcarthur";
     this.demoVoicedByCharacter = this.demoVoicedByCharacter || {};
-    this.demoVoicedByCharacter[ch] = (this.demoVoicedByCharacter[ch] || 0) + 1;
-
-    if (clean.length > this.demoMaxChars) {
-      clean = clean.slice(0, this.demoMaxChars) + "...";
+    const usedByChar = this.demoVoicedByCharacter[ch] || 0;
+    if (usedByChar >= 2) {  // example per-char limit
+      this.setStatus("Voice limit for this character in demo mode.");
+      return;
     }
   }
 
+  // Deduplication
   const dedupeKey = `${vid || ""}::${clean}`;
   this._speakDedup = this._speakDedup || new Set();
   if (this._speakDedup.has(dedupeKey)) return;
-
   if (this._speakDedup.size > 200) this._speakDedup.clear();
   this._speakDedup.add(dedupeKey);
 
+  // Queue it
   this.speakQueue = this.speakQueue || [];
   this.speakQueue.push({ text: clean, voiceId: vid, dedupeKey });
 
+  // Start playback if not already running
   if (!this.isSpeaking) {
-    this.playSpeakQueue(); // ✅ this will run the async method below
+    this.playSpeakQueue();
   }
 }
 
