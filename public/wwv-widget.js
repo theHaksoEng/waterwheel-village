@@ -740,7 +740,7 @@ async playSpeakQueue() {
         this.addTyping(false);
         if (r.ok && d.text) this.addMsg("bot", d.text);
         else this.addMsg("bot", "Say: " + word);
-      } catch {
+      } catch (e) {
         this.addTyping(false);
         this.addMsg("bot", "Say: " + word);
       }
@@ -846,16 +846,6 @@ async startLesson() {
     this.starting = false;
   }
 }
-
-    // No more duplicate intro block here – it was already handled inside startLesson()
-  } catch (e) {
-    console.error("Start lesson failed:", e);
-    this.setStatus("Could not start lesson: " + e.message, true);
-    this.addMsg("bot", "Sorry, lesson failed to load. Try again or check connection.");
-  } finally {
-    this.starting = false;
-  }
-} // ← Proper closing of startLesson()
 
 // Chat
 async send() {
@@ -991,7 +981,7 @@ setupMic() {
         s.getTracks().forEach((t) => t.stop());
         this.primed = true;
         this.ui.micErr.textContent = "";
-      } catch {
+      } catch (e) {
         this.ui.micErr.textContent = "Mic permission denied (Site settings -> Microphone).";
         return;
       }
@@ -1051,7 +1041,7 @@ downloadTranscript() {
   let text = "";
   nodes.forEach((n) => { text += n.innerText + "\n"; });
   const blob = new Blob([text.trim()], { type: "text/plain" });
-  const url = URL.createObjectURL(blob);  // ← fixed: define url here
+  const url = URL.createObjectURL(blob);
   const a = ce("a", { href: url });
   a.download =
     "Waterwheel_Lesson_" +
@@ -1065,6 +1055,8 @@ downloadTranscript() {
   URL.revokeObjectURL(url);
 }
 
+} // ✅ CLOSE CLASS WaterwheelChat
 
 customElements.define("waterwheel-chat", WaterwheelChat);
-)();  // ← end of IIFE
+
+})(); // ✅ end of IIFE (only if you started the file with (() => { )
