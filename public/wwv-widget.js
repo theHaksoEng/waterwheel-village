@@ -404,18 +404,26 @@ connectedCallback() {
   if (!this.activeCharacter) this.activeCharacter = "mcarthur";
   highlight();
 
-  // 3. The "Start Lesson" Logic (With Guard)
-  this.ui.start.addEventListener("click", async () => {
-    if (this._lessonStarting) return; // Prevent double-click start
-    const m = this.ui.month.value;
-    const c = this.ui.chapter.value;
-    if (!m || !c) { alert("Pick Month and Chapter first"); return; }
+ this.ui.start.addEventListener("click", async () => {
+  if (this._lessonStarting) return; // Prevent double-click start
 
-    this._lessonStarting = true;
-    await this.unlockAudio();
-    await this.startLesson();
+  const m = this.ui.month.value;
+  const c = this.ui.chapter.value;
+  if (!m || !c) {
+    alert("Pick Month and Chapter first");
+    return;
+  }
+
+  this._lessonStarting = true;
+
+  try {
+    this.unlockAudio();       // fire-and-forget (don’t await)
+    await this.startLesson(); // lesson starts immediately
+  } finally {
+    // ✅ ALWAYS release the lock, even if something fails
     this._lessonStarting = false;
-  });
+  }
+});
 
   // 4. Voice Controls
   this.ui.voiceToggle.addEventListener("click", () => {
