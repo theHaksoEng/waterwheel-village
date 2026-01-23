@@ -746,15 +746,32 @@ async playSpeakQueue() {
       }
     }
 async unlockAudio() {
-  // Standard pattern to unlock Web Audio on user gesture (mobile-friendly)
-  const silentBuffer = new Audio("data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=");
-  silentBuffer.playsInline = true;
+  // Standard pattern to unlock audio on a user gesture (Safari/iOS friendly)
   try {
-    await silentBuffer.play();
+    if (this._audioUnlocked) return;        // ✅ don’t spam attempts
+    this._audioUnlocked = true;
+
+    const silent = new Audio(
+      "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA="
+    );
+    silent.playsInline = true;
+
+    const pr = silent.play();
+    if (pr && pr.catch) await pr.catch((e) => {
+      // ✅ Safari often throws AbortError here; ignore it
+      if (e && (e.name === "AbortError" || /aborted/i.test(String(e)))) return;
+      // ✅ also ignore NotAllowedError if user gesture missing (it’s normal)
+      if (e && (e.name === "NotAllowedError" || /notallowed/i.test(String(e)))) return;
+
+      console.warn("Audio unlock failed:", e);
+    });
   } catch (e) {
-    console.warn("Audio unlock failed (may be already unlocked):", e);
+    // last resort: only log non-abort errors
+    if (e && (e.name === "AbortError" || /aborted/i.test(String(e)))) return;
+    console.warn("Audio unlock failed:", e);
   }
 }
+
 setStatus(msg = "", isError = false) {
   if (!this.ui || !this.ui.status) {
     console.log("[STATUS]", isError ? "ERROR:" : "", msg);
