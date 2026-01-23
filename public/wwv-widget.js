@@ -663,8 +663,6 @@ if (this._lastAudioUrl) {
   URL.revokeObjectURL(this._lastAudioUrl);
 }
 this._lastAudioUrl = URL.createObjectURL(blob);
-const url = this._lastAudioUrl;
-      const url = URL.createObjectURL(blob);
 
       await new Promise((resolve) => {
         let settled = false;
@@ -755,11 +753,22 @@ async unlockAudio() {
     console.warn("Audio unlock failed (may be already unlocked):", e);
   }
 }
-    // Lesson
- async startLesson() {
+setStatus(msg = "", isError = false) {
+  if (!this.ui || !this.ui.status) {
+    console.log("[STATUS]", isError ? "ERROR:" : "", msg);
+    return;
+  }
+  this.ui.status.textContent = msg;
+  this.ui.status.className = isError ? "err" : "hint";
+  this.ui.status.style.color = isError ? "#b91c1c" : "#334155";
+}  // ← THIS CLOSING BRACE WAS MISSING – ADD IT HERE
+
+// Lesson
+async startLesson() {
   if (this.starting) return;
   this.starting = true;
   this.setStatus("Starting lesson...");
+
   const m = this.ui.month.value;
   const c = this.ui.chapter.value;
   if (!m || !c) {
@@ -767,6 +776,7 @@ async unlockAudio() {
     this.starting = false;
     return;
   }
+
   const name = (this.ui.name.value || "friend").trim();
   localStorage.setItem("wwv-name", name);
 
@@ -781,7 +791,7 @@ async unlockAudio() {
   this.addTyping(false);
 
   try {
-    // Load wordlist first
+    // Load wordlist
     const wlRes = await fetch(`${this.backend}/wordlist/${encodeURIComponent(m)}/${encodeURIComponent(c)}`);
     if (!wlRes.ok) throw new Error(`Wordlist HTTP ${wlRes.status}`);
     const data = await wlRes.json();
@@ -795,13 +805,15 @@ async unlockAudio() {
     console.log("Wordlist loaded:", this.wordlist.length, "words");
 
     // Start lesson
-    const url = `${this.backend}/lesson/${encodeURIComponent(m)}/${encodeURIComponent(c)}?sessionId=${encodeURIComponent(this.sessionId)}&name=${encodeURIComponent(name)}&character=${encodeURIComponent(this.activeCharacter)}&demo=${this.demo ? "1" : "0"}`;
+    const url = `${this.backend}/lesson/${encodeURIComponent(m)}/${encodeURIComponent(c)}?sessionId=${encodeURIComponent(this.sessionId)}&name=${encodeURIComponent(name)}&character=${encodeURIComponent(this.activeCharacter)}&demo=${encodeURIComponent(this.demo ? "1" : "0")}`;
     console.log("Fetching lesson:", url);
+
     const r = await fetch(url);
     if (!r.ok) {
       const errText = await r.text().catch(() => "");
       throw new Error(`Lesson HTTP ${r.status}: ${errText}`);
     }
+
     const d = await r.json();
     console.log("Lesson response:", d);
 
@@ -809,9 +821,10 @@ async unlockAudio() {
       this.addMsg("bot", d.welcomeText);
       if (this.voice) {
         await this.unlockAudio();
-        this.enqueueSpeak(d.welcomeText, MCARTHUR_VOICE); // Mr. McArthur intro
+        this.enqueueSpeak(d.welcomeText, MCARTHUR_VOICE);
       }
     }
+
     if (d.lessonText) {
       this.addMsg("bot", d.lessonText);
       if (this.voice && d.voiceId) {
@@ -819,6 +832,7 @@ async unlockAudio() {
         this.enqueueSpeak(d.lessonText, d.voiceId);
       }
     }
+
     if (d.voiceId) this.lastVoiceId = d.voiceId;
 
     this.setStatus("");
@@ -831,72 +845,28 @@ async unlockAudio() {
   }
 }
 
-        // IMPORTANT: send character + demo so backend can lock persona/voice
-        const url =
-          this.backend +
-          "/lesson/" +
-          encodeURIComponent(m) +
-          "/" +
-          encodeURIComponent(c) +
-          "?sessionId=" +
-          encodeURIComponent(this.sessionId) +
-          "&name=" +
-          encodeURIComponent(name) +
-          "&character=" +
-          encodeURIComponent(this.activeCharacter) +
-          "&demo=" +
-          encodeURIComponent(this.demo ? "1" : "0");
-
-        const r = await fetch(url);
-        const d = await r.json();
-        if (!r.ok) throw new Error((d && d.error) || "Lesson failed");
-
-// Intro text + voice
-if (d.welcomeText) {
-  this.addMsg("bot", d.welcomeText);
-  if (this.voice) {
-    await this.unlockAudio(); // ✅ Fix B: ensure audio is allowed right now
-    this.enqueueSpeak(d.welcomeText, MCARTHUR_VOICE);
+    // No more duplicate intro block here – it was already handled inside startLesson()
+//@ts-nocheck
+  } catch (e) {
+    console.error("Start lesson failed:", e);
+    this.setStatus("Could not start lesson: " + e.message, true);
+    this.addMsg("bot", "Sorry, lesson failed to load. Try again or check connection.");
+  } finally {
+    this.starting = false;
   }
+} // ← Proper closing of startLesson()
+
+// Chat
+async send() {
+  const text = this.ui.input.value.trim();
+  if (!text) return;
+  this.addMsg("user", text);
+  this.updateLearnedFromText(text);
+  this.ui.input.value = "";
+  await this.sendText(text, false);
 }
 
-if (d.lessonText) {
-  this.addMsg("bot", d.lessonText);
-  if (this.voice && d.voiceId) {
-    await this.unlockAudio(); // ✅ Fix B: same here
-    this.enqueueSpeak(d.lessonText, d.voiceId);
-  }
-}
-
-if (d.voiceId) this.lastVoiceId = d.voiceId;
-
-this.setStatus("");
-      } catch (e) {
-        console.error(e);
-        this.setStatus("Could not start lesson.");
-        this.addMsg("bot", "Sorry, I could not start the lesson.");
-        setStatus(msg = "", isError = false) {
-  if (!this.ui || !this.ui.status) return;
-  this.ui.status.textContent = msg;
-  this.ui.status.className = isError ? "err" : "hint";
-  this.ui.status.style.color = isError ? "#b91c1c" : "#334155";
-}
-      } finally {
-        this.starting = false;   // 🔓 unlock startLesson
-      }
-    } // ✅ end startLesson
-
-    // Chat
-    async send() {
-      const text = this.ui.input.value.trim();
-      if (!text) return;
-      this.addMsg("user", text);
-      this.updateLearnedFromText(text);
-      this.ui.input.value = "";
-      await this.sendText(text, false);
-    }
-
- async sendText(text, isVoice) {
+async sendText(text, isVoice) {
   this.addTyping(true);
   try {
     const r = await fetch(this.backend + "/chat", {
@@ -911,32 +881,26 @@ this.setStatus("");
         demo: !!this.demo,
       }),
     });
-
     const d = await r.json().catch(() => ({}));
     this.addTyping(false);
     if (!r.ok) throw new Error((d && d.error) || "Chat failed");
 
     const reply = d.text || "(no response)";
     if (d.voiceId) this.lastVoiceId = d.voiceId;
-
     this.addMsg("bot", reply);
 
-    // === FIXED VOICE LOGIC (Only one trigger!) ===
+    // FIXED VOICE LOGIC
     const charKey = d.character || this.activeCharacter || "mcarthur";
-    const usedByChar = this.demoVoicedByCharacter[charKey] || 0;
-
-    // Check if we are allowed to speak
+    const usedByChar = this.demoVoicedByCharacter?.[charKey] || 0;
     const canVoice = this.voice && (
-      !this.demo || 
+      !this.demo ||
       (this.demoVoiceUsed < this.demoVoiceMax && usedByChar < 2)
     );
 
     if (canVoice) {
       const vid = d.voiceId || this.lastVoiceId || MCARTHUR_VOICE;
       const spokenText = this.demo ? reply.slice(0, this.demoMaxChars) : reply;
-      
       this.enqueueSpeak(spokenText, vid);
-
       if (this.demo) {
         this.demoVoiceUsed++;
         this.demoVoicedByCharacter[charKey] = usedByChar + 1;
@@ -952,151 +916,154 @@ this.setStatus("");
   }
 }
 
-    // Mic with pause buffer
-    setupMic() {
-      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-      const isHttps = location.protocol === "https:";
-      const isTop = window.top === window.self;
-
-      if (!SR) {
-        this.ui.micInfo.textContent = "Mic not supported in this browser.";
-        return;
-      }
-      if (!isHttps) {
-        this.ui.micInfo.textContent = "Mic requires HTTPS.";
-        return;
-      }
-      if (!isTop) {
-        this.ui.micInfo.textContent = "Open the published page (not the editor) to use the mic.";
-        return;
-      }
-
-      const rec = new SR();
-      rec.lang = "en-US";
-      rec.continuous = true;
-      rec.interimResults = true;
-      rec.maxAlternatives = 1;
-      this.rec = rec;
-
-      this.ui.micInfo.textContent = "Click mic, speak, pause to send, click again to stop.";
-
-      const showInterim = (t) => {
-        if (!this._interimNode) {
-          this._interimNode = ce("div", { className: "interim" });
-          this.ui.chat.appendChild(this._interimNode);
-        }
-        this._interimNode.textContent = t || "";
-        if (!t) {
-          this._interimNode.remove();
-          this._interimNode = null;
-        }
-        this.ui.chat.scrollTop = this.ui.chat.scrollHeight;
-      };
-
-      const flushSpeech = () => {
-        clearTimeout(this.holdTimer);
-        const toSend = this.speechBuf.trim();
-        this.speechBuf = "";
-        if (toSend) {
-          this.addMsg("user", toSend);
-          this.updateLearnedFromText(toSend);
-          this.ui.input.value = "";
-          this.sendText(toSend, true);
-          this.stopMic();
-        }
-      };
-
-      const queueSpeech = (finalChunk) => {
-        if (finalChunk && finalChunk.trim()) {
-          this.speechBuf += (this.speechBuf ? " " : "") + finalChunk.trim();
-        }
-        clearTimeout(this.holdTimer);
-        this.holdTimer = setTimeout(flushSpeech, this.PAUSE_GRACE_MS);
-      };
-
-      this.ui.mic.addEventListener("click", async () => {
-        if (this.recActive) {
-          flushSpeech();
-          this.stopMic();
-          return;
-        }
-        if (!this.primed && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-          try {
-            const s = await navigator.mediaDevices.getUserMedia({ audio: true });
-            s.getTracks().forEach((t) => t.stop());
-            this.primed = true;
-            this.ui.micErr.textContent = "";
-          } catch {
-            this.ui.micErr.textContent = "Mic permission denied (Site settings -> Microphone).";
-            return;
-          }
-        }
-
-        this.restartWanted = true;
-        this.recActive = true;
-        this.ui.mic.classList.add("rec");
-        this.ui.mic.textContent = "Stop";
-        this.ui.micErr.textContent = "";
-        try { rec.start(); } catch {}
-      });
-
-      rec.onresult = (e) => {
-        let interim = "";
-        for (let i = e.resultIndex; i < e.results.length; i++) {
-          const t = e.results[i][0].transcript;
-          if (e.results[i].isFinal) queueSpeech(t);
-          else interim += t;
-        }
-        showInterim(interim);
-      };
-
-      rec.onstart = () => showInterim("(listening...)");
-      rec.onsoundstart = () => showInterim("(capturing speech...)");
-      rec.onerror = (ev) => {
-        if (ev.error === "no-speech") this.ui.micErr.textContent = "No speech heard. Try again closer to the mic.";
-        else if (ev.error === "not-allowed" || ev.error === "permission-denied") this.ui.micErr.textContent = "Mic blocked. Allow in browser site settings.";
-        else if (ev.error !== "aborted") this.ui.micErr.textContent = "Mic error: " + ev.error;
-      };
-
-      const finish = () => {
-        this.recActive = false;
-        this.ui.mic.classList.remove("rec");
-        this.ui.mic.textContent = "Mic";
-        showInterim("");
-        if (this.restartWanted) {
-          setTimeout(() => {
-            try {
-              rec.start();
-              this.recActive = true;
-              this.ui.mic.classList.add("rec");
-              this.ui.mic.textContent = "Stop";
-            } catch {}
-          }, 300);
-        }
-      };
-
-      rec.onend = finish;
-      rec.onaudioend = finish;
-    }
-
-    downloadTranscript() {
-      const nodes = this.ui.chat.querySelectorAll("div");
-      let text = "";
-      nodes.forEach((n) => { text += n.innerText + "\n"; });
-      const blob = new Blob([text.trim()], { type: "text/plain" });
-      const url = URL.createObjectURL(blob);
-      const a = ce("a", { href: url });
-      a.download =
-        "Waterwheel_Lesson_" +
-        (this.ui.chapter.value || "unknown") +
-        "_" +
-        new Date().toISOString().slice(0, 19) +
-        ".txt";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    }
+// Mic with pause buffer
+setupMic() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const isHttps = location.protocol === "https:";
+  const isTop = window.top === window.self;
+  if (!SR) {
+    this.ui.micInfo.textContent = "Mic not supported in this browser.";
+    return;
   }
+  if (!isHttps) {
+    this.ui.micInfo.textContent = "Mic requires HTTPS.";
+    return;
+  }
+  if (!isTop) {
+    this.ui.micInfo.textContent = "Open the published page (not the editor) to use the mic.";
+    return;
+  }
+
+  const rec = new SR();
+  rec.lang = "en-US";
+  rec.continuous = true;
+  rec.interimResults = true;
+  rec.maxAlternatives = 1;
+  this.rec = rec;
+
+  this.ui.micInfo.textContent = "Click mic, speak, pause to send, click again to stop.";
+
+  const showInterim = (t) => {
+    if (!this._interimNode) {
+      this._interimNode = ce("div", { className: "interim" });
+      this.ui.chat.appendChild(this._interimNode);
+    }
+    this._interimNode.textContent = t || "";
+    if (!t) {
+      this._interimNode.remove();
+      this._interimNode = null;
+    }
+    this.ui.chat.scrollTop = this.ui.chat.scrollHeight;
+  };
+
+  const flushSpeech = () => {
+    clearTimeout(this.holdTimer);
+    const toSend = this.speechBuf.trim();
+    this.speechBuf = "";
+    if (toSend) {
+      this.addMsg("user", toSend);
+      this.updateLearnedFromText(toSend);
+      this.ui.input.value = "";
+      this.sendText(toSend, true);
+      this.stopMic();
+    }
+  };
+
+  const queueSpeech = (finalChunk) => {
+    if (finalChunk && finalChunk.trim()) {
+      this.speechBuf += (this.speechBuf ? " " : "") + finalChunk.trim();
+    }
+    clearTimeout(this.holdTimer);
+    this.holdTimer = setTimeout(flushSpeech, this.PAUSE_GRACE_MS);
+  };
+
+  this.ui.mic.addEventListener("click", async () => {
+    if (this.recActive) {
+      flushSpeech();
+      this.stopMic();
+      return;
+    }
+
+    if (!this.primed && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      try {
+        const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+        s.getTracks().forEach((t) => t.stop());
+        this.primed = true;
+        this.ui.micErr.textContent = "";
+      } catch {
+        this.ui.micErr.textContent = "Mic permission denied (Site settings -> Microphone).";
+        return;
+      }
+    }
+
+    this.restartWanted = true;
+    this.recActive = true;
+    this.ui.mic.classList.add("rec");
+    this.ui.mic.textContent = "Stop";
+    this.ui.micErr.textContent = "";
+
+    try { rec.start(); } catch {}
+  });
+
+  rec.onresult = (e) => {
+    let interim = "";
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const t = e.results[i][0].transcript;
+      if (e.results[i].isFinal) queueSpeech(t);
+      else interim += t;
+    }
+    showInterim(interim);
+  };
+
+  rec.onstart = () => showInterim("(listening...)");
+  rec.onsoundstart = () => showInterim("(capturing speech...)");
+
+  rec.onerror = (ev) => {
+    if (ev.error === "no-speech") this.ui.micErr.textContent = "No speech heard. Try again closer to the mic.";
+    else if (ev.error === "not-allowed" || ev.error === "permission-denied") this.ui.micErr.textContent = "Mic blocked. Allow in browser site settings.";
+    else if (ev.error !== "aborted") this.ui.micErr.textContent = "Mic error: " + ev.error;
+  };
+
+  const finish = () => {
+    this.recActive = false;
+    this.ui.mic.classList.remove("rec");
+    this.ui.mic.textContent = "Mic";
+    showInterim("");
+    if (this.restartWanted) {
+      setTimeout(() => {
+        try {
+          rec.start();
+          this.recActive = true;
+          this.ui.mic.classList.add("rec");
+          this.ui.mic.textContent = "Stop";
+        } catch {}
+      }, 300);
+    }
+  };
+
+  rec.onend = finish;
+  rec.onaudioend = finish;
+}
+
+downloadTranscript() {
+  const nodes = this.ui.chat.querySelectorAll("div");
+  let text = "";
+  nodes.forEach((n) => { text += n.innerText + "\n"; });
+  const blob = new Blob([text.trim()], { type: "text/plain" });
+  const url = URL.createObjectURL(blob);  // ← fixed: define url here
+  const a = ce("a", { href: url });
+  a.download =
+    "Waterwheel_Lesson_" +
+    (this.ui.chapter.value || "unknown") +
+    "_" +
+    new Date().toISOString().slice(0, 19) +
+    ".txt";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+}
+
 customElements.define("waterwheel-chat", WaterwheelChat);
-})();
+})();  // ← end of IIFE
