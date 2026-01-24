@@ -641,10 +641,12 @@ enqueueSpeak(text, voiceId) {
   }
 }
 
-// ✅ PASTE THIS RIGHT AFTER enqueueSpeak() INSIDE THE CLASS
 async playSpeakQueue() {
   if (this.isSpeaking) return;
   this.isSpeaking = true;
+
+  // ✅ Use ONE shared audio element (prevents overlap)
+  const a = this.ui.player;
 
   try {
     while (this.speakQueue && this.speakQueue.length) {
@@ -662,6 +664,7 @@ async playSpeakQueue() {
         body: JSON.stringify({ text, voiceId }),
       });
 
+      // ✅ Handle errors cleanly
       if (!r.ok) {
         const err = await r.text().catch(() => "");
         console.error("TTS failed:", r.status, err);
@@ -670,39 +673,67 @@ async playSpeakQueue() {
         continue;
       }
 
-      const blob = await r.blob();
-
-      if (this._lastAudioUrl) {
-        URL.revokeObjectURL(this._lastAudioUrl);
+      // ✅ Ensure we actually got audio
+      const ct = (r.headers.get("content-type") || "").toLowerCase();
+      if (!ct.includes("audio")) {
+        const err = await r.text().catch(() => "");
+        console.error("TTS returned non-audio:", ct, err.slice(0, 300));
+        this.setStatus("TTS returned non-audio");
+        this._speakDedup?.delete(dedupeKey);
+        continue;
       }
-      this._lastAudioUrl = URL.createObjectURL(blob);
-      const url = this._lastAudioUrl;
 
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+
+      // ✅ Stop anything currently playing BEFORE starting next chunk
+      try {
+        if (a) {
+          a.pause();
+          a.currentTime = 0;
+        }
+      } catch {}
+
+      // ✅ Play using the same <audio> element (Safari-safe)
       await new Promise((resolve) => {
         let settled = false;
         const done = () => {
           if (settled) return;
           settled = true;
-          try { URL.revokeObjectURL(url); } catch {}
           resolve();
         };
-        const timer = setTimeout(done, 15000);
 
-        const a = new Audio(url);
-        a.setAttribute("playsinline", "");
-        a.addEventListener("ended", () => { clearTimeout(timer); done(); }, { once: true });
-        a.addEventListener("error", () => { clearTimeout(timer); done(); }, { once: true });
+        // Longer timeout prevents early "done" while audio still playing (overlap cause)
+        const timer = setTimeout(done, 30000);
+
+        if (!a) {
+          clearTimeout(timer);
+          done();
+          return;
+        }
+
+        a.onended = () => { clearTimeout(timer); done(); };
+        a.onerror = () => { clearTimeout(timer); done(); };
+
+        a.playsInline = true;
+        a.preload = "auto";
+        a.src = url;
+        a.load();
 
         const pr = a.play();
         if (pr && pr.catch) {
           pr.catch(() => {
             clearTimeout(timer);
-            this.setStatus("Audio blocked. Click Voice Test once to enable.");
+            // Don't block queue forever; just move on
             done();
           });
         }
       });
 
+      // ✅ Revoke after playback finishes
+      try { URL.revokeObjectURL(url); } catch {}
+
+      // ✅ allow same exact line later again
       this._speakDedup?.delete(dedupeKey);
     }
   } catch (e) {
