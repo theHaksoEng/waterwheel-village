@@ -358,6 +358,88 @@ this.starting = false;
 avatarUrl(name) {
   return `${this.backend}/avatars/${name}.png`;
 }
+celebrateMilestone() {
+  this.confettiBurst();
+  this.playChime().catch(() => {});
+}
+
+confettiBurst() {
+  const layer = document.createElement("div");
+  layer.style.position = "fixed";
+  layer.style.left = "0";
+  layer.style.top = "0";
+  layer.style.width = "100vw";
+  layer.style.height = "100vh";
+  layer.style.pointerEvents = "none";
+  layer.style.overflow = "hidden";
+  layer.style.zIndex = "999999";
+  document.body.appendChild(layer);
+
+  const colors = ["#f44336", "#ff9800", "#ffeb3b", "#4caf50", "#2196f3", "#9c27b0"];
+  const count = 90;
+
+  for (let i = 0; i < count; i++) {
+    const p = document.createElement("div");
+    const size = 6 + Math.random() * 8;
+
+    p.style.position = "absolute";
+    p.style.width = `${size}px`;
+    p.style.height = `${Math.max(4, size * 0.6)}px`;
+    p.style.left = `${Math.random() * 100}vw`;
+    p.style.top = `-20px`;
+    p.style.background = colors[(Math.random() * colors.length) | 0];
+    p.style.opacity = "0.95";
+    p.style.borderRadius = "2px";
+
+    const drift = (Math.random() - 0.5) * 240;
+    const spin = (Math.random() - 0.5) * 900;
+    const duration = 1200 + Math.random() * 900;
+
+    p.animate(
+      [
+        { transform: `translate(0,0) rotate(0deg)`, opacity: 1 },
+        { transform: `translate(${drift}px, 110vh) rotate(${spin}deg)`, opacity: 1 }
+      ],
+      { duration, easing: "cubic-bezier(.2,.7,.2,1)", fill: "forwards" }
+    );
+
+    layer.appendChild(p);
+  }
+
+  setTimeout(() => layer.remove(), 2500);
+}
+
+async playChime() {
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  if (!AudioCtx) return;
+
+  // Create once and reuse
+  this._chimeCtx = this._chimeCtx || new AudioCtx();
+  const ctx = this._chimeCtx;
+
+  if (ctx.state === "suspended") {
+    try { await ctx.resume(); } catch { return; }
+  }
+
+  const now = ctx.currentTime;
+
+  const o = ctx.createOscillator();
+  const g = ctx.createGain();
+
+  o.type = "triangle";
+  o.frequency.setValueAtTime(880, now);
+  o.frequency.exponentialRampToValueAtTime(1320, now + 0.08);
+
+  g.gain.setValueAtTime(0.0001, now);
+  g.gain.exponentialRampToValueAtTime(0.18, now + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
+
+  o.connect(g);
+  g.connect(ctx.destination);
+
+  o.start(now);
+  o.stop(now + 0.25);
+}
 
 connectedCallback() {
   if (this._didInit) return;
@@ -382,7 +464,34 @@ connectedCallback() {
     if (newChar === this.activeCharacter) return;
     this.activeCharacter = newChar;
     highlight();
+// 3. Text input + Send button wiring
+const input = this.shadowRoot.querySelector("#input");
+const sendBtn = this.shadowRoot.querySelector("#send");
 
+const doSend = async () => {
+  const text = (input?.value || "").trim();
+  if (!text) return;
+
+  this.addMsg("user", text);
+
+  // call your existing sender (same one you used for character greeting)
+  await this.sendText(text, false); // false = not from mic
+
+  input.value = "";
+  input.focus();
+};
+
+sendBtn?.addEventListener("click", (e) => {
+  e.preventDefault();
+  doSend();
+});
+
+input?.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    doSend();
+  }
+});
     // Map char key to full name for reliable switching
     const nameMap = {
       mcarthur: "Mr. McArthur",
@@ -572,6 +681,8 @@ async handleSendAction() {
   if (!this._milestone10 && learnedCount >= 10) {
     this._milestone10 = true;
     this.addMsg("bot", `${name}, you’ve already used 10 new words from this unit! Great progress!`);
+    this.celebrateMilestone();
+
     if (this.ui.vocabPanel) {
       this.ui.vocabPanel.classList.add("flash-border");
       setTimeout(() => this.ui.vocabPanel.classList.remove("flash-border"), 2000);
