@@ -468,6 +468,10 @@ connectedCallback() {
 const input = this.shadowRoot.querySelector("#input");
 const sendBtn = this.shadowRoot.querySelector("#send");
 
+this.ui = this.ui || {};
+this.ui.input = input;
+this.ui.send = sendBtn;;
+
 const doSend = async () => {
   const text = (input?.value || "").trim();
   if (!text) return;
