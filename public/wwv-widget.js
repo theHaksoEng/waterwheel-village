@@ -365,27 +365,19 @@ if (!document.getElementById('confetti-script')) {
 
    mergeNewlyLearned(list) {
       if (!list || !Array.isArray(list)) return;
-      
-      // 1. Add words to the "Learned" set
       list.forEach(w => this.learned.add(w.toLowerCase().trim()));
-      
-      // 2. Refresh the UI pills
       this.renderWordlist();
-      
-      // 3. Check if we hit a milestone (Confetti!)
       this.handleMilestones();
     }
 
     handleMilestones() {
       const count = this.learned.size;
-      
       // 10 Word Milestone
       if (count >= 10 && !this._milestone10) {
         this._milestone10 = true;
         this.triggerCelebration("🌟 Milestone: 10 Words Learned!");
       }
-      
-      // Lesson Complete (All words learned)
+      // Lesson Complete
       if (this.wordlist.length > 0 && count >= this.wordlist.length && !this._milestoneComplete) {
         this._milestoneComplete = true;
         this.triggerCelebration("🏆 Lesson Mastered!");
@@ -394,7 +386,6 @@ if (!document.getElementById('confetti-script')) {
 
     triggerCelebration(msg) {
       this.addMsg("bot", msg);
-      // Fire confetti if the library loaded
       if (window.confetti) {
         window.confetti({
           particleCount: 150,
@@ -403,6 +394,20 @@ if (!document.getElementById('confetti-script')) {
           colors: ['#0ea5e9', '#10b981', '#f59e0b']
         });
       }
+    }
+
+    renderWordlist() {
+      if (!this.ui.words) return;
+      this.ui.words.innerHTML = "";
+      this.wordlist.forEach(w => {
+        const isLearned = this.learned.has(w.en.toLowerCase());
+        const pill = ce("div", { 
+          className: `pill ${isLearned ? 'learned' : ''}`, 
+          textContent: w.en 
+        });
+        if (isLearned) pill.style.background = "#dcfce7"; // Visual "Goodie"
+        this.ui.words.appendChild(pill);
+      });
     }
 
     setStatus(msg, isErr) {
@@ -415,4 +420,4 @@ if (!document.getElementById('confetti-script')) {
 
   customElements.define("waterwheel-chat", WaterwheelChat);
 
-})(); // Closes the IIFE wrapper
+})(); // Closes the IIFE
