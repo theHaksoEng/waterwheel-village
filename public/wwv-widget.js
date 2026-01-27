@@ -1,5 +1,11 @@
 window.__WWV_VERSION = "2026-01-24-FULL-FIX";
-
+// Load confetti dynamically so we don't need to mess with WordPress HTML
+if (!document.getElementById('confetti-script')) {
+  const sc = document.createElement('script');
+  sc.id = 'confetti-script';
+  sc.src = "https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js";
+  document.head.appendChild(sc);
+}
 (() => {
   const DEFAULT_BACKEND = "https://waterwheel-village.onrender.com";
   const MCARTHUR_VOICE = "fEVT2ExfHe1MyjuiIiU9";
@@ -29,6 +35,14 @@ window.__WWV_VERSION = "2026-01-24-FULL-FIX";
 
   class WaterwheelChat extends HTMLElement {
     constructor() {
+      // Expand this to include everyone!
+    const VOICE_BY_CHAR = Object.freeze({
+     mcarthur: "fEVT2ExfHe1MyjuiIiU9", kwame: "dhwafD61uVd8h85wAZSE",
+     nadia: "a1KZUXKFVFDOb33I1uqr", sophia: "0q9TlrIoQJIdxZP9oZh7",
+     liang: "gAMZphRyrWJnLMDnom6H", fatima: "JMbCR4ujfEfGaawA1YtC",
+     ibrahim: "tlETan7Okc4pzjD0z62P", alex: "tIFPE2y0DAU6xfZn3Fka",
+     anika: "GCPLhb1XrVwcoKUJYcvz", johannes: "JgHmW3ojZwT0NDP5D1JJ"
+});
       super();
       this.starting = false;
       this.isProcessing = false;
@@ -41,6 +55,8 @@ window.__WWV_VERSION = "2026-01-24-FULL-FIX";
       this.wordlist = [];
       this.wordsetEn = new Set();
       this.learned = new Set();
+      this._milestone10 = false;
+      this._milestoneComplete = false;
       this.activeCharacter = "mcarthur";
       this.demo = false;
       this.demoVoiceUsed = 0;
@@ -347,16 +363,50 @@ window.__WWV_VERSION = "2026-01-24-FULL-FIX";
       this.renderWordlist();
     }
 
-    mergeNewlyLearned(list) {
-      list.forEach(w => this.learned.add(w.toLowerCase()));
+   mergeNewlyLearned(list) {
+      if (!list || !Array.isArray(list)) return;
+      
+      // 1. Add words to the "Learned" set
+      list.forEach(w => this.learned.add(w.toLowerCase().trim()));
+      
+      // 2. Refresh the UI pills
       this.renderWordlist();
+      
+      // 3. Check if we hit a milestone (Confetti!)
+      this.handleMilestones();
+    }
+
+    handleMilestones() {
+      const count = this.learned.size;
+      
+      // 10 Word Milestone
+      if (count >= 10 && !this._milestone10) {
+        this._milestone10 = true;
+        this.triggerCelebration("🌟 Milestone: 10 Words Learned!");
+      }
+      
+      // Lesson Complete (All words learned)
+      if (this.wordlist.length > 0 && count >= this.wordlist.length && !this._milestoneComplete) {
+        this._milestoneComplete = true;
+        this.triggerCelebration("🏆 Lesson Mastered!");
+      }
+    }
+
+    triggerCelebration(msg) {
+      this.addMsg("bot", msg);
+      // Fire confetti if the library loaded
+      if (window.confetti) {
+        window.confetti({
+          particleCount: 150,
+          spread: 70,
+          origin: { y: 0.6 },
+          colors: ['#0ea5e9', '#10b981', '#f59e0b']
+        });
+      }
     }
 
     setStatus(msg, isErr) {
+      if (!this.ui.status) return;
       this.ui.status.textContent = msg;
-      this.ui.status.style.color = isErr ? "red" : "inherit";
+      this.ui.status.style.color = isErr ? "#b91c1c" : "#334155";
     }
-  }
-
-  customElements.define("waterwheel-chat", WaterwheelChat);
-})();
