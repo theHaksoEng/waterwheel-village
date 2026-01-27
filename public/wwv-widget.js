@@ -410,3 +410,9 @@ if (!document.getElementById('confetti-script')) {
       this.ui.status.textContent = msg;
       this.ui.status.style.color = isErr ? "#b91c1c" : "#334155";
     }
+
+  } // Closes the Class
+
+  customElements.define("waterwheel-chat", WaterwheelChat);
+
+})(); // Closes the IIFE wrapper
