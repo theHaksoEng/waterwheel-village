@@ -73,70 +73,143 @@ if (!document.getElementById('confetti-script')) {
       this.holdTimer = null;
       this.PAUSE_GRACE_MS = 6000;
 
-      this.attachShadow({ mode: "open" });
       this.shadowRoot.innerHTML = `
         <style>
-          :host { all: initial; font-family: -apple-system, sans-serif; color:#0f172a }
-          .wrap { border:1px solid #e5e7eb; border-radius:16px; overflow:hidden; background:#fff; box-shadow:0 10px 30px rgba(0,0,0,.06) }
-          .top { padding:12px; background:#0ea5e9; color:#fff; font-weight:700 }
-          .grid { display:flex; border-top: 1px solid #e5e7eb; }
-          .col-chat { flex:2; min-width:0; border-right:1px solid #e5e7eb; display:flex; flex-direction:column; }
-          .col-words { flex:1; min-width:260px; background:#fff }
-          .chat { height:460px; overflow-y:auto; padding:14px; background:#fff; display:flex; flex-direction:column; }
-          .msg { margin:8px 0; display:flex; }
+          :host { all: initial; font-family: 'Inter', -apple-system, sans-serif; color: #1e293b; }
+          .wrap { 
+            max-width: 900px; margin: 20px auto; border-radius: 24px; overflow: hidden; 
+            background: #ffffff; box-shadow: 0 20px 50px rgba(0,0,0,0.15); border: 1px solid #e2e8f0; 
+          }
+          .top { 
+            padding: 24px; background: linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%); 
+            color: #fff; font-weight: 800; font-size: 20px; text-align: center; 
+            letter-spacing: -0.5px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+          }
+          
+          /* Character Selection Row */
+          .char-pane { 
+            padding: 15px; display: flex; gap: 8px; overflow-x: auto; 
+            background: #f8fafc; border-bottom: 1px solid #e2e8f0; scrollbar-width: none;
+          }
+          .char-pane::-webkit-scrollbar { display: none; }
+          .char { 
+            flex: 0 0 auto; padding: 8px 16px; border: 2px solid #e2e8f0; border-radius: 20px; 
+            cursor: pointer; transition: all 0.2s; font-size: 13px; font-weight: 600; 
+            background: white; white-space: nowrap;
+          }
+          .char.active { 
+            background: #0ea5e9; color: #fff; border-color: #0ea5e9; 
+            transform: translateY(-2px); box-shadow: 0 4px 12px rgba(14, 165, 233, 0.3); 
+          }
+
+          /* Control Bar (Start Lesson) */
+          .control-pane { 
+            padding: 15px; display: flex; gap: 10px; flex-wrap: wrap; 
+            background: #fff; border-bottom: 1px solid #f1f5f9; align-items: center; 
+          }
+          .control-pane input, .control-pane select { 
+            padding: 8px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 13px; 
+          }
+
+          .grid { display: flex; background: #fff; min-height: 500px; }
+          .col-chat { flex: 2; display: flex; flex-direction: column; border-right: 1px solid #e2e8f0; }
+          .col-words { flex: 1; background: #f8fafc; display: flex; flex-direction: column; }
+
+          .chat { 
+            height: 480px; overflow-y: auto; padding: 20px; display: flex; 
+            flex-direction: column; gap: 15px; background: #ffffff;
+          }
+
+          /* Message Bubbles */
+          .msg { display: flex; gap: 10px; align-items: flex-end; }
           .msg.bot { justify-content: flex-start; }
-          .msg.user { justify-content: flex-end; }
-          .bubble { max-width:85%; padding:10px 14px; border-radius:14px; line-height:1.4; font-size:14px; word-break: break-word; }
-          .bot .bubble { background:#f1f5f9; border:1px solid #e2e8f0 }
-          .user .bubble { background:#dcfce7; border:1px solid #86efac }
-          .bar { display:flex; gap:8px; padding:12px; border-top:1px solid #e5e7eb; background:#f8fafc; }
-          textarea { flex:1; border:1px solid #d1d5db; border-radius:10px; padding:8px; resize:none; font-family:inherit; }
-          .btn { background:#0ea5e9; color:#fff; border:0; padding:8px 16px; border-radius:10px; cursor:pointer; font-weight:600; transition: opacity 0.2s; }
-          .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-          .char { display:flex; align-items:center; gap:8px; padding:6px 12px; border:1px solid #e5e7eb; border-radius:20px; cursor:pointer; margin:4px; background:white; font-size:13px; font-weight:bold; }
-          .char.active { background:#0ea5e9; color:#fff; border-color:#0ea5e9; }
-          .pane { padding:10px; display:flex; gap:8px; flex-wrap:wrap; background:#f8fafc; align-items:center; }
-          .words { padding:10px; display:flex; flex-wrap:wrap; gap:5px; }
-          .pill { padding:4px 10px; background:#f1f5f9; border-radius:15px; font-size:12px; border:1px solid #e2e8f0; cursor:pointer; }
-          .pill.learned { background:#dcfce7; border-color:#86efac; }
-          .typing { font-size:12px; color:#94a3b8; padding:4px 14px; font-style: italic; }
-          .interim { font-style: italic; color: #64748b; font-size: 13px; padding: 5px 14px; }
+          .msg.user { justify-content: flex-end; flex-direction: row-reverse; }
+          .bubble { 
+            max-width: 85%; padding: 12px 18px; border-radius: 18px; line-height: 1.5; 
+            font-size: 14px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); 
+          }
+          .bot .bubble { background: #f1f5f9; color: #334155; border-bottom-left-radius: 4px; }
+          .user .bubble { background: #0ea5e9; color: #fff; border-bottom-right-radius: 4px; }
+
+          /* Vocab Column */
+          .vocab-header { padding: 15px; font-weight: 800; font-size: 14px; border-bottom: 1px solid #e2e8f0; color: #475569; }
+          .words { padding: 15px; display: flex; flex-wrap: wrap; gap: 8px; }
+          .pill { 
+            padding: 6px 14px; background: white; border-radius: 15px; font-size: 12px; 
+            border: 1px solid #e2e8f0; color: #64748b; font-weight: 600; transition: 0.3s; 
+          }
+          .pill.learned { background: #dcfce7; color: #166534; border-color: #86efac; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+
+          /* Bottom Bar */
+          .bar { padding: 20px; display: flex; gap: 12px; background: #fff; border-top: 1px solid #e2e8f0; }
+          textarea { 
+            flex: 1; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px; 
+            resize: none; height: 44px; font-family: inherit; transition: border 0.2s; 
+          }
+          textarea:focus { border-color: #0ea5e9; outline: none; }
+          .btn { 
+            background: #0ea5e9; color: white; border: none; padding: 0 20px; 
+            border-radius: 12px; font-weight: 700; cursor: pointer; transition: 0.2s; 
+          }
+          .btn-mic { background: #64748b; }
+          .btn:hover { opacity: 0.9; transform: translateY(-1px); }
+          
+          .typing { padding: 0 20px 10px; font-size: 12px; color: #94a3b8; font-style: italic; }
         </style>
+
         <div class="wrap">
-          <div class="top">Waterwheel Village</div>
-          <div class="pane" id="charRow">
+          <div class="top">🌊 Waterwheel Village Academy</div>
+          
+          <div class="char-pane" id="charRow">
             <div class="char active" data-char="mcarthur">McArthur</div>
-            <div class="char" data-char="kwame">Kwame</div>
+            <div class="char" data-char="fatima">Fatima</div>
             <div class="char" data-char="nadia">Nadia</div>
+            <div class="char" data-char="kwame">Kwame</div>
+            <div class="char" data-char="liang">Liang</div>
             <div class="char" data-char="sophia">Sophia</div>
+            <div class="char" data-char="ibrahim">Ibrahim</div>
+            <div class="char" data-char="alex">Alex</div>
+            <div class="char" data-char="anika">Anika</div>
+            <div class="char" data-char="johannes">Johannes</div>
           </div>
-          <div class="pane">
-            <input id="name" placeholder="Name" style="width:80px; padding:5px; border-radius:5px; border:1px solid #ccc;"/>
-            <select id="month" style="padding:5px; border-radius:5px;"><option value="">Month...</option><option value="month1">Month 1</option></select>
-            <select id="chapter" style="padding:5px; border-radius:5px;"><option value="">Chapter...</option><option value="food_drink">Food & Drink</option></select>
-            <button id="start" class="btn">Start</button>
+
+          <div class="control-pane">
+            <input id="name" type="text" placeholder="Your Name" style="width: 120px;">
+            <select id="month">
+              <option value="">Month...</option>
+              <option value="month1">Month 1</option>
+              <option value="month2">Month 2</option>
+              <option value="month3">Month 3</option>
+            </select>
+            <select id="chapter">
+              <option value="">Chapter...</option>
+              <option value="food_drink">Food & Drink</option>
+              <option value="common_tasks">Common Tasks</option>
+              <option value="village_life">Village Life</option>
+            </select>
+            <button id="start" class="btn">Start Lesson</button>
             <span id="status" style="font-size:12px"></span>
           </div>
+
           <div class="grid">
             <div class="col-chat">
               <div id="chat" class="chat"></div>
-              <div id="interimArea"></div>
-              <div id="typingArea"></div>
+              <div id="typingArea" class="typing"></div>
+              <div id="interimArea" class="typing" style="color:#0ea5e9"></div>
               <div class="bar">
-                <button id="mic" class="btn" style="background:#64748b">Mic</button>
-                <textarea id="input" placeholder="Type message..."></textarea>
+                <button id="mic" class="btn btn-mic">Mic</button>
+                <textarea id="input" placeholder="Type your message here..."></textarea>
                 <button id="send" class="btn">Send</button>
               </div>
             </div>
             <div class="col-words">
-              <div style="padding:10px; font-weight:bold; font-size:13px; border-bottom:1px solid #eee;">Vocabulary</div>
+              <div class="vocab-header">Vocabulary Progress</div>
               <div id="words" class="words"></div>
             </div>
           </div>
         </div>
         <audio id="player" playsinline></audio>
       `;
-
       this.ui = {
         chat: qs(this.shadowRoot, "#chat"),
         input: qs(this.shadowRoot, "#input"),
