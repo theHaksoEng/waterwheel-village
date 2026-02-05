@@ -52,10 +52,10 @@ console.log("WWV script loaded ✅", new Date().toISOString());
       .trim();
   }
 
-  class WaterwheelChat extends HTMLElement {
+class WaterwheelChat extends HTMLElement {
     constructor() {
       super();
-this.starting = false;
+      this.starting = false;
 
       // Attributes / backend normalize
       const attrBackend = (this.getAttribute("backend") || "").trim();
@@ -82,12 +82,13 @@ this.starting = false;
       this.lastVoiceId = null;
       this._lastAudioUrl = null;
 
-      // === Demo mode (safe + cheap) ===
-      this.demo = false; // unlimited voice for full use
-      this.demoVoiceMax = 8;            // total voiced replies per session
+      // === Demo mode logic ===
+      this.demo = false; 
+      this.demoChatUsed = 0;            // Counter for messages
+      this.demoVoiceMax = 8;            
       this.demoVoiceUsed = 0;
-      this.demoVoicedByCharacter = {};  // limit per character
-      this.demoMaxChars = 220;          // max chars spoken in demo
+      this.demoVoicedByCharacter = {};  
+      this.demoMaxChars = 220;          
       this.activeCharacter = "mcarthur";
 
       this.audioReady = true;
@@ -114,33 +115,52 @@ this.starting = false;
       this.shadowRoot.innerHTML = `
         <style>
           :host { all: initial; font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial; color:#0f172a }
-          .wrap { border:1px solid #e5e7eb; border-radius:16px; overflow:hidden; background:#fff; box-shadow:0 10px 30px rgba(0,0,0,.06) }
+          .wrap { border:1px solid #e5e7eb; border-radius:16px; overflow:hidden; background:#fff; box-shadow:0 10px 30px rgba(0,0,0,.06); position: relative; }
           .top { display:flex; align-items:center; gap:10px; padding:12px 14px; background:#0ea5e9; color:#fff; font-weight:700 }
           .grid { display:flex; gap:0; align-items:stretch }
           .col-chat { flex:2; min-width:0; border-right:1px solid #e5e7eb }
           .col-words { flex:1; min-width:260px; background:#fff }
 
-          /* Flash animation for vocab panel on milestones */
-          .col-words.flash-border { animation: flash-border 2s ease-in-out; }
-          @keyframes flash-border {
-            0%   { box-shadow: 0 0 0 0 rgba(255, 215, 0, 0.0); }
-            25%  { box-shadow: 0 0 10px 3px rgba(255, 215, 0, 0.9); }
-            50%  { box-shadow: 0 0 0 0 rgba(255, 215, 0, 0.0); }
-            75%  { box-shadow: 0 0 10px 3px rgba(255, 215, 0, 0.9); }
-            100% { box-shadow: 0 0 0 0 rgba(255, 215, 0, 0.0); }
+          /* Layout Mode: Hides School UI when in Demo */
+          .mode-demo .pane, .mode-demo .col-words { display: none !important; }
+
+          /* Demo Modal (The Wall) */
+          .demo-modal {
+            display: none; 
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(4px);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            border-radius: 16px;
           }
-            .avatar{
-  width:40px;
-  height:40px;
-  border-radius:50%;
-  object-fit:cover;
-  margin-right:6px;
-}
-.char{
-  display:flex;
-  align-items:center;
-  gap:6px;
-}
+          .demo-modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 16px;
+            text-align: center;
+            max-width: 280px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2);
+          }
+          .demo-modal-content h2 { margin: 0 0 10px; color: #1e293b; font-size: 20px; }
+          .demo-modal-content p { color: #64748b; font-size: 14px; margin-bottom: 20px; }
+          .pay-btn {
+            display: block;
+            background: #b91c1c;
+            color: white;
+            padding: 12px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 700;
+          }
+
+          .avatar{ width:40px; height:40px; border-radius:50%; object-fit:cover; margin-right:6px; }
+          .char{ display:flex; align-items:center; gap:10px; border:1px solid #e2e8f0; background:#ffffff; color:#0f172a; border-radius:9999px; padding:8px 12px 8px 8px; cursor:pointer; font-weight:700; transition: background .2s ease; }
+          .char:hover{ background:#f1f5f9; }
+          .char.active{ background:#0ea5e9; color:#ffffff; border-color:#0ea5e9; }
+          .char img{ width:32px; height:32px; border-radius:9999px; border:1px solid #e2e8f0; object-fit:cover; flex:0 0 32px; }
 
           .pane { display:flex; gap:8px; padding:10px 12px; background:#f8fafc; border-bottom:1px solid #e5e7eb; flex-wrap:wrap; align-items:center }
           .pane input, .pane select { border:1px solid #d1d5db; border-radius:10px; padding:8px 10px; outline:none; min-width:140px }
@@ -153,15 +173,11 @@ this.starting = false;
           .bubble { max-width:78%; padding:10px 12px; border-radius:14px; line-height:1.45; white-space:pre-wrap; word-wrap:break-word }
           .bot .bubble { background:#f1f5f9; border:1px solid #e2e8f0 }
           .user .bubble { background:#dcfce7; border:1px solid #86efac }
-          .typing { font-size:12px; color:#64748b; padding:0 2px }
           .bar { display:flex; gap:8px; padding:12px; border-top:1px solid #e5e7eb; background:#f8fafc; align-items:center }
           textarea { flex:1; resize:none; min-height:44px; max-height:140px; border:1px solid #d1d5db; border-radius:12px; padding:10px; outline:none }
           .mic { background:#e2e8f0; color:#0f172a; padding:9px 12px; border-radius:10px; cursor:pointer }
           .mic.rec { background:#ef4444; color:#fff }
-          .hint { font-size:12px; color:#334155 }
-          .err { color:#b91c1c; font-size:12px }
-          .interim { font-style:italic; color:#64748b; }
-
+          .demoRow { display:flex; gap:10px; flex-wrap:wrap; align-items:center; padding:10px 12px; border-bottom:1px solid #e5e7eb; background:#ffffff }
           .words-head { padding:12px 12px 6px 12px; border-bottom:1px solid #e2e8f0 }
           .progress-wrap { margin-top:8px; background:#f1f5f9; border:1px solid #e2e8f0; border-radius:10px; height:14px; overflow:hidden }
           .progress-bar { height:100%; width:0%; background:#10b981; transition:width .3s ease }
@@ -169,156 +185,62 @@ this.starting = false;
           .words { padding:10px; display:flex; flex-wrap:wrap; gap:6px }
           .pill { border:1px solid #e2e8f0; border-radius:9999px; padding:6px 10px; font-size:13px; cursor:pointer; background:#f8fafc; color:#0f172a }
           .pill.learned { background:#dcfce7; color:#065f46; border-color:#86efac }
-          .pill .say { margin-left:6px; border:0; background:#e2e8f0; color:#0f172a; border-radius:9999px; padding:2px 8px; font-size:12px; cursor:pointer }
-          .pill .say:hover { background:#cbd5e1 }
-
-          /* Demo character buttons w/ avatars */
-.demoRow { display:flex; gap:10px; flex-wrap:wrap; align-items:center; padding:10px 12px; border-bottom:1px solid #e5e7eb; background:#ffffff }
-
-.char{
-  display:flex;
-  align-items:center;
-  gap:10px;
-  border:1px solid #e2e8f0;
-  background:#ffffff;
-  color:#0f172a;
-  border-radius:9999px;
-  padding:8px 12px 8px 8px;
-  cursor:pointer;
-  font-weight:700;
-  transition: background .2s ease, color .2s ease, border-color .2s ease;
-}
-
-.char:hover{ background:#f1f5f9; }
-
-.char.active{
-  background:#0ea5e9;
-  color:#ffffff;
-  border-color:#0ea5e9;
-}
-
-.char img{
-  width:32px;
-  height:32px;
-  border-radius:9999px;
-  border:1px solid #e2e8f0;
-  object-fit:cover;
-  flex:0 0 32px;
-}
-
-.char.active img{
-  border-color: rgba(255,255,255,.55);
-}
-
         </style>
 
-        <div class="wrap" role="region" aria-label="Waterwheel Village Chat">
+        <div class="wrap" id="mainWrap" role="region" aria-label="Waterwheel Village Chat">
           <div class="top">Waterwheel Village</div>
 
-<div class="demoRow">
-  <button class="char" data-char="mcarthur">
-    <img class="avatar" src="${this.avatarUrl("mcarthur")}" alt="Mr. McArthur">
-    <span>McArthur</span>
-  </button>
-
-  <button class="char" data-char="kwame">
-    <img class="avatar" src="${this.avatarUrl("kwame")}" alt="Kwame">
-    <span>Kwame</span>
-  </button>
-
-  <button class="char" data-char="nadia">
-    <img class="avatar" src="${this.avatarUrl("nadia")}" alt="Nadia">
-    <span>Nadia</span>
-  </button>
-
-  <button class="char" data-char="sophia">
-    <img class="avatar" src="${this.avatarUrl("sophia")}" alt="Sophia">
-    <span>Sophia</span>
-  </button>
-</div>
+          <div class="demoRow">
+            <button class="char" data-char="mcarthur">
+              <img class="avatar" src="${this.avatarUrl("mcarthur")}" alt="Mr. McArthur">
+              <span>McArthur</span>
+            </button>
+            <button class="char" data-char="kwame">
+              <img class="avatar" src="${this.avatarUrl("kwame")}" alt="Kwame">
+              <span>Kwame</span>
+            </button>
+            <button class="char" data-char="nadia">
+              <img class="avatar" src="${this.avatarUrl("nadia")}" alt="Nadia">
+              <span>Nadia</span>
+            </button>
+            <button class="char" data-char="sophia">
+              <img class="avatar" src="${this.avatarUrl("sophia")}" alt="Sophia">
+              <span>Sophia</span>
+            </button>
+          </div>
 
           <div class="pane">
             <input id="name" placeholder="Your name" />
-
             <select id="month">
               <option value="">Month...</option>
-              <option value="month1">Month 1 – Greetings & Daily Life</option>
-              <option value="month2">Month 2 – Home & Feelings</option>
-              <option value="month3">Month 3 – Work & School</option>
-              <option value="month4">Month 4 – Travel & Shopping</option>
-              <option value="month5">Month 5 – Health & Community</option>
-              <option value="month6">Month 6 – Nature & Culture</option>
+              <option value="month1">Month 1 – Greetings</option>
+              <option value="month2">Month 2 – Home</option>
             </select>
-
             <select id="chapter">
               <option value="">Chapter...</option>
-
-              <!-- Month 1 -->
-              <option value="greetings_introductions">Greetings & Introductions (M1)</option>
-              <option value="numbers_days_questions">Numbers, Days & Questions (M1)</option>
-              <option value="food_drink">Food & Drink (M1)</option>
-              <option value="daily_phrases">Daily Phrases (M1)</option>
-
-              <!-- Month 2 -->
-              <option value="family_members">Family Members (M2)</option>
-              <option value="house_furniture">House & Furniture (M2)</option>
-              <option value="routines_chores">Routines & Chores (M2)</option>
-              <option value="feelings_emotions">Feelings & Emotions (M2)</option>
-
-              <!-- Month 3 -->
-              <option value="professions_tools">Professions & Tools (M3)</option>
-              <option value="classroom_office">Classroom & Office (M3)</option>
-              <option value="common_tasks">Common Tasks (M3)</option>
-              <option value="workplace_dialogues">Workplace Dialogues (M3)</option>
-
-              <!-- Month 4 -->
-              <option value="transport">Transport (M4)</option>
-              <option value="shops_money">Shops & Money (M4)</option>
-              <option value="asking_directions">Asking Directions (M4)</option>
-              <option value="eating_restaurants">Eating & Restaurants (M4)</option>
-
-              <!-- Month 5 -->
-              <option value="body_health">Body & Health (M5)</option>
-              <option value="doctor_medicine">Doctor & Medicine (M5)</option>
-              <option value="community_places">Community Places (M5)</option>
-              <option value="emergency_phrases">Emergency Phrases (M5)</option>
-
-              <!-- Month 6 -->
-              <option value="weather_seasons">Weather & Seasons (M6)</option>
-              <option value="animals_plants_environment">Animals, Plants & Environment (M6)</option>
-              <option value="traditions_celebrations">Traditions & Celebrations (M6)</option>
-              <option value="review_integration">Review & Integration (M6)</option>
+              <option value="greetings_introductions">Greetings (M1)</option>
             </select>
-
             <button id="start" class="btn secondary">Start Lesson</button>
             <button id="voiceToggle" class="btn ghost">Voice: ON</button>
             <button id="voiceTest" class="btn ghost">Test Voice</button>
             <button id="download" class="btn">Download</button>
-
-            <span id="status" class="hint" aria-live="polite" style="margin-left:auto"></span>
           </div>
 
           <div class="grid">
             <div class="col-chat">
               <div id="chat" class="chat"></div>
               <div class="bar">
-                <button id="mic" class="mic" aria-label="Start recording">Mic</button>
-                <textarea id="input" placeholder="Type or use the mic... (Shift+Enter = newline)"></textarea>
-                <button id="send" class="btn" aria-label="Send message">Send</button>
-              </div>
-              <div class="pane">
-                <span id="micInfo" class="hint"></span>
-                <span id="micErr" class="err"></span>
+                <button id="mic" class="mic">Mic</button>
+                <textarea id="input" placeholder="Type or use the mic..."></textarea>
+                <button id="send" class="btn">Send</button>
               </div>
             </div>
 
             <div class="col-words">
               <div class="words-head">
                 <div style="font-weight:700; color:#0f172a">Wordlist & Progress</div>
-                <div class="progress-wrap">
-                  <div id="progBar" class="progress-bar"></div>
-                </div>
-                <div id="progLbl" class="progress-label">0 / 0 learned (0%)</div>
+                <div class="progress-wrap"><div id="progBar" class="progress-bar"></div></div>
+                <div id="progLbl" class="progress-label">0 / 0 learned</div>
                 <label style="display:flex;gap:6px;align-items:center;margin-top:8px;font-size:12px;color:#334155">
                   <input type="checkbox" id="showFi"> Show Finnish
                 </label>
@@ -326,268 +248,217 @@ this.starting = false;
               <div id="words" class="words"></div>
             </div>
           </div>
+
+          <div id="demoModal" class="demo-modal">
+            <div class="demo-modal-content">
+              <h2>Harvest is Limited! 🥔</h2>
+              <p>You've used your free demo turns. Join the village school to continue.</p>
+              <a href="https://waterwheel-village.onrender.com/pay" class="pay-btn">GET FULL ACCESS</a>
+            </div>
+          </div>
         </div>
 
-        <audio id="player" controls playsinline></audio>
-        <audio id="milestone-sound" preload="auto"></audio>
+        <audio id="player" controls playsinline style="display:none"></audio>
+        <audio id="milestone-sound" preload="auto" style="display:none"></audio>
       `;
 
-      // UI refs
-      this.ui = {
+this.ui = {
         name: qs(this.shadowRoot, "#name"),
         month: qs(this.shadowRoot, "#month"),
         chapter: qs(this.shadowRoot, "#chapter"),
         start: qs(this.shadowRoot, "#start"),
         voiceToggle: qs(this.shadowRoot, "#voiceToggle"),
-        voiceTest: qs(this.shadowRoot, "#voiceTest"),
-        download: qs(this.shadowRoot, "#download"),
-        status: qs(this.shadowRoot, "#status"),
         chat: qs(this.shadowRoot, "#chat"),
         input: qs(this.shadowRoot, "#input"),
         send: qs(this.shadowRoot, "#send"),
         mic: qs(this.shadowRoot, "#mic"),
-        micInfo: qs(this.shadowRoot, "#micInfo"),
-        micErr: qs(this.shadowRoot, "#micErr"),
         wordsWrap: qs(this.shadowRoot, "#words"),
-        showFi: qs(this.shadowRoot, "#showFi"),
         progBar: qs(this.shadowRoot, "#progBar"),
         progLbl: qs(this.shadowRoot, "#progLbl"),
-        player: qs(this.shadowRoot, "#player"),
-        vocabPanel: qs(this.shadowRoot, ".col-words"),
-        demoHint: qs(this.shadowRoot, "#demoHint"),
+        player: qs(this.shadowRoot, "#player"), 
+        milestoneSound: qs(this.shadowRoot, "#milestone-sound"),
+        mainWrap: qs(this.shadowRoot, "#mainWrap"),
+        demoModal: qs(this.shadowRoot, "#demoModal")
       };
+    } // <--- THIS ENDS THE CONSTRUCTOR
+
+    avatarUrl(name) {
+      return `${this.backend}/avatars/${name}.png`;
     }
-avatarUrl(name) {
-  return `${this.backend}/avatars/${name}.png`;
-}
-celebrateMilestone() {
-  this.confettiBurst();
-  this.playChime().catch(() => {});
-}
 
-confettiBurst() {
-  const layer = document.createElement("div");
-  layer.style.position = "fixed";
-  layer.style.left = "0";
-  layer.style.top = "0";
-  layer.style.width = "100vw";
-  layer.style.height = "100vh";
-  layer.style.pointerEvents = "none";
-  layer.style.overflow = "hidden";
-  layer.style.zIndex = "999999";
-  document.body.appendChild(layer);
+    celebrateMilestone() {
+      this.confettiBurst();
+      this.playChime().catch(() => {});
+    }
 
-  const colors = ["#f44336", "#ff9800", "#ffeb3b", "#4caf50", "#2196f3", "#9c27b0"];
-  const count = 90;
+    confettiBurst() {
+      const layer = document.createElement("div");
+      layer.style.position = "fixed";
+      layer.style.left = "0";
+      layer.style.top = "0";
+      layer.style.width = "100vw";
+      layer.style.height = "100vh";
+      layer.style.pointerEvents = "none";
+      layer.style.overflow = "hidden";
+      layer.style.zIndex = "999999";
+      document.body.appendChild(layer);
 
-  for (let i = 0; i < count; i++) {
-    const p = document.createElement("div");
-    const size = 6 + Math.random() * 8;
+      const colors = ["#f44336", "#ff9800", "#ffeb3b", "#4caf50", "#2196f3", "#9c27b0"];
+      for (let i = 0; i < 90; i++) {
+        const p = document.createElement("div");
+        const size = 6 + Math.random() * 8;
+        p.style.position = "absolute";
+        p.style.width = `${size}px`;
+        p.style.height = `${Math.max(4, size * 0.6)}px`;
+        p.style.left = `${Math.random() * 100}vw`;
+        p.style.top = `-20px`;
+        p.style.background = colors[(Math.random() * colors.length) | 0];
+        p.animate([
+            { transform: `translate(0,0) rotate(0deg)`, opacity: 1 },
+            { transform: `translate(${(Math.random()-0.5)*240}px, 110vh) rotate(${(Math.random()-0.5)*900}deg)`, opacity: 1 }
+          ], { duration: 1200 + Math.random()*900, easing: "cubic-bezier(.2,.7,.2,1)", fill: "forwards" });
+        layer.appendChild(p);
+      }
+      setTimeout(() => layer.remove(), 2500);
+    }
 
-    p.style.position = "absolute";
-    p.style.width = `${size}px`;
-    p.style.height = `${Math.max(4, size * 0.6)}px`;
-    p.style.left = `${Math.random() * 100}vw`;
-    p.style.top = `-20px`;
-    p.style.background = colors[(Math.random() * colors.length) | 0];
-    p.style.opacity = "0.95";
-    p.style.borderRadius = "2px";
+    async playChime() {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      this._chimeCtx = this._chimeCtx || new AudioCtx();
+      const ctx = this._chimeCtx;
+      if (ctx.state === "suspended") await ctx.resume();
+      const now = ctx.currentTime;
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = "triangle";
+      o.frequency.setValueAtTime(880, now);
+      o.frequency.exponentialRampToValueAtTime(1320, now + 0.08);
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.exponentialRampToValueAtTime(0.18, now + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
+      o.connect(g);
+      g.connect(ctx.destination);
+      o.start(now);
+      o.stop(now + 0.25);
+    }
 
-    const drift = (Math.random() - 0.5) * 240;
-    const spin = (Math.random() - 0.5) * 900;
-    const duration = 1200 + Math.random() * 900;
+    connectedCallback() {
+      if (this._didInit) return;
+      this._didInit = true;
 
-    p.animate(
-      [
-        { transform: `translate(0,0) rotate(0deg)`, opacity: 1 },
-        { transform: `translate(${drift}px, 110vh) rotate(${spin}deg)`, opacity: 1 }
-      ],
-      { duration, easing: "cubic-bezier(.2,.7,.2,1)", fill: "forwards" }
-    );
+      // Detect Demo Mode from URL or attribute
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('demo') === 'true' || this.getAttribute('demo') === 'true') {
+        this.demo = true;
+        this.ui.mainWrap.classList.add('mode-demo');
+      }
 
-    layer.appendChild(p);
-  }
+      // Setup Name
+      const savedName = localStorage.getItem("wwv-name") || "friend";
+      this.ui.name.value = savedName;
+      this.ui.name.addEventListener("change", () =>
+        localStorage.setItem("wwv-name", this.ui.name.value.trim())
+      );
 
-  setTimeout(() => layer.remove(), 2500);
-}
+      // Character Picker
+      const allChars = Array.from(this.shadowRoot.querySelectorAll(".char"));
+      const highlight = () => {
+        allChars.forEach((b) => 
+          b.classList.toggle("active", (b.getAttribute("data-char") || "") === this.activeCharacter)
+        );
+      };
 
-async playChime() {
-  const AudioCtx = window.AudioContext || window.webkitAudioContext;
-  if (!AudioCtx) return;
-
-  // Create once and reuse
-  this._chimeCtx = this._chimeCtx || new AudioCtx();
-  const ctx = this._chimeCtx;
-
-  if (ctx.state === "suspended") {
-    try { await ctx.resume(); } catch { return; }
-  }
-
-  const now = ctx.currentTime;
-
-  const o = ctx.createOscillator();
-  const g = ctx.createGain();
-
-  o.type = "triangle";
-  o.frequency.setValueAtTime(880, now);
-  o.frequency.exponentialRampToValueAtTime(1320, now + 0.08);
-
-  g.gain.setValueAtTime(0.0001, now);
-  g.gain.exponentialRampToValueAtTime(0.18, now + 0.02);
-  g.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
-
-  o.connect(g);
-  g.connect(ctx.destination);
-
-  o.start(now);
-  o.stop(now + 0.25);
-}
-
-connectedCallback() {
-  if (this._didInit) return;
-  this._didInit = true;
-
-  // 1. UI ELEMENT MAPPING (Ensure these exist)
-  this.ui.input = this.shadowRoot.querySelector("#input");
-  this.ui.send  = this.shadowRoot.querySelector("#send");
-
-  // 2. Setup Name & LocalStorage
-  const savedName = localStorage.getItem("wwv-name") || "friend";
-  this.ui.name.value = savedName;
-  this.ui.name.addEventListener("change", () =>
-    localStorage.setItem("wwv-name", this.ui.name.value.trim())
-  );
-
-  // 3. Character Picker Logic (Cleaned up)
-  const allChars = Array.from(this.shadowRoot.querySelectorAll(".char"));
-  const highlight = () => {
-    allChars.forEach((b) => 
-      b.classList.toggle("active", (b.getAttribute("data-char") || "") === this.activeCharacter)
-    );
-  };
-
-  allChars.forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const newChar = btn.getAttribute("data-char") || "mcarthur";
-      if (newChar === this.activeCharacter) return;
-      
-      this.activeCharacter = newChar;
+      allChars.forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const newChar = btn.getAttribute("data-char") || "mcarthur";
+          if (newChar === this.activeCharacter) return;
+          this.activeCharacter = newChar;
+          highlight();
+          const nameMap = { mcarthur: "Mr. McArthur", kwame: "Kwame", nadia: "Nadia", sophia: "Sophia" };
+          this.addMsg("bot", `Switched to ${nameMap[newChar] || newChar}.`);
+        });
+      });
       highlight();
 
-      const nameMap = { mcarthur: "Mr. McArthur", kwame: "Kwame", nadia: "Nadia", sophia: "Sophia" };
-      const fullName = nameMap[newChar] || newChar;
+      // Start Lesson
+      this.ui.start.addEventListener("click", async () => {
+        const m = this.ui.month.value;
+        const c = this.ui.chapter.value;
+        if (!m || !c) return alert("Pick Month and Chapter first");
+        await this.startLesson();
+      });
 
-      this.addMsg("bot", `Switched to ${fullName}. Say hello!`);
-      const greeting = `Hello ${fullName}`;
-      this.addMsg("user", greeting);
-      await this.sendText(greeting, false); 
-    });
-  });
+      // Voice Controls
+      this.ui.voiceToggle.addEventListener("click", () => {
+        this.voice = !this.voice;
+        this.ui.voiceToggle.textContent = this.voice ? "Voice: ON" : "Voice: OFF";
+      });
 
-  if (!this.activeCharacter) this.activeCharacter = "mcarthur";
-  highlight();
+      this.ui.voiceTest.addEventListener("click", async () => {
+        this.enqueueSpeak("Voice test working.", "mcarthur");
+      });
 
-  // 4. Start Lesson Logic
-  this.ui.start.addEventListener("click", async () => {
-    if (this._lessonStarting) return; 
+      // Send Events
+      this.ui.send.addEventListener("click", () => this.handleSendAction());
+      this.ui.input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          this.handleSendAction();
+        }
+      });
 
-    const m = this.ui.month.value;
-    const c = this.ui.chapter.value;
-    if (!m || !c) {
-      alert("Pick Month and Chapter first");
-      return;
+      this.ui.download.addEventListener("click", () => this.downloadTranscript());
+      this.ui.showFi.addEventListener("change", () => this.renderWordlist());
+      this.setupMic();
     }
 
-    this._lessonStarting = true;
-    try {
-      this.unlockAudio(); // Trigger audio context on user gesture
-      await this.startLesson(); 
-    } finally {
-      this._lessonStarting = false;
+    async handleSendAction() {
+      // 1. Check Demo Limit
+      const isDemo = String(this.demo) === "true";
+      if (isDemo && this.demoChatUsed >= 5) {
+        this.showDemoLimitModal();
+        return;
+      }
+
+      const text = (this.ui.input.value || "").trim();
+      if (!text || this.isProcessing) return;
+
+      this.isProcessing = true;
+      this.ui.input.value = "";
+      this.addMsg("user", text);
+      
+      try {
+        if (isDemo) {
+          this.demoChatUsed = (this.demoChatUsed || 0) + 1;
+        }
+        await this.sendText(text, false);
+      } catch (e) {
+        console.error("Send failed", e);
+      } finally {
+        this.isProcessing = false;
+      }
     }
-  });
 
-  // 5. Voice & Audio Controls
-  this.ui.voiceToggle.addEventListener("click", () => {
-    this.voice = !this.voice;
-    this.ui.voiceToggle.textContent = this.voice ? "Voice: ON" : "Voice: OFF";
-  });
-
-  this.ui.voiceTest.addEventListener("click", async () => {
-    await this.unlockAudio();
-    const vid = (typeof VOICE_BY_CHAR !== 'undefined' ? VOICE_BY_CHAR[this.activeCharacter] : null) || this.lastVoiceId || MCARTHUR_VOICE;
-    this.enqueueSpeak("Voice test. If you hear this, TTS works.", vid);
-  });
-
-  // 6. THE SEND FIX: Outside all loops, attached exactly once
-  this.ui.send.addEventListener("click", (e) => {
-    e.preventDefault();
-    this.handleSendAction();
-  });
-
-  this.ui.input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      this.handleSendAction();
+    showDemoLimitModal() {
+      if (this.ui.demoModal) this.ui.demoModal.style.display = "flex";
+      this.ui.input.disabled = true;
+      this.ui.send.disabled = true;
     }
-  });
 
-  // 7. Utility Listeners
-  this.ui.download.addEventListener("click", () => this.downloadTranscript());
-  this.ui.showFi.addEventListener("change", () => this.renderWordlist());
-  
-  this.setupMic();
-
-  // Avatar Fallbacks
-  this.shadowRoot.querySelectorAll(".demoRow img").forEach((img) => {
-    img.addEventListener("error", () => { img.src = "/avatars/mcarthur.png"; });
-  });
-}
-
-// Helper to prevent the "Double Trigger"
-async handleSendAction() {
-  const input = this.ui.input;
-  const text = (input.value || "").trim();
-
-  if (!text || this.isProcessing) return;
-
-  this.isProcessing = true;
-  
-  // 1. Clear the UI immediately so the user knows it's sent
-  input.value = ""; 
-  this.addMsg("user", text);
-  
-  // 2. Keep the keyboard open (mostly for mobile/tablets)
-  input.focus();
-
-  try {
-    // 3. Talk to Render backend
-    await this.sendText(text, false);
-  } catch (e) {
-    this.addMsg("bot", "System: Connection lost. Please try again.");
-  } finally {
-    this.isProcessing = false;
-    // 4. Ensure focus one last time
-    input.focus();
-  }
-}
-    // Chat bubbles
 addMsg(role, text) {
-  if (!text) return;
-
-  const msgDiv = document.createElement("div");
-  msgDiv.className = `msg ${role}`; // 'user' or 'bot'
-  
-  // Use innerText for safety, or a markdown parser if you have one
-  msgDiv.innerText = text;
-
-  this.ui.chat.appendChild(msgDiv);
-
-  // THE FIX: Scroll to bottom after the browser paints the new message
-  requestAnimationFrame(() => {
-    this.ui.chat.scrollTop = this.ui.chat.scrollHeight;
-  });
-}
+      if (!text) return;
+      const b = document.createElement("div");
+      b.className = `msg ${role}`;
+      const inner = document.createElement("div");
+      inner.className = "bubble";
+      inner.innerText = text;
+      b.appendChild(inner);
+      this.ui.chat.appendChild(b);
+      requestAnimationFrame(() => { 
+        this.ui.chat.scrollTop = this.ui.chat.scrollHeight; 
+      });
+    }
 
     addTyping(show = true) {
       if (show) {
@@ -603,7 +474,6 @@ addMsg(role, text) {
         }
       }
     }
-
     // Wordlist UI
     renderWordlist() {
       const wrap = this.ui.wordsWrap;
