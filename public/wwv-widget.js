@@ -84,7 +84,7 @@ this.starting = false;
 
       // === Demo mode (safe + cheap) ===
       this.demo = false; // unlimited voice for full use
-      this.demoVoiceMax = 8;            // total voiced replies per session
+      this.demoVoiceMax = 5;            // total voiced replies per session
       this.demoVoiceUsed = 0;
       this.demoVoicedByCharacter = {};  // limit per character
       this.demoMaxChars = 220;          // max chars spoken in demo
