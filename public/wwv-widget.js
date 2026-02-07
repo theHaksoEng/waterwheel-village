@@ -1,4 +1,4 @@
-window.__WWV_VERSION = "2026-01-24-textfix-1";
+window.__WWV_VERSION = "2026-2-7-textfix-1";
 console.log("WWV script loaded VERSION:", window.__WWV_VERSION);
 
 // @ts-nocheck
@@ -83,7 +83,7 @@ this.starting = false;
       this._lastAudioUrl = null;
 
       // === Demo mode (safe + cheap) ===
-      this.demo = false; // unlimited voice for full use
+      this.demo = true; // unlimited voice for full use
       this.demoVoiceMax = 5;            // total voiced replies per session
       this.demoVoiceUsed = 0;
       this.demoVoicedByCharacter = {};  // limit per character
