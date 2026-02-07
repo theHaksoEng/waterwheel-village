@@ -609,7 +609,7 @@ version: WWV_VERSION,
     }
 // --- NEW: Demo mode chat limit (≈5 full turns: intro + 5 user + 5 bot = ~11 messages) ---
 const DEMO_MAX_MESSAGES = 11;  // Adjust as needed (e.g., 11 for 5 turns)
-const messages = await loadHistory(sessionId);  // Load early to check count
+let messages = await loadHistory(sessionId);  // Load early to check count
 if (demo && messages.length >= DEMO_MAX_MESSAGES - 1) {  // -1 to allow one final reply
 const goodbye = "It was a pleasure sharing with you, friend. This concludes our demo conversation. Feel free to start a new session!";
 messages.push({ role: "assistant", content: goodbye });
