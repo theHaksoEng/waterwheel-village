@@ -83,8 +83,9 @@ this.starting = false;
       this._lastAudioUrl = null;
 
       // === Demo mode (safe + cheap) ===
-      this.demo = true; // unlimited voice for full use
-      this.demoVoiceMax = 5;            // total voiced replies per session
+      // New - Make it more flexible
+      this.demo = true;   // Change to false for full version
+      this.demoVoiceMax = 5;            // total voiced replies per session
       this.demoVoiceUsed = 0;
       this.demoVoicedByCharacter = {};  // limit per character
       this.demoMaxChars = 220;          // max chars spoken in demo
@@ -214,7 +215,13 @@ this.starting = false;
 
         <div class="wrap" role="region" aria-label="Waterwheel Village Chat">
           <div class="top">Waterwheel Village</div>
-
+<!-- Add this right after <div class="top">Waterwheel Village</div> -->
+          <div class="demo-banner" style="background:#fef3c7; color:#92400e; padding:10px 14px; font-weight:600; text-align:center; border-bottom:1px solid #fcd34d;">
+            🔹 You are currently in <strong>DEMO MODE</strong> — Voice is limited (max 5 replies) and conversations end after ~11 messages.
+            <button id="upgrade-btn" class="btn" style="margin-left:12px; background:#d97706; color:white; padding:6px 12px; border-radius:8px; font-size:14px;">
+              Switch to Full Version → Unlimited Voice
+            </button>
+          </div>
 <div class="demoRow">
   <button class="char" data-char="mcarthur">
     <img class="avatar" src="${this.avatarUrl("mcarthur")}" alt="Mr. McArthur">
