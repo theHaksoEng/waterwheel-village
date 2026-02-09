@@ -288,14 +288,28 @@ sophia: ["sophia","teacher from venezuela","venezuelan teacher"],
 kwame: ["kwame","farmer from ghana","regenerative farmer"],
 };
 function findCharacter(text) {
-const lowered = String(text || "").toLowerCase();
-for (const key of Object.keys(characterAliases)) {
-for (const alias of characterAliases[key]) {
-if (lowered.includes(alias)) return key;
+  const lowered = String(text || "").toLowerCase();
+  for (const key of Object.keys(characterAliases)) {
+    for (const alias of characterAliases[key]) {
+      if (alias.includes(" ")) {
+        // For multi-word aliases, use includes (exact phrase check)
+        if (lowered.includes(alias)) return key;
+      } else {
+        // For single words, use regex with word boundaries to avoid substrings
+        const regex = new RegExp(`\\b${alias}\\b`);
+        if (lowered.match(regex)) return key;
+      }
     }
-if (lowered.includes(characters[key].name.toLowerCase())) return key;
+    // Name check: single-word boundary for safety
+    const nameLower = characters[key].name.toLowerCase();
+    if (nameLower.includes(" ")) {
+      if (lowered.includes(nameLower)) return key;
+    } else {
+      const regex = new RegExp(`\\b${nameLower}\\b`);
+      if (lowered.match(regex)) return key;
+    }
   }
-return null;
+  return null;
 }
 // System prompt builder (lore + persona + lesson vocab context)
 function buildSystemPrompt(activeCharacterKey, sessionData, mode) {
