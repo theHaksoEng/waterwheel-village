@@ -1,4 +1,4 @@
-window.__WWV_VERSION = "2026-2-7-textfix-1";
+window.__WWV_VERSION = "2026-02-09-split-1";
 console.log("WWV script loaded VERSION:", window.__WWV_VERSION);
 
 // @ts-nocheck
@@ -68,12 +68,24 @@ this.starting = false;
       }
 
       this.voice = (this.getAttribute("voice") || "on") === "on";
+      // ====== WWV PATCH: MODE + SEPARATE SESSIONS (DEMO vs SCHOOL) ======
+this.mode = (this.getAttribute("mode") || "demo").toLowerCase();
+this.demo = (this.mode === "demo");
 
-      // Session
-      this.sessionId =
-        localStorage.getItem("wwv-session") ||
-        (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()));
-      localStorage.setItem("wwv-session", this.sessionId);
+// Session (separate keys so demo never pollutes school)
+const sessionKey = this.demo ? "wwv-demo-session" : "wwv-school-session";
+this.sessionId =
+  localStorage.getItem(sessionKey) ||
+  (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()));
+localStorage.setItem(sessionKey, this.sessionId);
+
+// Demo limits (only apply when this.demo === true)
+this.demoVoiceMax = 5;                 // voiced replies per session
+this.demoVoiceUsed = 0;
+this.demoVoicedByCharacter = {};       // optional per-character cap
+this.demoMaxChars = 220;               // max chars spoken per demo reply
+this.activeCharacter = "mcarthur";
+// ====== END PATCH ======
 
       // State
       this.wordlist = [];            // [{en, fi}]
@@ -82,14 +94,18 @@ this.starting = false;
       this.lastVoiceId = null;
       this._lastAudioUrl = null;
 
-      // === Demo mode (safe + cheap) ===
-      // New - Make it more flexible
-      this.demo = true;   // Change to false for full version
-      this.demoVoiceMax = 5;            // total voiced replies per session
-      this.demoVoiceUsed = 0;
-      this.demoVoicedByCharacter = {};  // limit per character
-      this.demoMaxChars = 220;          // max chars spoken in demo
-      this.activeCharacter = "mcarthur";
+      // ====== WWV PATCH: MODE + SEPARATE SESSIONS (DEMO vs SCHOOL) ======
+this.mode = (this.getAttribute("mode") || "demo").toLowerCase();
+this.demo = (this.mode === "demo");
+
+// Demo limits (only apply when this.demo === true)
+this.demoVoiceMax = 5;
+this.demoVoiceUsed = 0;
+this.demoVoicedByCharacter = {};
+this.demoMaxChars = 220;
+this.activeCharacter = "mcarthur";
+// ====== END PATCH ======
+
 
       this.audioReady = true;
 
@@ -1296,5 +1312,54 @@ downloadTranscript() {
 } // ✅ CLOSE CLASS WaterwheelChat
 
 customElements.define("waterwheel-chat", WaterwheelChat);
+// ===================== AUTO-MOUNT INTO #wwv-root =====================
+const root = document.getElementById("wwv-root");
+if (root) {
+  root.innerHTML = `
+    <div id="wwv-demo-host"></div>
+    <div id="wwv-gate-host"></div>
+    <div id="wwv-school-host" style="display:none;"></div>
+  `;
+
+  // DEMO widget
+  document.getElementById("wwv-demo-host").innerHTML = `
+    <waterwheel-chat mode="demo" backend="${DEFAULT_BACKEND}" voice="on"></waterwheel-chat>
+  `;
+
+  // GATE (minimal version first; we can swap to smoke once confirmed)
+  document.getElementById("wwv-gate-host").innerHTML = `
+    <div style="
+      margin:18px 0; padding:18px; border-radius:18px; color:#fff;
+      background:linear-gradient(180deg,#081424 0%,#071b2f 45%,#061125 100%);
+      box-shadow:0 22px 60px rgba(0,0,0,.35);
+      border:1px solid rgba(255,255,255,.10);
+      text-align:center;">
+      <div style="display:inline-flex; gap:10px; align-items:center; padding:10px 14px; border-radius:999px;
+        background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.10); font-weight:900;">
+        🌀 Waterwheel Village Academy
+      </div>
+      <div style="margin:16px 0 8px; font-size:28px; font-weight:900;">Ready to go beyond the demo?</div>
+      <div style="opacity:.85; max-width:60ch; margin:0 auto 16px; line-height:1.6;">
+        Unlock all months, all characters, unlimited speaking, and progress tracking.
+      </div>
+      <button id="enterSchoolBtn" style="
+        border:0; border-radius:14px; padding:14px 18px; font-weight:900; font-size:16px; cursor:pointer; color:#fff;
+        background:linear-gradient(90deg, rgba(0,255,209,.95), rgba(73,171,255,.95), rgba(165,96,255,.95));
+        box-shadow:0 18px 45px rgba(0,0,0,.35), 0 10px 28px rgba(0,255,209,.14);
+      ">Start My English Journey →</button>
+      <div style="margin-top:10px; font-size:13px; opacity:.75;">Secure checkout • Instant access</div>
+    </div>
+  `;
+
+  // SCHOOL widget (locked/hidden for now)
+  document.getElementById("wwv-school-host").innerHTML = `
+    <waterwheel-chat mode="school" backend="${DEFAULT_BACKEND}" voice="on"></waterwheel-chat>
+  `;
+
+  // Button click -> checkout
+  document.getElementById("enterSchoolBtn")?.addEventListener("click", () => {
+    window.location.href = "/checkout"; // <-- change to your real payment URL
+  });
+}
 
 })(); // ✅ end of IIFE (only if you started the file with an IIFE)
