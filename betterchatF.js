@@ -515,10 +515,15 @@ let welcomeText = "";
 // Prefer explicit title from lessonIntros, fall back to slug-based label
 const chapterTitle =
       (intro && intro.title) ? intro.title : humanizeChapter(chapter);
-if (chapter !== "greetings_introductions") {
-welcomeText = `Greetings, ${studentName}! I’m Mr. McArthur, the village elder. Welcome to Waterwheel Village, where we learn together like family. Today, you’ll meet ${characters[intro.teacher].name} to explore ${chapterTitle}. Let’s begin!`;
-    }
-const teacherText = intro.text.replace(/\[name\]/g, studentName);
+const isMcArthurTeacher = intro.teacher === "mcarthur";  // Add this check
+if (chapter !== "greetings_introductions" && !isMcArthurTeacher) {
+  welcomeText = `Greetings, ${studentName}! I’m Mr. McArthur, the village elder. Welcome to Waterwheel Village, where we learn together like family. Today, you’ll meet ${characters[intro.teacher].name} to explore ${chapterTitle}. Let’s begin!`;
+}
+// For lessonText: Optionally trim redundant "I am Mr. McArthur" if already in welcome
+let teacherText = intro.text.replace(/\[name\]/g, studentName);
+if (isMcArthurTeacher && teacherText.startsWith(`Hello, ${studentName}. I am Mr. McArthur.`)) {  // Customize based on your lessonIntros patterns
+  teacherText = teacherText.replace(`Hello, ${studentName}. I am Mr. McArthur. `, `Hello, ${studentName}. `);  // Merge/skip repeat
+}
 const storyText = intro.story.replace(/\[name\]/g, studentName);
 const lessonText = `${teacherText}\n\n${storyText}`;
 // Initialize history
