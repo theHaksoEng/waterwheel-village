@@ -128,6 +128,34 @@ this.activeCharacter = "mcarthur";
 
       // Build shadow DOM
       this.attachShadow({ mode: "open" });
+      const demoOnlyUI = this.demo ? `
+  <div id="demoBanner" class="demo-banner" style="background:#fef3c7; color:#92400e; padding:10px 14px; font-weight:600; text-align:center; border-bottom:1px solid #fcd34d;">
+    🔹 You are currently in <strong>DEMO MODE</strong> — Voice is limited (max 5 replies) and conversations end after ~11 messages.
+    <button id="upgrade-btn" class="btn" style="margin-left:12px; background:#d97706; color:white; padding:6px 12px; border-radius:8px; font-size:14px;">
+      Switch to Full Version → Unlimited Voice
+    </button>
+  </div>
+
+  <div id="demoRow" class="demoRow">
+    <button class="char" data-char="mcarthur">
+      <img class="avatar" src="${this.avatarUrl("mcarthur")}" alt="Mr. McArthur">
+      <span>McArthur</span>
+    </button>
+    <button class="char" data-char="kwame">
+      <img class="avatar" src="${this.avatarUrl("kwame")}" alt="Kwame">
+      <span>Kwame</span>
+    </button>
+    <button class="char" data-char="nadia">
+      <img class="avatar" src="${this.avatarUrl("nadia")}" alt="Nadia">
+      <span>Nadia</span>
+    </button>
+    <button class="char" data-char="sophia">
+      <img class="avatar" src="${this.avatarUrl("sophia")}" alt="Sophia">
+      <span>Sophia</span>
+    </button>
+  </div>
+` : ``;
+
       this.shadowRoot.innerHTML = `
         <style>
           :host { all: initial; font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial; color:#0f172a }
@@ -229,99 +257,74 @@ this.activeCharacter = "mcarthur";
 
         </style>
 
-        <div class="wrap" role="region" aria-label="Waterwheel Village Chat">
-          <div class="top">Waterwheel Village</div>
-<!-- Add this right after <div class="top">Waterwheel Village</div> -->
-          <div class="demo-banner" style="background:#fef3c7; color:#92400e; padding:10px 14px; font-weight:600; text-align:center; border-bottom:1px solid #fcd34d;">
-            🔹 You are currently in <strong>DEMO MODE</strong> — Voice is limited (max 5 replies) and conversations end after ~11 messages.
-            <button id="upgrade-btn" class="btn" style="margin-left:12px; background:#d97706; color:white; padding:6px 12px; border-radius:8px; font-size:14px;">
-              Switch to Full Version → Unlimited Voice
-            </button>
-          </div>
-<div class="demoRow">
-  <button class="char" data-char="mcarthur">
-    <img class="avatar" src="${this.avatarUrl("mcarthur")}" alt="Mr. McArthur">
-    <span>McArthur</span>
-  </button>
+       <div class="wrap" role="region" aria-label="Waterwheel Village Chat">
+  <div class="top">Waterwheel Village</div>
 
-  <button class="char" data-char="kwame">
-    <img class="avatar" src="${this.avatarUrl("kwame")}" alt="Kwame">
-    <span>Kwame</span>
-  </button>
+  ${demoOnlyUI}
 
-  <button class="char" data-char="nadia">
-    <img class="avatar" src="${this.avatarUrl("nadia")}" alt="Nadia">
-    <span>Nadia</span>
-  </button>
+  <div class="pane">
+    <input id="name" placeholder="Your name" />
 
-  <button class="char" data-char="sophia">
-    <img class="avatar" src="${this.avatarUrl("sophia")}" alt="Sophia">
-    <span>Sophia</span>
-  </button>
-</div>
+    <select id="month">
+      <option value="">Month...</option>
+      <option value="month1">Month 1 – Greetings & Daily Life</option>
+      <option value="month2">Month 2 – Home & Feelings</option>
+      <option value="month3">Month 3 – Work & School</option>
+      <option value="month4">Month 4 – Travel & Shopping</option>
+      <option value="month5">Month 5 – Health & Community</option>
+      <option value="month6">Month 6 – Nature & Culture</option>
+    </select>
 
-          <div class="pane">
-            <input id="name" placeholder="Your name" />
+    <select id="chapter">
+      <option value="">Chapter...</option>
 
-            <select id="month">
-              <option value="">Month...</option>
-              <option value="month1">Month 1 – Greetings & Daily Life</option>
-              <option value="month2">Month 2 – Home & Feelings</option>
-              <option value="month3">Month 3 – Work & School</option>
-              <option value="month4">Month 4 – Travel & Shopping</option>
-              <option value="month5">Month 5 – Health & Community</option>
-              <option value="month6">Month 6 – Nature & Culture</option>
-            </select>
+      <!-- Month 1 -->
+      <option value="greetings_introductions">Greetings & Introductions (M1)</option>
+      <option value="numbers_days_questions">Numbers, Days & Questions (M1)</option>
+      <option value="food_drink">Food & Drink (M1)</option>
+      <option value="daily_phrases">Daily Phrases (M1)</option>
 
-            <select id="chapter">
-              <option value="">Chapter...</option>
+      <!-- Month 2 -->
+      <option value="family_members">Family Members (M2)</option>
+      <option value="house_furniture">House & Furniture (M2)</option>
+      <option value="routines_chores">Routines & Chores (M2)</option>
+      <option value="feelings_emotions">Feelings & Emotions (M2)</option>
 
-              <!-- Month 1 -->
-              <option value="greetings_introductions">Greetings & Introductions (M1)</option>
-              <option value="numbers_days_questions">Numbers, Days & Questions (M1)</option>
-              <option value="food_drink">Food & Drink (M1)</option>
-              <option value="daily_phrases">Daily Phrases (M1)</option>
+      <!-- Month 3 -->
+      <option value="professions_tools">Professions & Tools (M3)</option>
+      <option value="classroom_office">Classroom & Office (M3)</option>
+      <option value="common_tasks">Common Tasks (M3)</option>
+      <option value="workplace_dialogues">Workplace Dialogues (M3)</option>
 
-              <!-- Month 2 -->
-              <option value="family_members">Family Members (M2)</option>
-              <option value="house_furniture">House & Furniture (M2)</option>
-              <option value="routines_chores">Routines & Chores (M2)</option>
-              <option value="feelings_emotions">Feelings & Emotions (M2)</option>
+      <!-- Month 4 -->
+      <option value="transport">Transport (M4)</option>
+      <option value="shops_money">Shops & Money (M4)</option>
+      <option value="asking_directions">Asking Directions (M4)</option>
+      <option value="eating_restaurants">Eating & Restaurants (M4)</option>
 
-              <!-- Month 3 -->
-              <option value="professions_tools">Professions & Tools (M3)</option>
-              <option value="classroom_office">Classroom & Office (M3)</option>
-              <option value="common_tasks">Common Tasks (M3)</option>
-              <option value="workplace_dialogues">Workplace Dialogues (M3)</option>
+      <!-- Month 5 -->
+      <option value="body_health">Body & Health (M5)</option>
+      <option value="doctor_medicine">Doctor & Medicine (M5)</option>
+      <option value="community_places">Community Places (M5)</option>
+      <option value="emergency_phrases">Emergency Phrases (M5)</option>
 
-              <!-- Month 4 -->
-              <option value="transport">Transport (M4)</option>
-              <option value="shops_money">Shops & Money (M4)</option>
-              <option value="asking_directions">Asking Directions (M4)</option>
-              <option value="eating_restaurants">Eating & Restaurants (M4)</option>
+      <!-- Month 6 -->
+      <option value="weather_seasons">Weather & Seasons (M6)</option>
+      <option value="animals_plants_environment">Animals, Plants & Environment (M6)</option>
+      <option value="traditions_celebrations">Traditions & Celebrations (M6)</option>
+      <option value="review_integration">Review & Integration (M6)</option>
+    </select>
 
-              <!-- Month 5 -->
-              <option value="body_health">Body & Health (M5)</option>
-              <option value="doctor_medicine">Doctor & Medicine (M5)</option>
-              <option value="community_places">Community Places (M5)</option>
-              <option value="emergency_phrases">Emergency Phrases (M5)</option>
+    <button id="start" class="btn secondary">Start Lesson</button>
+    <button id="voiceToggle" class="btn ghost">Voice: ON</button>
+    <button id="voiceTest" class="btn ghost">Test Voice</button>
+    <button id="download" class="btn">Download</button>
 
-              <!-- Month 6 -->
-              <option value="weather_seasons">Weather & Seasons (M6)</option>
-              <option value="animals_plants_environment">Animals, Plants & Environment (M6)</option>
-              <option value="traditions_celebrations">Traditions & Celebrations (M6)</option>
-              <option value="review_integration">Review & Integration (M6)</option>
-            </select>
+    <span id="status" class="hint" aria-live="polite" style="margin-left:auto"></span>
+  </div>
 
-            <button id="start" class="btn secondary">Start Lesson</button>
-            <button id="voiceToggle" class="btn ghost">Voice: ON</button>
-            <button id="voiceTest" class="btn ghost">Test Voice</button>
-            <button id="download" class="btn">Download</button>
+  <div class="grid">
 
-            <span id="status" class="hint" aria-live="polite" style="margin-left:auto"></span>
-          </div>
-
-          <div class="grid">
             <div class="col-chat">
               <div id="chat" class="chat"></div>
               <div class="bar">
