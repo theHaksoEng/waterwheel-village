@@ -469,7 +469,10 @@ async playChime() {
 connectedCallback() {
   if (this._didInit) return;
   this._didInit = true;
-
+if (!this.demo) {
+  this.shadowRoot.getElementById("demoBanner")?.remove();
+  this.shadowRoot.getElementById("demoRow")?.remove();
+}
   // 1. Setup Name & LocalStorage
   const savedName = localStorage.getItem("wwv-name") || "friend";
   this.ui.name.value = savedName;
@@ -1313,12 +1316,26 @@ downloadTranscript() {
 
 customElements.define("waterwheel-chat", WaterwheelChat);
 // ===================== AUTO-MOUNT INTO #wwv-root =====================
-const root = document.getElementById("wwv-root");
-if (root) {
+function mountWWV() {
+  const root = document.getElementById("wwv-root");
+  if (!root) return;
+
+  const path = (location.pathname || "").toLowerCase();
+  const isSchoolPage = path.includes("/school"); // <-- change if your slug differs
+
+  // ===================== SCHOOL PAGE =====================
+  if (isSchoolPage) {
+    // ONLY school, no demo, no gate
+    root.innerHTML = `
+      <waterwheel-chat mode="school" backend="${DEFAULT_BACKEND}" voice="on"></waterwheel-chat>
+    `;
+    return;
+  }
+
+  // ===================== DEMO PAGE =====================
   root.innerHTML = `
     <div id="wwv-demo-host"></div>
     <div id="wwv-gate-host"></div>
-    <div id="wwv-school-host" style="display:none;"></div>
   `;
 
   // DEMO widget
@@ -1326,7 +1343,7 @@ if (root) {
     <waterwheel-chat mode="demo" backend="${DEFAULT_BACKEND}" voice="on"></waterwheel-chat>
   `;
 
-  // GATE (minimal version first; we can swap to smoke once confirmed)
+  // GATE
   document.getElementById("wwv-gate-host").innerHTML = `
     <div style="
       margin:18px 0; padding:18px; border-radius:18px; color:#fff;
@@ -1351,15 +1368,17 @@ if (root) {
     </div>
   `;
 
-  // SCHOOL widget (locked/hidden for now)
-  document.getElementById("wwv-school-host").innerHTML = `
-    <waterwheel-chat mode="school" backend="${DEFAULT_BACKEND}" voice="on"></waterwheel-chat>
-  `;
-
   // Button click -> checkout
   document.getElementById("enterSchoolBtn")?.addEventListener("click", () => {
-    window.location.href = "/checkout"; // <-- change to your real payment URL
+    window.location.href = "/checkout"; // <-- your payment page
   });
+}
+
+// Run safely even if script loads before DOM
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", mountWWV);
+} else {
+  mountWWV();
 }
 
 })(); // ✅ end of IIFE (only if you started the file with an IIFE)
