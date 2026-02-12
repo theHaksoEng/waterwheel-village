@@ -129,12 +129,6 @@ this.activeCharacter = "mcarthur";
       // Build shadow DOM
       this.attachShadow({ mode: "open" });
       const demoOnlyUI = this.demo ? `
-  <div id="demoBanner" class="demo-banner" style="background:#fef3c7; color:#92400e; padding:10px 14px; font-weight:600; text-align:center; border-bottom:1px solid #fcd34d;">
-    🔹 You are currently in <strong>DEMO MODE</strong> — Voice is limited (max 5 replies) and conversations end after ~11 messages.
-    <button id="upgrade-btn" class="btn" style="margin-left:12px; background:#d97706; color:white; padding:6px 12px; border-radius:8px; font-size:14px;">
-      Switch to Full Version → Unlimited Voice
-    </button>
-  </div>
 
   <div id="demoRow" class="demoRow">
     <button class="char" data-char="mcarthur">
