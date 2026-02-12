@@ -252,7 +252,7 @@ this.activeCharacter = "mcarthur";
         </style>
 
        <div class="wrap" role="region" aria-label="Waterwheel Village Chat">
-  <div class="top">Waterwheel Village</div>
+<div class="top">Waterwheel Village Academy — Demo</div>
 
   ${demoOnlyUI}
 
