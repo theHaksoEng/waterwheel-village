@@ -150,6 +150,9 @@ this.activeCharacter = "mcarthur";
   </div>
 ` : ``;
 
+const isDemo = !!this.getAttribute("demo"); 
+const headerText = isDemo ? "Waterwheel Village Academy — Demo" : "Waterwheel Village Academy";
+
       this.shadowRoot.innerHTML = `
         <style>
           :host { all: initial; font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial; color:#0f172a }
@@ -252,7 +255,7 @@ this.activeCharacter = "mcarthur";
         </style>
 
        <div class="wrap" role="region" aria-label="Waterwheel Village Chat">
-<div class="top">Waterwheel Village Academy — Demo</div>
+<div class="top">${headerText}</div>
 
   ${demoOnlyUI}
 
