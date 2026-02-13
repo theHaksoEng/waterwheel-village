@@ -777,6 +777,26 @@ return res.status(500).json({ error: "Chat failed", details: err?.message || "Un
   }
 });
 // === Speakbase endpoint (ElevenLabs with disk cache) ===
+function cleanTextForSpeech(input) {
+  if (!input || typeof input !== "string") return "";
+
+  return input
+    // Fix title abbreviations that cause unnatural pauses in TTS
+    .replace(/\bMr\./g, "Mr")
+    .replace(/\bMrs\./g, "Mrs")
+    .replace(/\bMs\./g, "Ms")
+    .replace(/\bDr\./g, "Dr")
+    .replace(/\bProf\./g, "Professor")
+
+    // Optional: remove markdown emphasis that gets spoken weirdly
+    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace(/\*(.*?)\*/g, "$1")
+
+    // Optional: normalize whitespace
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 app.post("/speakbase", async (req, res) => {
 const { text, voiceId } = req.body || {};
 if (!process.env.ELEVENLABS_API_KEY) {
@@ -786,8 +806,11 @@ return res.status(500).json({ error: "Missing ELEVENLABS_API_KEY" });
 if (!text || !voiceId) {
 return res.status(400).json({ error: "Missing text or voiceId" });
   }
+  // 🔊 Clean text for speech (removes Mr. pause etc.)
+const speechText = cleanTextForSpeech(text);
+
 // 1) Compute cache key & path
-const key = hashTextForCache(text, voiceId);
+const key = hashTextForCache(speechText, voiceId);
 const cachedPath = path.join(AUDIO_CACHE_DIR, `${key}.mp3`);
 try {
 // 2) If cached, stream file and return (no ElevenLabs cost)
@@ -817,7 +840,8 @@ headers: {
 Accept: "audio/mpeg",
         },
 body: JSON.stringify({
-text,
+  text: speechText,
+
 model_id: "eleven_multilingual_v2", // keep your current model
         }),
       }
