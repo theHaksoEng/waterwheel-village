@@ -41,6 +41,10 @@ console.log("WWV script loaded ✅", new Date().toISOString());
     if (t.endsWith("s") && t.length > 1) return t.slice(0, -1);
     return t;
   }
+// Detect mode from script tag (WordPress embed)
+const scriptEl = document.currentScript || document.querySelector('script[src*="wwv-widget.js"]');
+const mode = scriptEl?.dataset?.mode || "school";
+const isDemoMode = mode === "demo";
 
   // Strip markdown-ish formatting before sending to TTS
   function sanitizeForTTS(str = "") {
@@ -51,6 +55,8 @@ console.log("WWV script loaded ✅", new Date().toISOString());
       .replace(/[_~]/g, "")            // stray emphasis markers
       .trim();
   }
+const params = new URLSearchParams(window.location.search);
+const isDemo = params.get("demo") === "1";
 
   class WaterwheelChat extends HTMLElement {
     constructor() {
@@ -128,7 +134,7 @@ this.activeCharacter = "mcarthur";
 
       // Build shadow DOM
       this.attachShadow({ mode: "open" });
-      const demoOnlyUI = this.demo ? `
+const demoOnlyUI = isDemoMode ? `
 
   <div id="demoRow" class="demoRow">
     <button class="char" data-char="mcarthur">
@@ -150,8 +156,9 @@ this.activeCharacter = "mcarthur";
   </div>
 ` : ``;
 
-const isDemo = !!this.getAttribute("demo"); 
-const headerText = isDemo ? "Waterwheel Village Academy — Demo" : "Waterwheel Village Academy";
+const headerText = isDemoMode
+  ? "Waterwheel Village Academy — Demo"
+  : "Waterwheel Village Academy";
 
       this.shadowRoot.innerHTML = `
         <style>
