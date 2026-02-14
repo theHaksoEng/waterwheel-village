@@ -823,7 +823,7 @@ async playSpeakQueue() {
       }
 
       const base = String(this.backend || "").replace(/\/+$/, "");
-      const r = await fetch(`${base}/speakbase`, {
+      const r = await fetchWithRetry(this.backend + "/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text, voiceId }),
