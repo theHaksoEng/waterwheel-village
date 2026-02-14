@@ -94,24 +94,6 @@ class WaterwheelChat extends HTMLElement {
       }
 
       this.voice = (this.getAttribute("voice") || "on") === "on";
-      // ====== WWV PATCH: MODE + SEPARATE SESSIONS (DEMO vs SCHOOL) ======
-this.mode = (this.getAttribute("mode") || "demo").toLowerCase();
-this.demo = (this.mode === "demo");
-
-// Session (separate keys so demo never pollutes school)
-const sessionKey = this.demo ? "wwv-demo-session" : "wwv-school-session";
-this.sessionId =
-  localStorage.getItem(sessionKey) ||
-  (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()));
-localStorage.setItem(sessionKey, this.sessionId);
-
-// Demo limits (only apply when this.demo === true)
-this.demoVoiceMax = 5;                 // voiced replies per session
-this.demoVoiceUsed = 0;
-this.demoVoicedByCharacter = {};       // optional per-character cap
-this.demoMaxChars = 220;               // max chars spoken per demo reply
-this.activeCharacter = "mcarthur";
-// ====== END PATCH ======
 
       // State
       this.wordlist = [];            // [{en, fi}]
@@ -154,7 +136,7 @@ this.activeCharacter = "mcarthur";
 
       // Build shadow DOM
       this.attachShadow({ mode: "open" });
-const demoOnlyUI = isDemoMode ? `
+const demoOnlyUI = this.demo ? `
 
   <div id="demoRow" class="demoRow">
     <button class="char" data-char="mcarthur">
@@ -176,34 +158,11 @@ const demoOnlyUI = isDemoMode ? `
   </div>
 ` : ``;
 
-const headerText = isDemoMode
+const headerText = this.demo 
   ? "Waterwheel Village Academy — Demo"
   : "Waterwheel Village Academy";
 
       this.shadowRoot.innerHTML = `
-// Demo character buttons: event delegation (TS-friendly)
-const sr = this.shadowRoot;
-if (sr) {
-  sr.addEventListener("click", (e) => {
-    const target = /** @type {HTMLElement|null} */ (e.target instanceof HTMLElement ? e.target : null);
-    if (!target) return;
-
-    const btn = target.closest("button.char");
-    if (!btn) return;
-
-    const nextChar = btn.getAttribute("data-char");
-    if (!nextChar) return;
-
-    // Visual active state
-    sr.querySelectorAll("button.char").forEach((b) => b.classList.remove("active"));
-    btn.classList.add("active");
-
-    // Set active character
-    this.activeCharacter = nextChar;
-
-    console.log("✅ Character switched to:", nextChar);
-  });
-}
 
         <style>
           :host { all: initial; font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial; color:#0f172a }
@@ -375,6 +334,28 @@ ${this.demo ? "" : `
         <audio id="player" controls playsinline></audio>
         <audio id="milestone-sound" preload="auto"></audio>
       `;
+      const sr = this.shadowRoot;
+if (sr) {
+  sr.addEventListener("click", (e) => {
+    const target = /** @type {HTMLElement|null} */ (e.target instanceof HTMLElement ? e.target : null);
+    if (!target) return;
+
+    const btn = target.closest("button.char");
+    if (!btn) return;
+
+    const nextChar = btn.getAttribute("data-char");
+    if (!nextChar) return;
+
+    // Visual active state
+    sr.querySelectorAll("button.char").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+
+    // Set active character
+    this.activeCharacter = nextChar;
+
+    console.log("✅ Character switched to:", nextChar);
+  });
+}
 
 // UI refs
 this.ui = {
