@@ -1062,6 +1062,12 @@ async sendText(text, isVoice) {
   console.log("sendText ENTERED", { text, isVoice, voice: this.voice });
   this.addTyping(true);
 
+  // ✅ demo-safe name (because #name input is hidden on demo page)
+  const userName =
+    (this.ui && this.ui.name && this.ui.name.value)
+      ? this.ui.name.value.trim()
+      : "friend";
+
   try {
     const r = await fetch(this.backend + "/chat", {
       method: "POST",
@@ -1070,41 +1076,15 @@ async sendText(text, isVoice) {
         text,
         sessionId: this.sessionId,
         isVoice: !!isVoice,
-        name: this.ui.name.value || "friend",
+        name: userName,
         character: this.activeCharacter,
         demo: !!this.demo,
       }),
     });
-async function fetchWithRetry(url, options, retries = 2, delay = 15000) {  // 15s delay for wake-up
-  for (let i = 0; i < retries; i++) {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 45000);  // 45s timeout
-      options.signal = controller.signal;
-      const res = await fetch(url, options);
-      clearTimeout(timeoutId);
-      if (res.ok) return res;
-      if (i < retries - 1 && [502, 503, 504].includes(res.status)) {  // Retry on gateway errors (sleep)
-        await new Promise(res => setTimeout(res, delay));
-        console.log(`Retrying fetch (${i+1}/${retries}) due to possible server wake-up...`);
-      } else {
-        throw new Error(`HTTP ${res.status}`);
-      }
-    } catch (e) {
-      if (e.name === 'AbortError') {
-        this.setStatus("Request timed out—server may be waking up. Retrying...", true);
-      } else throw e;
-    }
-  }
-  throw new Error('Max retries reached');
-}
-// Usage in sendText/startLesson: const r = await fetchWithRetry(url, { method: 'POST', ... });
-    // ✅ DEBUG BIT #1: confirm request success/failure
+
     console.log("SENDTEXT fetch done. status=", r.status, "ok=", r.ok);
 
     const d = await r.json().catch(() => ({}));
-
-    // ✅ DEBUG BIT #2: show what came back
     console.log("SENDTEXT response json:", d);
 
     this.addTyping(false);
@@ -1117,10 +1097,8 @@ async function fetchWithRetry(url, options, retries = 2, delay = 15000) {  // 15
     const reply = d.text || "(no response)";
     if (d.voiceId) this.lastVoiceId = d.voiceId;
 
-    // Your existing behavior: add bot reply here
     this.addMsg("bot", reply);
 
-    // FIXED VOICE LOGIC (unchanged)
     const charKey = d.character || this.activeCharacter || "mcarthur";
     const usedByChar = this.demoVoicedByCharacter?.[charKey] || 0;
     const canVoice =
@@ -1129,7 +1107,6 @@ async function fetchWithRetry(url, options, retries = 2, delay = 15000) {  // 15
 
     if (canVoice) {
       const vid = d.voiceId || this.lastVoiceId || MCARTHUR_VOICE;
-      const spokenText = this.demo ? reply.slice(0, this.demoMaxChars) : reply;
 
       const parts = String(reply || "")
         .split(/(?<=[.!?])\s+/)
@@ -1140,6 +1117,7 @@ async function fetchWithRetry(url, options, retries = 2, delay = 15000) {  // 15
 
       if (this.demo) {
         this.demoVoiceUsed++;
+        this.demoVoicedByCharacter = this.demoVoicedByCharacter || {};
         this.demoVoicedByCharacter[charKey] = usedByChar + 1;
       }
     }
@@ -1147,17 +1125,16 @@ async function fetchWithRetry(url, options, retries = 2, delay = 15000) {  // 15
     if (d.newlyLearned) this.mergeNewlyLearned(d.newlyLearned);
     this.handleMilestones();
 
-    // ✅ DEBUG BIT #3: prove bot message was appended
     console.log("SENDTEXT done. msg count now =", this.ui.chat?.children?.length);
-
-    return d; // ✅ helpful if you ever want handleSendAction to read the reply
+    return d;
   } catch (e) {
     console.error("SENDTEXT error:", e);
     this.addTyping(false);
     this.addMsg("bot", "Sorry, something went wrong sending your message.");
-    throw e; // ✅ so calling code can detect failure if needed
+    throw e;
   }
 }
+
 
 // Mic with pause buffer
 setupMic() {
