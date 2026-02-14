@@ -376,30 +376,35 @@ ${this.demo ? "" : `
         <audio id="milestone-sound" preload="auto"></audio>
       `;
 
-      // UI refs
-      this.ui = {
-        name: qs(this.shadowRoot, "#name"),
-        month: qs(this.shadowRoot, "#month"),
-        chapter: qs(this.shadowRoot, "#chapter"),
-        start: qs(this.shadowRoot, "#start"),
-        voiceToggle: qs(this.shadowRoot, "#voiceToggle"),
-        voiceTest: qs(this.shadowRoot, "#voiceTest"),
-        download: qs(this.shadowRoot, "#download"),
-        status: qs(this.shadowRoot, "#status"),
-        chat: qs(this.shadowRoot, "#chat"),
-        input: qs(this.shadowRoot, "#input"),
-        send: qs(this.shadowRoot, "#send"),
-        mic: qs(this.shadowRoot, "#mic"),
-        micInfo: qs(this.shadowRoot, "#micInfo"),
-        micErr: qs(this.shadowRoot, "#micErr"),
-        wordsWrap: qs(this.shadowRoot, "#words"),
-        showFi: qs(this.shadowRoot, "#showFi"),
-        progBar: qs(this.shadowRoot, "#progBar"),
-        progLbl: qs(this.shadowRoot, "#progLbl"),
-        player: qs(this.shadowRoot, "#player"),
-        vocabPanel: qs(this.shadowRoot, ".col-words"),
-        demoHint: qs(this.shadowRoot, "#demoHint"),
-      };
+// UI refs
+this.ui = {
+  // Common UI (always present in both demo and school)
+  chat: qs(this.shadowRoot, "#chat"),
+  input: qs(this.shadowRoot, "#input"),
+  send: qs(this.shadowRoot, "#send"),
+  mic: qs(this.shadowRoot, "#mic"),
+  micInfo: qs(this.shadowRoot, "#micInfo"),
+  micErr: qs(this.shadowRoot, "#micErr"),
+  player: qs(this.shadowRoot, "#player"),
+  demoHint: qs(this.shadowRoot, "#demoHint"),  // Assuming this is common; move to school if not
+};
+
+if (!this.demo) {
+  // School-only UI
+  this.ui.name = qs(this.shadowRoot, "#name");
+  this.ui.month = qs(this.shadowRoot, "#month");
+  this.ui.chapter = qs(this.shadowRoot, "#chapter");
+  this.ui.start = qs(this.shadowRoot, "#start");
+  this.ui.voiceToggle = qs(this.shadowRoot, "#voiceToggle");
+  this.ui.voiceTest = qs(this.shadowRoot, "#voiceTest");
+  this.ui.download = qs(this.shadowRoot, "#download");
+  this.ui.status = qs(this.shadowRoot, "#status");
+  this.ui.wordsWrap = qs(this.shadowRoot, "#words");
+  this.ui.showFi = qs(this.shadowRoot, "#showFi");
+  this.ui.progBar = qs(this.shadowRoot, "#progBar");
+  this.ui.progLbl = qs(this.shadowRoot, "#progLbl");
+  this.ui.vocabPanel = qs(this.shadowRoot, ".col-words");
+}
     }
 avatarUrl(name) {
   return `${this.backend}/avatars/${name}.png`;
@@ -490,116 +495,104 @@ async playChime() {
 connectedCallback() {
   if (this._didInit) return;
   this._didInit = true;
-if (!this.demo) {
-  this.shadowRoot.getElementById("demoBanner")?.remove();
-  this.shadowRoot.getElementById("demoRow")?.remove();
-}
-  // 1. Setup Name & LocalStorage
-  const savedName = localStorage.getItem("wwv-name") || "friend";
-  this.ui.name.value = savedName;
-  this.ui.name.addEventListener("change", () =>
-    localStorage.setItem("wwv-name", this.ui.name.value.trim())
-  );
 
-  // 2. Character Picker Logic
-  const allChars = Array.from(this.shadowRoot.querySelectorAll(".char"));
-  const highlight = () => {
-    allChars.forEach((b) => b.classList.toggle("active", (b.getAttribute("data-char") || "") === this.activeCharacter));
-  };
-
- allChars.forEach((btn) => {
-  btn.addEventListener("click", async () => {
-    const newChar = btn.getAttribute("data-char") || "mcarthur";
-    if (newChar === this.activeCharacter) return;
-    this.activeCharacter = newChar;
-    highlight();
-// 3. Text input + Send button wiring (single source of truth)
-this.ui = this.ui || {};
-this.ui.input = this.shadowRoot.querySelector("#input");
-this.ui.send  = this.shadowRoot.querySelector("#send");
-
-this.ui.send?.addEventListener("click", (e) => {
-  e.preventDefault();
-  this.handleSendAction();
-});
-
-this.ui.input?.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !e.shiftKey) {
+  // Common UI/event setups (demo + school)
+  // 3. Text input + Send button wiring (single source of truth) – moved here from inside click handler
+  this.ui.input = this.shadowRoot.querySelector("#input");
+  this.ui.send = this.shadowRoot.querySelector("#send");
+  this.ui.send?.addEventListener("click", (e) => {
     e.preventDefault();
     this.handleSendAction();
-  }
-});
-
-    // Map char key to full name for reliable switching
-    const nameMap = {
-      mcarthur: "Mr. McArthur",
-      kwame: "Kwame",
-      nadia: "Nadia",
-      sophia: "Sophia"
-    };
-    const fullName = nameMap[newChar] || newChar;
-
-    this.addMsg("bot", `Switched to ${fullName}. Say hello!`);
-
-    // Auto-send a greeting to trigger backend character switch (uses findCharacter + intro)
-    const greeting = `Hello ${fullName}`;
-    this.addMsg("user", greeting);
-    await this.sendText(greeting, false); // false = not from mic
   });
-});
-
-  if (!this.activeCharacter) this.activeCharacter = "mcarthur";
-  highlight();
-
- this.ui.start.addEventListener("click", async () => {
-  if (this._lessonStarting) return; // Prevent double-click start
-
-  const m = this.ui.month.value;
-  const c = this.ui.chapter.value;
-  if (!m || !c) {
-    alert("Pick Month and Chapter first");
-    return;
-  }
-
-  this._lessonStarting = true;
-
-  try {
-    this.unlockAudio();       // fire-and-forget (don’t await)
-    await this.startLesson(); // lesson starts immediately
-  } finally {
-    // ✅ ALWAYS release the lock, even if something fails
-    this._lessonStarting = false;
-  }
-});
-
-  // 4. Voice Controls
-  this.ui.voiceToggle.addEventListener("click", () => {
-    this.voice = !this.voice;
-    this.ui.voiceToggle.textContent = this.voice ? "Voice: ON" : "Voice: OFF";
-  });
-
-  this.ui.voiceTest.addEventListener("click", async () => {
-    await this.unlockAudio();
-    const vid = VOICE_BY_CHAR[this.activeCharacter] || this.lastVoiceId || MCARTHUR_VOICE;
-    this.enqueueSpeak("Voice test. If you hear this, TTS works.", vid);
-  });
-
-  // 5. Send & Input Logic (CRITICAL FIX)
-  this.ui.send.addEventListener("click", () => this.handleSendAction());
-
-  this.ui.input.addEventListener("keydown", (e) => {
+  this.ui.input?.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       this.handleSendAction();
     }
   });
 
-  // 6. Others
-  this.ui.download.addEventListener("click", () => this.downloadTranscript());
-  this.ui.showFi.addEventListener("change", () => this.renderWordlist());
-  
-  this.setupMic();
+  // School-only setups
+  if (!this.demo) {
+    // 1. Setup Name & LocalStorage
+    const savedName = localStorage.getItem("wwv-name") || "friend";
+    if (this.ui.name) this.ui.name.value = savedName;
+    this.ui.name?.addEventListener("change", () =>
+      localStorage.setItem("wwv-name", this.ui.name.value.trim())
+    );
 
+    // Other school listeners
+    this.ui.start?.addEventListener("click", async () => {
+      if (this._lessonStarting) return; // Prevent double-click start
+      const m = this.ui.month.value;
+      const c = this.ui.chapter.value;
+      if (!m || !c) {
+        alert("Pick Month and Chapter first");
+        return;
+      }
+      this._lessonStarting = true;
+      try {
+        this.unlockAudio(); // fire-and-forget (don’t await)
+        await this.startLesson(); // lesson starts immediately
+      } finally {
+        // ✅ ALWAYS release the lock, even if something fails
+        this._lessonStarting = false;
+      }
+    });
+
+    this.ui.voiceToggle?.addEventListener("click", () => {
+      this.voice = !this.voice;
+      this.ui.voiceToggle.textContent = this.voice ? "Voice: ON" : "Voice: OFF";
+    });
+
+    this.ui.voiceTest?.addEventListener("click", async () => {
+      await this.unlockAudio();
+      const vid = VOICE_BY_CHAR[this.activeCharacter] || this.lastVoiceId || MCARTHUR_VOICE;
+      this.enqueueSpeak("Voice test. If you hear this, TTS works.", vid);
+    });
+
+    this.ui.download?.addEventListener("click", () => this.downloadTranscript());
+
+    this.ui.showFi?.addEventListener("change", () => this.renderWordlist());
+  }
+
+  // Demo-only setups (character picker)
+  if (this.demo) {
+    // 2. Character Picker Logic
+    const allChars = Array.from(this.shadowRoot.querySelectorAll(".char"));
+    const highlight = () => {
+      allChars.forEach((b) => b.classList.toggle("active", (b.getAttribute("data-char") || "") === this.activeCharacter));
+    };
+    allChars.forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const newChar = btn.getAttribute("data-char") || "mcarthur";
+        if (newChar === this.activeCharacter) return;
+        this.activeCharacter = newChar;
+        highlight();
+
+        // Map char key to full name for reliable switching
+        const nameMap = {
+          mcarthur: "Mr. McArthur",
+          kwame: "Kwame",
+          nadia: "Nadia",
+          sophia: "Sophia"
+        };
+        const fullName = nameMap[newChar] || newChar;
+        this.addMsg("bot", `Switched to ${fullName}. Say hello!`);
+
+        // Auto-send a greeting to trigger backend character switch (uses findCharacter + intro)
+        const greeting = `Hello ${fullName}`;
+        this.addMsg("user", greeting);
+        await this.sendText(greeting, false); // false = not from mic
+      });
+    });
+    if (!this.activeCharacter) this.activeCharacter = "mcarthur";
+    highlight();
+
+    // Optional: Auto-select initial character or trigger initial greeting if needed
+  }
+
+  // Common final inits (both modes)
+  this.setupMic();
   this.shadowRoot.querySelectorAll(".demoRow img").forEach((img) => {
     img.addEventListener("error", () => { img.src = "/avatars/mcarthur.png"; });
   });
