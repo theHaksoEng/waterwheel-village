@@ -311,10 +311,45 @@ ${this.demo ? "" : `
     <option value="month6">Month 6 – Nature & Culture</option>
   </select>
 
-  <select id="chapter">
-    <option value="">Chapter...</option>
-    ...
-  </select>
+ <select id="chapter">
+  <option value="">Chapter...</option>
+
+  <!-- Month 1 -->
+  <option value="greetings_introductions">Greetings & Introductions (M1)</option>
+  <option value="numbers_days_questions">Numbers, Days & Questions (M1)</option>
+  <option value="food_drink">Food & Drink (M1)</option>
+  <option value="daily_phrases">Daily Phrases (M1)</option>
+
+  <!-- Month 2 -->
+  <option value="family_members">Family Members (M2)</option>
+  <option value="house_furniture">House & Furniture (M2)</option>
+  <option value="routines_chores">Routines & Chores (M2)</option>
+  <option value="feelings_emotions">Feelings & Emotions (M2)</option>
+
+  <!-- Month 3 -->
+  <option value="professions_tools">Professions & Tools (M3)</option>
+  <option value="classroom_office">Classroom & Office (M3)</option>
+  <option value="common_tasks">Common Tasks (M3)</option>
+  <option value="workplace_dialogues">Workplace Dialogues (M3)</option>
+
+  <!-- Month 4 -->
+  <option value="transport">Transport (M4)</option>
+  <option value="shops_money">Shops & Money (M4)</option>
+  <option value="asking_directions">Asking Directions (M4)</option>
+  <option value="eating_restaurants">Eating & Restaurants (M4)</option>
+
+  <!-- Month 5 -->
+  <option value="body_health">Body & Health (M5)</option>
+  <option value="doctor_medicine">Doctor & Medicine (M5)</option>
+  <option value="community_places">Community Places (M5)</option>
+  <option value="emergency_phrases">Emergency Phrases (M5)</option>
+
+  <!-- Month 6 -->
+  <option value="weather_seasons">Weather & Seasons (M6)</option>
+  <option value="animals_plants_environment">Animals, Plants & Environment (M6)</option>
+  <option value="traditions_celebrations">Traditions & Celebrations (M6)</option>
+  <option value="review_integration">Review & Integration (M6)</option>
+</select>
 
   <button id="start" class="btn secondary">Start Lesson</button>
   <button id="voiceToggle" class="btn ghost">Voice: ON</button>
