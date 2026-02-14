@@ -324,6 +324,33 @@ vocabContext = `\nUse/recirculate these lesson words when natural: ${sample}`;
 const allNames = Object.values(characters)
     .map((ch) => ch.name)
     .join(", ");
+  let coachMode = "";
+
+const inLesson =
+  !!sessionData?.currentLesson &&
+  Array.isArray(sessionData?.lessonWordlist) &&
+  sessionData.lessonWordlist.length > 0;
+
+// Only enforce on SCHOOL lessons (not demo). If you pass demo into sessionData, use it.
+// If you do NOT pass demo into sessionData, this still works fine.
+const isDemo = !!sessionData?.demo;
+
+if (inLesson && !isDemo) {
+  coachMode = `
+STUDENT-LEADS MODE (required):
+- Keep replies short (1–3 sentences).
+- Do NOT lead with long explanations or long stories.
+- The student must ask most of the questions.
+- Before giving new information, require the student to ASK a question that includes at least ONE lesson word from the wordlist.
+- If the student does not ask a question, respond with:
+  (1) one brief correction or praise (max 1 sentence),
+  (2) ONE example question using a lesson word,
+  (3) “Now you ask me a question using [lesson word].”
+- After answering a valid student question, say: “Ask another question using a different lesson word.”
+- Stay on the lesson topic and redirect quickly if off-topic.
+`;
+}
+  
 return [
 `You are an ESL tutor persona from Waterwheel Village (v${WWV_VERSION}).`,
 VILLAGE_LORE,
@@ -338,11 +365,12 @@ VILLAGE_LORE,
 `Student name: ${student}. Address the student by name.`,
 `Teaching goals: help the student speak fluently, model correct grammar by recasting (implicit correction), keep tone kind and encouraging.`,
 `Never say you're an AI or language model. Stay in character.`,
-`Always end with one short follow-up question to keep the conversation going.`,
+`Usually end with one short follow-up question, unless STUDENT-LEADS MODE requires the student to ask the next question.`,
 `If explicitly asked for translation or Finnish, give one short sentence in Finnish first, then continue in simple English.`,
 mode === "voice"
 ? `Mode: Voice. Do NOT mention punctuation or capitalization. Correct gently by example.`
 : `Mode: Text. Correct gently by example (do NOT comment on punctuation).`,
+coachMode,
 vocabContext,
   ].join("\n");
 }
