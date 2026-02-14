@@ -78,6 +78,8 @@ class WaterwheelChat extends HTMLElement {
   constructor() {
     super();
     this.demo = isDemoMode;   // ← demo mode from script tag / URL
+    this.activeCharacter = this.activeCharacter || "mcarthur";
+
     this.starting = false;
 
     // Attributes / backend normalize
@@ -179,6 +181,30 @@ const headerText = isDemoMode
   : "Waterwheel Village Academy";
 
       this.shadowRoot.innerHTML = `
+// Demo character buttons: event delegation (TS-friendly)
+const sr = this.shadowRoot;
+if (sr) {
+  sr.addEventListener("click", (e) => {
+    const target = /** @type {HTMLElement|null} */ (e.target instanceof HTMLElement ? e.target : null);
+    if (!target) return;
+
+    const btn = target.closest("button.char");
+    if (!btn) return;
+
+    const nextChar = btn.getAttribute("data-char");
+    if (!nextChar) return;
+
+    // Visual active state
+    sr.querySelectorAll("button.char").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+
+    // Set active character
+    this.activeCharacter = nextChar;
+
+    console.log("✅ Character switched to:", nextChar);
+  });
+}
+
         <style>
           :host { all: initial; font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial; color:#0f172a }
           .wrap { border:1px solid #e5e7eb; border-radius:16px; overflow:hidden; background:#fff; box-shadow:0 10px 30px rgba(0,0,0,.06) }
