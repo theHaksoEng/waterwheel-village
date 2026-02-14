@@ -26,6 +26,34 @@ console.log("WWV script loaded ✅", new Date().toISOString());
   const qs = (root, sel) => root.querySelector(sel);
   const ce = (tag, props = {}) => Object.assign(document.createElement(tag), props);
 
+  // 🔁 Retry helper for sleeping Render server
+async function fetchWithRetry(url, options, retries = 2, delay = 15000) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 45000);
+      options.signal = controller.signal;
+
+      const res = await fetch(url, options);
+      clearTimeout(timeoutId);
+
+      if (res.ok) return res;
+
+      if (i < retries - 1 && [502,503,504].includes(res.status)) {
+        await new Promise(r => setTimeout(r, delay));
+        console.log("Retrying fetch — server may be waking up...");
+      } else {
+        throw new Error(`HTTP ${res.status}`);
+      }
+    } catch (e) {
+      if (e.name === "AbortError") {
+        console.log("Fetch timeout — retrying…");
+      } else throw e;
+    }
+  }
+  throw new Error("Max retries reached");
+}
+
   // Token normalization (plural-aware)
   function normalizeToken(t) {
     t = String(t || "").toLowerCase().trim().replace(/[^\w\s-]/g, "");
