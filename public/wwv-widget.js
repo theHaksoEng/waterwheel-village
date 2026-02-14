@@ -42,6 +42,26 @@ console.log("WWV script loaded ✅", new Date().toISOString());
     return t;
   }
 
+  function getWWVMode() {
+  // Works even if currentScript is unreliable
+  const scripts = Array.from(document.querySelectorAll('script[src*="wwv-widget.js"]'));
+  const s = scripts[scripts.length - 1];
+  if (!s) return "school";
+
+  // 1) dataset mode if present: <script ... data-mode="demo">
+  const fromData = (s.dataset && s.dataset.mode) ? s.dataset.mode : null;
+
+  // 2) or URL param: ...wwv-widget.js?...&mode=demo
+  let fromUrl = null;
+  try {
+    fromUrl = new URL(s.src).searchParams.get("mode");
+  } catch (_) {}
+
+  return (fromData || fromUrl || "school").toLowerCase();
+}
+
+const isDemoMode = getWWVMode() === "demo";
+
   // Strip markdown-ish formatting before sending to TTS
   function sanitizeForTTS(str = "") {
     return String(str)
@@ -51,16 +71,18 @@ console.log("WWV script loaded ✅", new Date().toISOString());
       .replace(/[_~]/g, "")            // stray emphasis markers
       .trim();
   }
-const params = new URLSearchParams(window.location.search);
-const isDemo = params.get("demo") === "1";
+//const params = new URLSearchParams(window.location.search);
+//const isDemo = params.get("demo") === "1";
 
-  class WaterwheelChat extends HTMLElement {
-    constructor() {
-      super();
-this.starting = false;
+class WaterwheelChat extends HTMLElement {
+  constructor() {
+    super();
+    this.demo = isDemoMode;   // ← demo mode from script tag / URL
+    this.starting = false;
 
-      // Attributes / backend normalize
-      const attrBackend = (this.getAttribute("backend") || "").trim();
+    // Attributes / backend normalize
+    const attrBackend = (this.getAttribute("backend") || "").trim();
+
       const base = (attrBackend || DEFAULT_BACKEND || "").trim();
       this.backend = base.replace(/\/+$/, "");
 
