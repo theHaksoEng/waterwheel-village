@@ -823,11 +823,12 @@ async playSpeakQueue() {
       }
 
       const base = String(this.backend || "").replace(/\/+$/, "");
-      const r = await fetchWithRetry(this.backend + "/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text, voiceId }),
-      });
+     const r = await fetchWithRetry(this.backend + "/speakbase", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ text, voiceId }),
+});
+
 
       // ✅ Handle errors cleanly
       if (!r.ok) {
@@ -924,7 +925,7 @@ async playSpeakQueue() {
 
       try {
         this.addTyping(true);
-        const r = await fetch(this.backend + "/chat", {
+const r = await fetchWithRetry(this.backend + "/chat", {
 
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -935,7 +936,7 @@ async playSpeakQueue() {
               '". Use simple hyphenation with CAPITAL stress (e.g., to-MAY-to). Respond with ONLY the tip line.',
             sessionId: this.sessionId,
             isVoice: false,
-            name: this.ui.name.value || "friend",
+            name: ((this.ui && this.ui.name && this.ui.name.value) ? this.ui.name.value.trim() : "friend"),
             character: this.activeCharacter,
             demo: !!this.demo,
           }),
@@ -1097,7 +1098,7 @@ async sendText(text, isVoice) {
       : "friend";
 
   try {
-    const r = await fetch(this.backend + "/chat", {
+const r = await fetchWithRetry(this.backend + "/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
