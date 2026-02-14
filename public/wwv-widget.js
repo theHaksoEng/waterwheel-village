@@ -41,10 +41,6 @@ console.log("WWV script loaded ✅", new Date().toISOString());
     if (t.endsWith("s") && t.length > 1) return t.slice(0, -1);
     return t;
   }
-// Detect mode from script tag (WordPress embed)
-const scriptEl = document.currentScript || document.querySelector('script[src*="wwv-widget.js"]');
-const mode = scriptEl?.dataset?.mode || "school";
-const isDemoMode = mode === "demo";
 
   // Strip markdown-ish formatting before sending to TTS
   function sanitizeForTTS(str = "") {
@@ -266,66 +262,34 @@ const headerText = isDemoMode
 
   ${demoOnlyUI}
 
-  <div class="pane">
-    <input id="name" placeholder="Your name" />
+${this.demo ? "" : `
+<div class="pane">
+  <input id="name" placeholder="Your name" />
 
-    <select id="month">
-      <option value="">Month...</option>
-      <option value="month1">Month 1 – Greetings & Daily Life</option>
-      <option value="month2">Month 2 – Home & Feelings</option>
-      <option value="month3">Month 3 – Work & School</option>
-      <option value="month4">Month 4 – Travel & Shopping</option>
-      <option value="month5">Month 5 – Health & Community</option>
-      <option value="month6">Month 6 – Nature & Culture</option>
-    </select>
+  <select id="month">
+    <option value="">Month...</option>
+    <option value="month1">Month 1 – Greetings & Daily Life</option>
+    <option value="month2">Month 2 – Home & Feelings</option>
+    <option value="month3">Month 3 – Work & School</option>
+    <option value="month4">Month 4 – Travel & Shopping</option>
+    <option value="month5">Month 5 – Health & Community</option>
+    <option value="month6">Month 6 – Nature & Culture</option>
+  </select>
 
-    <select id="chapter">
-      <option value="">Chapter...</option>
+  <select id="chapter">
+    <option value="">Chapter...</option>
+    ...
+  </select>
 
-      <!-- Month 1 -->
-      <option value="greetings_introductions">Greetings & Introductions (M1)</option>
-      <option value="numbers_days_questions">Numbers, Days & Questions (M1)</option>
-      <option value="food_drink">Food & Drink (M1)</option>
-      <option value="daily_phrases">Daily Phrases (M1)</option>
+  <button id="start" class="btn secondary">Start Lesson</button>
+  <button id="voiceToggle" class="btn ghost">Voice: ON</button>
+  <button id="voiceTest" class="btn ghost">Test Voice</button>
+  <button id="download" class="btn">Download</button>
 
-      <!-- Month 2 -->
-      <option value="family_members">Family Members (M2)</option>
-      <option value="house_furniture">House & Furniture (M2)</option>
-      <option value="routines_chores">Routines & Chores (M2)</option>
-      <option value="feelings_emotions">Feelings & Emotions (M2)</option>
+  <span id="status" class="hint" aria-live="polite" style="margin-left:auto"></span>
+</div>
+`}
 
-      <!-- Month 3 -->
-      <option value="professions_tools">Professions & Tools (M3)</option>
-      <option value="classroom_office">Classroom & Office (M3)</option>
-      <option value="common_tasks">Common Tasks (M3)</option>
-      <option value="workplace_dialogues">Workplace Dialogues (M3)</option>
-
-      <!-- Month 4 -->
-      <option value="transport">Transport (M4)</option>
-      <option value="shops_money">Shops & Money (M4)</option>
-      <option value="asking_directions">Asking Directions (M4)</option>
-      <option value="eating_restaurants">Eating & Restaurants (M4)</option>
-
-      <!-- Month 5 -->
-      <option value="body_health">Body & Health (M5)</option>
-      <option value="doctor_medicine">Doctor & Medicine (M5)</option>
-      <option value="community_places">Community Places (M5)</option>
-      <option value="emergency_phrases">Emergency Phrases (M5)</option>
-
-      <!-- Month 6 -->
-      <option value="weather_seasons">Weather & Seasons (M6)</option>
-      <option value="animals_plants_environment">Animals, Plants & Environment (M6)</option>
-      <option value="traditions_celebrations">Traditions & Celebrations (M6)</option>
-      <option value="review_integration">Review & Integration (M6)</option>
-    </select>
-
-    <button id="start" class="btn secondary">Start Lesson</button>
-    <button id="voiceToggle" class="btn ghost">Voice: ON</button>
-    <button id="voiceTest" class="btn ghost">Test Voice</button>
-    <button id="download" class="btn">Download</button>
-
-    <span id="status" class="hint" aria-live="polite" style="margin-left:auto"></span>
-  </div>
 
   <div class="grid">
 
@@ -341,7 +305,7 @@ const headerText = isDemoMode
                 <span id="micErr" class="err"></span>
               </div>
             </div>
-
+            ${this.demo ? "" : `
             <div class="col-words">
               <div class="words-head">
                 <div style="font-weight:700; color:#0f172a">Wordlist & Progress</div>
@@ -355,12 +319,14 @@ const headerText = isDemoMode
               </div>
               <div id="words" class="words"></div>
             </div>
+            `}
+
           </div>
         </div>
 
         <audio id="player" controls playsinline></audio>
         <audio id="milestone-sound" preload="auto"></audio>
-      `;
+      `
 
       // UI refs
       this.ui = {
@@ -969,7 +935,7 @@ setStatus(msg = "", isError = false) {
   this.ui.status.textContent = msg;
   this.ui.status.className = isError ? "err" : "hint";
   this.ui.status.style.color = isError ? "#b91c1c" : "#334155";
-}  // ← THIS CLOSING BRACE WAS MISSING – ADD IT HERE
+}
 
 // Lesson
 async startLesson() {
