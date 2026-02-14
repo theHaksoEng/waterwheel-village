@@ -374,7 +374,7 @@ ${this.demo ? "" : `
 
         <audio id="player" controls playsinline></audio>
         <audio id="milestone-sound" preload="auto"></audio>
-      `
+      `;
 
       // UI refs
       this.ui = {
