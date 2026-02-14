@@ -557,7 +557,14 @@ res.json(response);
 });
 // === CHAT endpoint (text-only response; no free/fallback TTS) ===
 app.post("/chat", async (req, res) => {
-const { text: rawText, sessionId: providedSessionId, isVoice, name: userNameFromFrontend, demo } = req.body || {};  // ← Added demo from body
+const {
+  text: rawText,
+  sessionId: providedSessionId,
+  isVoice,
+  name: userNameFromFrontend,
+  demo,
+  character   // ← THIS is missing right now
+} = req.body || {};
 const sessionId = providedSessionId || uuidv4();
 const sanitizedText = rawText ? String(rawText).trim() : "";
 console.log("📩 Incoming chat request:", { text: sanitizedText, sessionId, isVoice, name: userNameFromFrontend, demo });
@@ -565,31 +572,40 @@ try {
 // --- Load session data ---
 let sessionData;
 try {
-const sessionRaw = await redis.get(`session:${sessionId}`);
-sessionData = sessionRaw
-? JSON.parse(sessionRaw)
-: {
-character: "mcarthur",
-studentLevel: null,
-currentLesson: null,
-isWeatherQuery: false, // can stay, just unused
-learnedWords: [],
-userName: null,
-lessonWordlist: [],
-          };
-console.log("📦 Loaded sessionData:", sessionData);
-    } catch (err) {
-console.error(`Redis error for session:${sessionId}:`, err.message);
-sessionData = {
-character: "mcarthur",
-studentLevel: null,
-currentLesson: null,
-isWeatherQuery: false,
-learnedWords: [],
-userName: null,
-lessonWordlist: [],
+  const sessionRaw = await redis.get(`session:${sessionId}`);
+  sessionData = sessionRaw
+    ? JSON.parse(sessionRaw)
+    : {
+        character: "mcarthur",
+        studentLevel: null,
+        currentLesson: null,
+        isWeatherQuery: false,
+        learnedWords: [],
+        userName: null,
+        lessonWordlist: [],
       };
-    }
+
+  console.log("📦 Loaded sessionData:", sessionData);
+
+  // 🔥 VERY IMPORTANT: allow frontend to change character
+  if (character) {
+    sessionData.character = character;
+    console.log("🎭 Character updated from frontend:", character);
+  }
+
+} catch (err) {
+  console.error(`Redis error for session:${sessionId}:`, err.message);
+  sessionData = {
+    character: "mcarthur",
+    studentLevel: null,
+    currentLesson: null,
+    isWeatherQuery: false,
+    learnedWords: [],
+    userName: null,
+    lessonWordlist: [],
+  };
+}
+
 // --- Username sync ---
 if (userNameFromFrontend && userNameFromFrontend !== sessionData.userName) {
 sessionData.userName = decodeURIComponent(userNameFromFrontend);
