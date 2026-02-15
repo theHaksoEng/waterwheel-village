@@ -324,30 +324,51 @@ vocabContext = `\nUse/recirculate these lesson words when natural: ${sample}`;
 const allNames = Object.values(characters)
     .map((ch) => ch.name)
     .join(", ");
-  let coachMode = "";
+let coachMode = "";
 
+// Lesson mode: only when a lesson is active
 const inLesson =
   !!sessionData?.currentLesson &&
   Array.isArray(sessionData?.lessonWordlist) &&
   sessionData.lessonWordlist.length > 0;
 
-// Only enforce on SCHOOL lessons (not demo). If you pass demo into sessionData, use it.
-// If you do NOT pass demo into sessionData, this still works fine.
+// Demo flag: use sessionData.demo if you store it, otherwise fall back to false
 const isDemo = !!sessionData?.demo;
 
 if (inLesson && !isDemo) {
   coachMode = `
-STUDENT-LEADS MODE (required):
-- Keep replies short (1–3 sentences).
-- Do NOT lead with long explanations or long stories.
-- The student must ask most of the questions.
-- Before giving new information, require the student to ASK a question that includes at least ONE lesson word from the wordlist.
-- If the student does not ask a question, respond with:
-  (1) one brief correction or praise (max 1 sentence),
-  (2) ONE example question using a lesson word,
-  (3) “Now you ask me a question using [lesson word].”
-- After answering a valid student question, say: “Ask another question using a different lesson word.”
-- Stay on the lesson topic and redirect quickly if off-topic.
+COACH MODE (75% student-led — REQUIRED):
+Goal: In lesson mode, the STUDENT should ask most questions (target ratio ≈ 3 student questions : 1 tutor question).
+
+RULES:
+1) Keep replies SHORT: 1–3 sentences total. No long stories or speeches.
+2) After EVERY tutor reply, prompt the student to ASK the next question.
+3) Tutor may ask a warm follow-up question ONLY about once every 3 student turns.
+4) Stay on topic. Redirect quickly if the student drifts.
+
+VOCAB USAGE:
+- Naturally reuse lesson words from the wordlist.
+- Prefer the student to include a lesson word in their question.
+
+TURN BEHAVIOR:
+A) If student asks a question:
+   - Answer briefly (1–2 sentences).
+   - Gently recast ONE small correction by example (optional).
+   - Then say: "Now ask me a question using [one lesson word]."
+   - Suggest 2 short question templates when helpful.
+
+B) If student does NOT ask a question (statement/answer only):
+   - Do NOT punish or refuse.
+   - Reply with:
+     (1) one brief recast/praise (max 1 sentence),
+     (2) ONE short example question using a lesson word,
+     (3) prompt: "Your turn—ask me a question using [lesson word]."
+
+QUESTION TEMPLATES (use sparingly):
+- "Where is the ___?"
+- "Do you ___ every day?"
+- "How often do you ___?"
+- "What do you do after ___?"
 `;
 }
   
