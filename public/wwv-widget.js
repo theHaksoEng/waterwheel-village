@@ -105,7 +105,7 @@ const isDemoMode = getWWVMode() === "demo";
 class WaterwheelChat extends HTMLElement {
   constructor() {
     super();
-    this.demo = isDemoMode;   // ← demo mode from script tag / URL
+    this.demo = isDemoMode;
     this.activeCharacter = this.activeCharacter || "mcarthur";
 
     this.starting = false;
@@ -113,18 +113,21 @@ class WaterwheelChat extends HTMLElement {
     // Attributes / backend normalize
     const attrBackend = (this.getAttribute("backend") || "").trim();
 
-      const base = (attrBackend || DEFAULT_BACKEND || "").trim();
-      this.backend = base.replace(/\/+$/, "");
+    const base = (attrBackend || DEFAULT_BACKEND || "").trim();
+    this.backend = base.replace(/\/+$/, "");
 
-      // Hard failsafe: if empty or localhost, force Render
-      if (!this.backend || /localhost|127\.0\.0\.1/i.test(this.backend)) {
-        this.backend = DEFAULT_BACKEND;
-      }
+    if (!this.backend || /localhost|127\.0\.0\.1/i.test(this.backend)) {
+      this.backend = DEFAULT_BACKEND;
+    }
 
-      this.voice = (this.getAttribute("voice") || "on") === "on";
+    this.voice = (this.getAttribute("voice") || "on") === "on";
 
-      // State
-      this.wordlist = [];            // [{en, fi}]
+    // ⭐ CALL IT HERE (this part was correct)
+    this.initSession();
+
+    // State
+    this.wordlist = [];
+
       this.wordsetEn = new Set();    // lowercased english words
       this.learned = new Set();      // learned lowercased words
       this.lastVoiceId = null;
@@ -450,6 +453,20 @@ if (!this.demo) {
   this.ui.vocabPanel = qs(this.shadowRoot, ".col-words");
 }
     }
+initSession() {
+  let sid = localStorage.getItem("wwv-sessionId");
+
+  if (!sid) {
+    sid = (crypto?.randomUUID
+      ? crypto.randomUUID()
+      : String(Date.now()) + "-" + Math.random());
+    localStorage.setItem("wwv-sessionId", sid);
+  }
+
+  this.sessionId = sid;
+  console.log("WWV sessionId =", this.sessionId);
+}
+
 avatarUrl(name) {
   return `${this.backend}/avatars/${name}.png`;
 }
