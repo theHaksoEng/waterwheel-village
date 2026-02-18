@@ -355,19 +355,8 @@ function findCharacter(text) {
   return null;
 }
 
-let turnGuard = "";
-
-if (sessionData.tutorAskedLastTurn) {
-  turnGuard = `
-TURN GUARD:
-In your previous message you asked the student a question.
-You MUST NOT ask another question now.
-Instead invite the student to ask a question or give a short task.
-`;
-}
-
 // System prompt builder (lore + persona + lesson vocab context)
-function buildSystemPrompt(activeCharacterKey, sessionData, mode) {
+function buildSystemPrompt(activeCharacterKey, sessionData, mode, turnGuard = "") {
 const c = characters[activeCharacterKey] || characters.sophia;
 const student = sessionData?.userName || "friend";
 let vocabContext = "";
@@ -515,8 +504,9 @@ VILLAGE_LORE,
 mode === "voice"
 ? `Mode: Voice. Do NOT mention punctuation or capitalization. Correct gently by example.`
 : `Mode: Text. Correct gently by example (do NOT comment on punctuation).`,
-turnGuard,
+...(turnGuard ? [turnGuard] : []),
 coachMode,
+
 vocabContext,
   ].join("\n");
 }
@@ -731,25 +721,54 @@ res.json(response);
 });
 // === CHAT endpoint (text-only response; no free/fallback TTS) ===
 app.post("/chat", async (req, res) => {
-const {
-  text: rawText,
-  sessionId: providedSessionId,
-  isVoice,
-  name: userNameFromFrontend,
-  demo,
-  character   // ← THIS is missing right now
-} = req.body || {};
-const sessionId = providedSessionId || uuidv4();
-const sanitizedText = rawText ? String(rawText).trim() : "";
-console.log("📩 Incoming chat request:", { text: sanitizedText, sessionId, isVoice, name: userNameFromFrontend, demo });
-try {
-// --- Load session data ---
-let sessionData;
-try {
-  const sessionRaw = await redis.get(`session:${sessionId}`);
-  sessionData = sessionRaw
-    ? JSON.parse(sessionRaw)
-    : {
+  const {
+    text: rawText,
+    sessionId: providedSessionId,
+    isVoice,
+    name: userNameFromFrontend,
+    demo,
+    character
+  } = req.body || {};
+
+  const sessionId = providedSessionId || uuidv4();
+  const sanitizedText = rawText ? String(rawText).trim() : "";
+
+  console.log("📩 Incoming chat request:", {
+    text: sanitizedText,
+    sessionId,
+    isVoice,
+    name: userNameFromFrontend,
+    demo
+  });
+
+  try {
+    // --- Load session data ---
+    let sessionData;
+    try {
+      const sessionRaw = await redis.get(`session:${sessionId}`);
+      sessionData = sessionRaw
+        ? JSON.parse(sessionRaw)
+        : {
+            character: "mcarthur",
+            studentLevel: null,
+            currentLesson: null,
+            isWeatherQuery: false,
+            learnedWords: [],
+            userName: null,
+            lessonWordlist: [],
+            tutorAskedLastTurn: false, // ✅ ensure exists
+          };
+
+      console.log("📦 Loaded sessionData:", sessionData);
+
+      // ✅ Only log/update if it actually changed
+      if (character && character !== sessionData.character) {
+        sessionData.character = character;
+        console.log("🎭 Character updated from frontend:", character);
+      }
+    } catch (err) {
+      console.error(`Redis error for session:${sessionId}:`, err.message);
+      sessionData = {
         character: "mcarthur",
         studentLevel: null,
         currentLesson: null,
@@ -757,229 +776,259 @@ try {
         learnedWords: [],
         userName: null,
         lessonWordlist: [],
+        tutorAskedLastTurn: false,
       };
-
-  console.log("📦 Loaded sessionData:", sessionData);
-
-  // 🔥 VERY IMPORTANT: allow frontend to change character
-  if (character) {
-    sessionData.character = character;
-    console.log("🎭 Character updated from frontend:", character);
-  }
-
-} catch (err) {
-  console.error(`Redis error for session:${sessionId}:`, err.message);
-  sessionData = {
-    character: "mcarthur",
-    studentLevel: null,
-    currentLesson: null,
-    isWeatherQuery: false,
-    learnedWords: [],
-    userName: null,
-    lessonWordlist: [],
-  };
-}
-
-// --- Username sync ---
-if (userNameFromFrontend && userNameFromFrontend !== sessionData.userName) {
-sessionData.userName = decodeURIComponent(userNameFromFrontend);
     }
-// --- Lesson sync: auto-select correct teacher ---
-if (sessionData.currentLesson) {
-const lesson = lessonIntros[sessionData.currentLesson.month]?.[sessionData.currentLesson.chapter];
-if (lesson) sessionData.character = lesson.teacher;
+
+    // --- Username sync ---
+    if (userNameFromFrontend && userNameFromFrontend !== sessionData.userName) {
+      sessionData.userName = decodeURIComponent(userNameFromFrontend);
     }
-// --- ASR Normalization ---
-const activeKeyForASR = sessionData.character || "mcarthur";
-const normalizedText = normalizeTranscript(sanitizedText, activeKeyForASR, !!isVoice);
-console.log("🔤 Normalized text:", normalizedText);
-// --- Character switching by text trigger ---
-const requestedCharacterKey = findCharacter(normalizedText);
-const requestedCharacter = requestedCharacterKey ? characters[requestedCharacterKey] : null;
-if (requestedCharacter && requestedCharacterKey !== sessionData.character) {
-sessionData.character = requestedCharacterKey;
-sessionData.currentLesson = null;
-sessionData.isWeatherQuery = false;
-sessionData.learnedWords = [];
-sessionData.lessonWordlist = [];
-await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
-await saveHistory(sessionId, []);
-console.log("🔄 Switched to new character:", requestedCharacterKey);
-const introText = `Hello, I am ${requestedCharacter.name}. What would you like to talk about today?`;
-await saveHistory(sessionId, [{ role: "assistant", content: introText }]);
-res.setHeader("X-WWV-Version", WWV_VERSION);
-res.setHeader("X-WWV-Character", requestedCharacterKey);
-return res.json({
-text: introText,
-character: requestedCharacterKey,
-voiceId: requestedCharacter.voiceId,
-version: WWV_VERSION,
+
+    // --- Lesson sync: auto-select correct teacher ---
+    if (sessionData.currentLesson) {
+      const lesson =
+        lessonIntros[sessionData.currentLesson.month]?.[sessionData.currentLesson.chapter];
+      if (lesson) sessionData.character = lesson.teacher;
+    }
+
+    // --- ASR Normalization ---
+    const activeKeyForASR = sessionData.character || "mcarthur";
+    const normalizedText = normalizeTranscript(sanitizedText, activeKeyForASR, !!isVoice);
+    console.log("🔤 Normalized text:", normalizedText);
+
+    // --- Character switching by text trigger ---
+    const requestedCharacterKey = findCharacter(normalizedText);
+    const requestedCharacter = requestedCharacterKey ? characters[requestedCharacterKey] : null;
+
+    if (requestedCharacter && requestedCharacterKey !== sessionData.character) {
+      sessionData.character = requestedCharacterKey;
+      sessionData.currentLesson = null;
+      sessionData.isWeatherQuery = false;
+      sessionData.learnedWords = [];
+      sessionData.lessonWordlist = [];
+      sessionData.tutorAskedLastTurn = false;
+
+      await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
+      await saveHistory(sessionId, []);
+
+      console.log("🔄 Switched to new character:", requestedCharacterKey);
+
+      const introText = `Hello, I am ${requestedCharacter.name}. What would you like to talk about today?`;
+      await saveHistory(sessionId, [{ role: "assistant", content: introText }]);
+
+      res.setHeader("X-WWV-Version", WWV_VERSION);
+      res.setHeader("X-WWV-Character", requestedCharacterKey);
+
+      return res.json({
+        text: introText,
+        character: requestedCharacterKey,
+        voiceId: requestedCharacter.voiceId,
+        version: WWV_VERSION,
       });
     }
-// --- NEW: Demo mode chat limit (≈5 full turns: intro + 5 user + 5 bot = ~11 messages) ---
-const DEMO_MAX_MESSAGES = 11;  // Adjust as needed (e.g., 11 for 5 turns)
-let messages = await loadHistory(sessionId);  // Load early to check count
-if (demo && messages.length >= DEMO_MAX_MESSAGES - 1) {  // -1 to allow one final reply
-const goodbye = "It was a pleasure sharing with you, friend. This concludes our demo conversation. Feel free to start a new session!";
-messages.push({ role: "assistant", content: goodbye });
-await saveHistory(sessionId, messages);
-return res.json({
-text: goodbye,
-character: sessionData.character,
-voiceId: characters[sessionData.character].voiceId,
-demoEnded: true,  // Optional flag for frontend
+
+    // --- Load history (needed for demo limit + OpenAI) ---
+    let messages = await loadHistory(sessionId);
+
+    // --- Demo mode chat limit ---
+    const DEMO_MAX_MESSAGES = 11;
+    if (demo && messages.length >= DEMO_MAX_MESSAGES - 1) {
+      const goodbye =
+        "It was a pleasure sharing with you, friend. This concludes our demo conversation. Feel free to start a new session!";
+
+      messages.push({ role: "assistant", content: goodbye });
+      await saveHistory(sessionId, messages);
+
+      return res.json({
+        text: goodbye,
+        character: sessionData.character,
+        voiceId: characters[sessionData.character].voiceId,
+        demoEnded: true,
       });
     }
-// --- Word Counting Logic ---
-function normalizeToken(t) {
-  t = String(t || "").toLowerCase().trim();
-  t = t.replace(/[^\w\s-]/g, "");
-  if (!t) return t;
-  if (t.length <= 2) return t;
-  if (t.endsWith("ies") && t.length > 3) return t.slice(0, -3) + "y";
-  if (t.endsWith("es") && t.length > 3) {
-    const base = t.slice(0, -2);
-    if (/(s|x|z|ch|sh|o)$/.test(base)) return base;
-  }
-  if (t.endsWith("s") && t.length > 3) return t.slice(0, -1);
-  return t;
-}
-const userWords = normalizedText
-  .toLowerCase()
-  .replace(/[^\w\s-]/g, "")
-  .split(/\s+/)
-  .filter((w) => w.length > 0);
-const userSet = new Set();
-for (const w of userWords) {
-  userSet.add(w);
-  userSet.add(normalizeToken(w));
-}
 
-// Add this: Full normalized user text (for phrase substring checks)
-const userNorm = normalizedText.toLowerCase().replace(/[^\w\s-]/g, "").trim();
+    // --- Word Counting Logic ---
+    function normalizeToken(t) {
+      t = String(t || "").toLowerCase().trim();
+      t = t.replace(/[^\w\s-]/g, "");
+      if (!t) return t;
+      if (t.length <= 2) return t;
+      if (t.endsWith("ies") && t.length > 3) return t.slice(0, -3) + "y";
+      if (t.endsWith("es") && t.length > 3) {
+        const base = t.slice(0, -2);
+        if (/(s|x|z|ch|sh|o)$/.test(base)) return base;
+      }
+      if (t.endsWith("s") && t.length > 3) return t.slice(0, -1);
+      return t;
+    }
 
-// --- Word tracking + milestones ---
-let newlyLearned = [];
-let milestone10 = false;
-let chapterComplete = false;
-let badgeTitle = null;
-const previousLearnedCount = sessionData.learnedWords.length;
-const previousWordsRemaining = sessionData.lessonWordlist.length;
-if (sessionData.lessonWordlist.length > 0) {
-  const wordsRemaining = [];
-  for (const rawWord of sessionData.lessonWordlist) {
-    const lessonWord = String(rawWord || "").toLowerCase().trim();
-    const normLesson = normalizeToken(lessonWord);
+    const userWords = normalizedText
+      .toLowerCase()
+      .replace(/[^\w\s-]/g, "")
+      .split(/\s+/)
+      .filter((w) => w.length > 0);
 
-    // Existing single-word check
-    let isMatch = (userSet.has(lessonWord) || userSet.has(normLesson));
+    const userSet = new Set();
+    for (const w of userWords) {
+      userSet.add(w);
+      userSet.add(normalizeToken(w));
+    }
 
-    // Add: For multi-word phrases, check if entire phrase is substring of userNorm
-    if (!isMatch && lessonWord.includes(" ")) {  // Only if it's a phrase (has spaces)
-      const phraseNorm = lessonWord.replace(/[^\w\s-]/g, "").trim();  // Normalize phrase similarly
-      if (userNorm.includes(phraseNorm)) {
-        isMatch = true;
+    const userNorm = normalizedText.toLowerCase().replace(/[^\w\s-]/g, "").trim();
+
+    // --- Word tracking + milestones ---
+    let newlyLearned = [];
+    let milestone10 = false;
+    let chapterComplete = false;
+    let badgeTitle = null;
+
+    const previousLearnedCount = sessionData.learnedWords.length;
+    const previousWordsRemaining = sessionData.lessonWordlist.length;
+
+    if (sessionData.lessonWordlist.length > 0) {
+      const wordsRemaining = [];
+
+      for (const rawWord of sessionData.lessonWordlist) {
+        const lessonWord = String(rawWord || "").toLowerCase().trim();
+        const normLesson = normalizeToken(lessonWord);
+
+        let isMatch = userSet.has(lessonWord) || userSet.has(normLesson);
+
+        if (!isMatch && lessonWord.includes(" ")) {
+          const phraseNorm = lessonWord.replace(/[^\w\s-]/g, "").trim();
+          if (userNorm.includes(phraseNorm)) isMatch = true;
+        }
+
+        if (isMatch && !sessionData.learnedWords.includes(lessonWord)) {
+          sessionData.learnedWords.push(lessonWord);
+          newlyLearned.push(lessonWord);
+        } else {
+          wordsRemaining.push(lessonWord);
+        }
+      }
+
+      sessionData.lessonWordlist = wordsRemaining;
+
+      // 🎯 Milestone: every 10 learned words (10,20,30...)
+      const previousCount = previousLearnedCount || 0;
+      const currentCount = sessionData.learnedWords.length || 0;
+
+      const prevLevel = Math.floor(previousCount / 10);
+      const currentLevel = Math.floor(currentCount / 10);
+
+      if (currentLevel > prevLevel && currentLevel > 0) {
+        milestone10 = true;
+
+        const studentName = sessionData.userName || "friend";
+        const wordsLearned = currentLevel * 10;
+
+        newlyLearned.push(
+          `\n\n${studentName}, you’ve already used ${wordsLearned} new words from this unit! 🎉`
+        );
+      }
+
+      // 🎯 Milestone: chapter complete
+      if (
+        sessionData.lessonWordlist.length === 0 &&
+        previousWordsRemaining > 0 &&
+        sessionData.learnedWords.length > 0
+      ) {
+        chapterComplete = true;
+
+        const chapterName = sessionData.currentLesson
+          ? humanizeChapter(sessionData.currentLesson.chapter)
+          : "this lesson";
+
+        badgeTitle = `${chapterName} Explorer`;
+
+        newlyLearned.push(
+          `\n\n🎉 You've learned all the words for this lesson! Great job!\n\n` +
+            `You are now a ${badgeTitle} of Waterwheel Village 🏅\n\n` +
+            `If you like, we can:\n` +
+            ` (A) review these words again,\n` +
+            ` (B) write a short story using them, or\n` +
+            ` (C) talk freely about your week.`
+        );
       }
     }
 
-    if (isMatch && !sessionData.learnedWords.includes(lessonWord)) {
-      sessionData.learnedWords.push(lessonWord);
-      newlyLearned.push(lessonWord); // individual words/phrases, as before
-    } else {
-      wordsRemaining.push(lessonWord);
+    // --- Student level detection ---
+    const lowered = normalizedText.toLowerCase();
+    if (lowered.includes("beginner")) sessionData.studentLevel = "beginner";
+    else if (lowered.includes("intermediate")) sessionData.studentLevel = "intermediate";
+    else if (lowered.includes("expert")) sessionData.studentLevel = "expert";
+
+    // --- TURN GUARD (NEW): prevent tutor from asking questions twice in a row ---
+    let turnGuard = "";
+    if (sessionData.tutorAskedLastTurn) {
+      turnGuard = `
+TURN GUARD:
+In your previous message you asked the student a question.
+You MUST NOT ask another question in this reply.
+End with either a short task OR invite the student to ask a question.
+Do not use any question marks (?) in this reply.
+`;
     }
-  }
-  sessionData.lessonWordlist = wordsRemaining;
 
-  // 🎯 Milestone: every 10 learned words (10,20,30,40…)
-const previousCount = previousLearnedCount || 0;
-const currentCount = sessionData.learnedWords.length || 0;
+    // --- Build message history for OpenAI ---
+    messages.push({ role: "user", content: normalizedText });
+    await saveHistory(sessionId, messages);
 
-// previous milestone level (0,1,2,3…)
-const prevLevel = Math.floor(previousCount / 10);
-const currentLevel = Math.floor(currentCount / 10);
-
-if (currentLevel > prevLevel && currentLevel > 0) {
-  milestone10 = true;
-
-  const studentName = sessionData.userName || "friend";
-  const wordsLearned = currentLevel * 10;
-
-  newlyLearned.push(
-    `\n\n${studentName}, you’ve already used ${wordsLearned} new words from this unit! 🎉`
-  );
-}
-
-  // 🎯 Milestone: chapter complete (all words used at least once)
-  if (
-    sessionData.lessonWordlist.length === 0 && // no words left
-    previousWordsRemaining > 0 && // there *were* words before
-    sessionData.learnedWords.length > 0
-  ) {
-    chapterComplete = true;
-    const chapterName = sessionData.currentLesson
-      ? humanizeChapter(sessionData.currentLesson.chapter)
-      : "this lesson";
-    badgeTitle = `${chapterName} Explorer`; // e.g. "Body And Health Vocabulary Explorer"
-    newlyLearned.push(
-      `\n\n🎉 You've learned all the words for this lesson! Great job!\n\n` +
-      `You are now a ${badgeTitle} of Waterwheel Village 🏅\n\n` +
-      `If you like, we can:\n` +
-      ` (A) review these words again,\n` +
-      ` (B) write a short story using them, or\n` +
-      ` (C) talk freely about your week.`
+    // --- System prompt ---
+    const activeCharacterKey = sessionData.character || "mcarthur";
+    const systemPrompt = buildSystemPrompt(
+      activeCharacterKey,
+      sessionData,
+      isVoice ? "voice" : "text",
+      turnGuard // ✅ pass it in
     );
-  }
-}
-// --- Build message history for OpenAI ---
-messages.push({ role: "user", content: normalizedText });
-await saveHistory(sessionId, messages);
-// --- Student level detection ---
-const lowered = normalizedText.toLowerCase();
-if (lowered.includes("beginner")) sessionData.studentLevel = "beginner";
-else if (lowered.includes("intermediate")) sessionData.studentLevel = "intermediate";
-else if (lowered.includes("expert")) sessionData.studentLevel = "expert";
-await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
-// --- System prompt ---
-const activeCharacterKey = sessionData.character || "mcarthur";
-const systemPrompt = buildSystemPrompt(activeCharacterKey, sessionData, isVoice ? "voice" : "text");
-console.log("🛠 Using systemPrompt:", systemPrompt);
-// --- OpenAI request ---
-const completion = await openai.chat.completions.create({
-model: "gpt-4o-mini",
-messages: [{ role: "system", content: systemPrompt }, ...messages],
-temperature: 0.7,
-    });
-const reply = completion.choices[0].message.content.trim();
-// Did the tutor ask a question?
-const tutorAskedQuestion = /\?\s*$/.test(reply) || reply.includes("?");
-sessionData.tutorAskedLastTurn = tutorAskedQuestion;
 
-console.log("💬 OpenAI reply:", reply);
-// --- Save response ---
-messages = await loadHistory(sessionId);
-messages.push({ role: "assistant", content: reply });
-await saveHistory(sessionId, messages);
-await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
-const voiceId = characters[activeCharacterKey].voiceId;
-res.setHeader("X-WWV-Version", WWV_VERSION);
-res.setHeader("X-WWV-Character", activeCharacterKey);
-return res.json({
-text: reply,
-character: activeCharacterKey,
-voiceId,
-learnedCount: sessionData.learnedWords.length,
-newlyLearned,
-milestone10,
-chapterComplete,
-badgeTitle,
-version: WWV_VERSION,
+    console.log("🛠 Using systemPrompt:", systemPrompt);
+
+    // --- OpenAI request ---
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [{ role: "system", content: systemPrompt }, ...messages],
+      temperature: 0.7,
+    });
+
+    const reply = completion.choices[0].message.content.trim();
+
+    // ✅ Update turn-taking flag for NEXT turn
+sessionData.tutorAskedLastTurn = /\?\s*$/.test(reply);
+
+    console.log("💬 OpenAI reply:", reply);
+
+    // --- Save response ---
+    messages = await loadHistory(sessionId);
+    messages.push({ role: "assistant", content: reply });
+    await saveHistory(sessionId, messages);
+
+    await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
+
+    const voiceId = characters[activeCharacterKey].voiceId;
+
+    res.setHeader("X-WWV-Version", WWV_VERSION);
+    res.setHeader("X-WWV-Character", activeCharacterKey);
+
+    return res.json({
+      text: reply,
+      character: activeCharacterKey,
+      voiceId,
+      learnedCount: sessionData.learnedWords.length,
+      newlyLearned,
+      milestone10,
+      chapterComplete,
+      badgeTitle,
+      version: WWV_VERSION,
     });
   } catch (err) {
-console.error("❌ Chat error:", err?.message || err, err?.stack || "");
-return res.status(500).json({ error: "Chat failed", details: err?.message || "Unknown error" });
+    console.error("❌ Chat error:", err?.message || err, err?.stack || "");
+    return res.status(500).json({ error: "Chat failed", details: err?.message || "Unknown error" });
   }
 });
+
 // === Speakbase endpoint (ElevenLabs with disk cache) ===
 function cleanTextForSpeech(input) {
   if (!input || typeof input !== "string") return "";
