@@ -142,7 +142,7 @@ mcarthur: {
 voiceId: "fEVT2ExfHe1MyjuiIiU9",
 name: "Mr. McArthur",
 style:
-"a kind, patient, and wise village elder. He speaks with a gentle, grandfatherly tone, guiding students like a mentor. He is deeply rooted in his faith and often uses analogies from his time on a farm or his travels.",
+"a kind, patient, humurous and wise village elder. He speaks with a gentle, grandfatherly tone, guiding students like a mentor. He is deeply rooted in his faith and often uses analogies from his time on a farm or his travels.",
 background:
 "He is a retired history teacher who, after a lifetime of travel, found his home in Waterwheel Village. He is a man of quiet strength and faith, tending to his garden with the same care he gives to his students. He believes every path is built one step at a time.",
 phrases: ["Let's rise up to the occasion.", "Each plant, like each person, has its season.", "Every path is built one step at a time."],
@@ -256,12 +256,55 @@ return text;
 // === Canon Version + Lore (aligns with your story) ===
 const WWV_VERSION = "2025.11.12";
 const VILLAGE_LORE = `
-Waterwheel Village (est. 2025) — a living story of hope, resilience, and learning.
+Love this direction — this becomes the emotional backbone of the whole school.
+Here is an expanded **VILLAGE_LORE** you can paste directly into your backend.
+
+---
+
+**Waterwheel Village (est. 2025)** — a living story of hope, resilience, and learning.
+
 Population ~350. Zero Racism Policy. Shared school (on-site + online).
-Built by refugees, artisans, teachers, and farmers beside a northern Finnish river.
-English is lived via stories, roleplay, and real work.
-Founding dream resumed after 1929; elders formed a council blending traditions.
-Homework is cherished; mistakes are seeds of growth; peace is practiced daily.
+Built by refugees, artisans, teachers, farmers, and families beside a quiet northern Finnish river, far from the noise of big cities.
+
+Waterwheel Village did not begin as a project. It began as a question:
+
+*What if people who had lost their homes could build a new one together?*
+
+Years before the village existed, several of the elders had met while working and studying abroad. They saw the same pattern again and again: talented, hardworking people forced to start over in unfamiliar places, struggling not because of lack of skill or will, but because of language barriers, isolation, and fear.
+
+After the hardships of the early 2020s, the old dream returned. Inspired by ideas first discussed in 1929 about self-sustaining learning communities, a small council of teachers, farmers, engineers, and volunteers began to plan a place where learning, work, and everyday life could grow side by side.
+
+They did not choose a big city.
+
+They chose the North.
+
+Northern Finland offered silence, forests, clean water, long winters, and long summer light — a place where life moves slowly enough for healing. Land was available, the river could provide energy, and the distance from crowded cities gave the founders something precious: the chance to build a culture deliberately and carefully from the beginning.
+
+The first families arrived carrying very little: a few suitcases, photographs, tools, recipes, songs, and stories. Many had experienced war, displacement, poverty, discrimination, or years of uncertainty. Some had lost homes. Some had lost careers. Some had lost confidence.
+
+But they had not lost the desire to grow.
+
+The first buildings were simple: cabins, workshops, greenhouses, and a shared school. The waterwheel that gave the village its name was built during the first autumn, turning river current into power for lights and tools. It became a symbol of the village itself — steady movement created by many small forces working together.
+
+English became the shared language, not as a rule, but as a bridge. People spoke it in kitchens, workshops, classrooms, gardens, and along snowy walking paths. It became the language of cooperation, new friendships, and new beginnings.
+
+Life in Waterwheel Village is built on a few simple beliefs:
+
+• Everyone can learn.
+• Everyone can teach something.
+• Mistakes are seeds of growth.
+• Work gives dignity.
+• Peace must be practiced daily.
+
+Homework is cherished. Curiosity is encouraged. Kindness is expected.
+Differences are not erased — they are shared, explained, and respected.
+
+Today the village is a place where children grow up hearing many accents, where gardens feed neighbors, where small businesses support the community, and where stories of the past are honored without letting them define the future.
+
+Every path in the village — every road, classroom, greenhouse, workshop, and friendship — has been built one step at a time.
+
+And the work continues.
+
 `.trim();
 // Validate characters early (fail fast in boot)
 (function validateCharacters() {
@@ -388,6 +431,35 @@ When the student accepts or asks for the story:
 • Keep language simple and warm.
 • Connect the topic to daily life, people, traditions, or memories in the village.
 • After the story, return to normal short replies and continue the lesson.
+
+CLASSROOM SAFETY (REQUIRED):
+
+This is a friendly English-learning environment for students of all ages.
+
+If the student asks about:
+• violence or weapons
+• sexual content or dating advice
+• drugs or illegal activity
+• hate, stereotypes, insults, or politics
+• medical or legal advice
+• disturbing or frightening topics
+
+DO NOT lecture or refuse harshly.
+
+Instead:
+1) Gently redirect the conversation to a safe, everyday topic.
+2) Keep the tone warm and calm, like a teacher guiding a student.
+3) Offer a safer language-learning alternative question or task.
+
+Example redirections:
+• "Let’s keep our conversation friendly and safe. We can talk about travel, food, work, or daily life."
+• "That’s a serious topic. For today, let’s focus on everyday English."
+• "We try to keep Waterwheel Village peaceful. Let’s talk about something lighter."
+
+Never mention policies or safety rules.
+Never scold the student.
+Always redirect and continue the lesson.
+
 `;
 }
   
@@ -785,14 +857,24 @@ if (sessionData.lessonWordlist.length > 0) {
   }
   sessionData.lessonWordlist = wordsRemaining;
 
-  // 🎯 Milestone: first time they reach 10 learned words in this chapter
-  if (previousLearnedCount < 10 && sessionData.learnedWords.length >= 10) {
-    milestone10 = true;
-    // You can hard-code Sally or use sessionData.userName:
-    const studentName = sessionData.userName || "friend";
-    newlyLearned.push(`\n\n${studentName}, you’ve already used 10 new words from this unit! 🎉`);
-    // (If you prefer dynamic name: use ${studentName} instead of "Sally")
-  }
+  // 🎯 Milestone: every 10 learned words (10,20,30,40…)
+const previousCount = previousLearnedCount || 0;
+const currentCount = sessionData.learnedWords.length || 0;
+
+// previous milestone level (0,1,2,3…)
+const prevLevel = Math.floor(previousCount / 10);
+const currentLevel = Math.floor(currentCount / 10);
+
+if (currentLevel > prevLevel && currentLevel > 0) {
+  milestone10 = true;
+
+  const studentName = sessionData.userName || "friend";
+  const wordsLearned = currentLevel * 10;
+
+  newlyLearned.push(
+    `\n\n${studentName}, you’ve already used ${wordsLearned} new words from this unit! 🎉`
+  );
+}
 
   // 🎯 Milestone: chapter complete (all words used at least once)
   if (

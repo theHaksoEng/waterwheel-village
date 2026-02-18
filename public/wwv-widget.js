@@ -470,12 +470,18 @@ initSession() {
 avatarUrl(name) {
   return `${this.backend}/avatars/${name}.png`;
 }
-celebrateMilestone() {
-  this.confettiBurst();
+// 🎉 Milestone celebration (optionally pass milestone number: 10,20,30...)
+celebrateMilestone(milestone = null) {
+  // Longer + feels “bigger” on higher milestones
+  const baseMs = 3500;                 // overall celebration length
+  const extra = milestone ? Math.min(milestone * 15, 2500) : 0; // scale a bit
+  const totalMs = baseMs + extra;
+
+  this.confettiBurst(totalMs);
   this.playChime().catch(() => {});
 }
 
-confettiBurst() {
+confettiBurst(totalMs = 3500) {
   const layer = document.createElement("div");
   layer.style.position = "fixed";
   layer.style.left = "0";
@@ -488,37 +494,59 @@ confettiBurst() {
   document.body.appendChild(layer);
 
   const colors = ["#f44336", "#ff9800", "#ffeb3b", "#4caf50", "#2196f3", "#9c27b0"];
-  const count = 90;
 
-  for (let i = 0; i < count; i++) {
-    const p = document.createElement("div");
-    const size = 6 + Math.random() * 8;
+  // We’ll spawn multiple waves over time
+  const start = performance.now();
+  const waveEveryMs = 260;        // how often to add a wave
+  const perWave = 32;             // pieces each wave
+  const maxPieces = 260;          // safety cap
+  let spawned = 0;
 
-    p.style.position = "absolute";
-    p.style.width = `${size}px`;
-    p.style.height = `${Math.max(4, size * 0.6)}px`;
-    p.style.left = `${Math.random() * 100}vw`;
-    p.style.top = `-20px`;
-    p.style.background = colors[(Math.random() * colors.length) | 0];
-    p.style.opacity = "0.95";
-    p.style.borderRadius = "2px";
+  const spawnWave = () => {
+    if (!layer.isConnected) return;
 
-    const drift = (Math.random() - 0.5) * 240;
-    const spin = (Math.random() - 0.5) * 900;
-    const duration = 1200 + Math.random() * 900;
+    const now = performance.now();
+    if (now - start > totalMs) return;
 
-    p.animate(
-      [
-        { transform: `translate(0,0) rotate(0deg)`, opacity: 1 },
-        { transform: `translate(${drift}px, 110vh) rotate(${spin}deg)`, opacity: 1 }
-      ],
-      { duration, easing: "cubic-bezier(.2,.7,.2,1)", fill: "forwards" }
-    );
+    // Spawn one wave
+    for (let i = 0; i < perWave && spawned < maxPieces; i++) {
+      spawned++;
 
-    layer.appendChild(p);
-  }
+      const p = document.createElement("div");
+      const size = 6 + Math.random() * 8;
 
-  setTimeout(() => layer.remove(), 2500);
+      p.style.position = "absolute";
+      p.style.width = `${size}px`;
+      p.style.height = `${Math.max(4, size * 0.6)}px`;
+      p.style.left = `${Math.random() * 100}vw`;
+      p.style.top = `-20px`;
+      p.style.background = colors[(Math.random() * colors.length) | 0];
+      p.style.opacity = "0.95";
+      p.style.borderRadius = "2px";
+
+      const drift = (Math.random() - 0.5) * 260;
+      const spin = (Math.random() - 0.5) * 1100;
+      const duration = 1600 + Math.random() * 1200;
+
+      p.animate(
+        [
+          { transform: `translate(0,0) rotate(0deg)`, opacity: 1 },
+          { transform: `translate(${drift}px, 110vh) rotate(${spin}deg)`, opacity: 1 }
+        ],
+        { duration, easing: "cubic-bezier(.2,.7,.2,1)", fill: "forwards" }
+      );
+
+      layer.appendChild(p);
+    }
+
+    // Schedule next wave
+    setTimeout(spawnWave, waveEveryMs);
+  };
+
+  spawnWave();
+
+  // Remove layer after everything has had time to fall
+  setTimeout(() => layer.remove(), totalMs + 2200);
 }
 
 async playChime() {
@@ -1203,8 +1231,12 @@ const r = await fetchWithRetry(this.backend + "/chat", {
       }
     }
 
-    if (d.newlyLearned) this.mergeNewlyLearned(d.newlyLearned);
-    this.handleMilestones();
+   if (d.newlyLearned) this.mergeNewlyLearned(d.newlyLearned);
+
+// ✅ NEW: backend tells us the milestone number (10, 20, 30...)
+if (d.milestone) this.celebrateMilestone(d.milestone);
+
+this.handleMilestones();
 
     console.log("SENDTEXT done. msg count now =", this.ui.chat?.children?.length);
     return d;
