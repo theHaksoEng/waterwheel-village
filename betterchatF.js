@@ -354,6 +354,18 @@ function findCharacter(text) {
   }
   return null;
 }
+
+let turnGuard = "";
+
+if (sessionData.tutorAskedLastTurn) {
+  turnGuard = `
+TURN GUARD:
+In your previous message you asked the student a question.
+You MUST NOT ask another question now.
+Instead invite the student to ask a question or give a short task.
+`;
+}
+
 // System prompt builder (lore + persona + lesson vocab context)
 function buildSystemPrompt(activeCharacterKey, sessionData, mode) {
 const c = characters[activeCharacterKey] || characters.sophia;
@@ -503,6 +515,7 @@ VILLAGE_LORE,
 mode === "voice"
 ? `Mode: Voice. Do NOT mention punctuation or capitalization. Correct gently by example.`
 : `Mode: Text. Correct gently by example (do NOT comment on punctuation).`,
+turnGuard,
 coachMode,
 vocabContext,
   ].join("\n");
@@ -938,6 +951,10 @@ messages: [{ role: "system", content: systemPrompt }, ...messages],
 temperature: 0.7,
     });
 const reply = completion.choices[0].message.content.trim();
+// Did the tutor ask a question?
+const tutorAskedQuestion = /\?\s*$/.test(reply) || reply.includes("?");
+sessionData.tutorAskedLastTurn = tutorAskedQuestion;
+
 console.log("💬 OpenAI reply:", reply);
 // --- Save response ---
 messages = await loadHistory(sessionId);
