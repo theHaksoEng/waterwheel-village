@@ -357,24 +357,26 @@ function findCharacter(text) {
 
 // System prompt builder (lore + persona + lesson vocab context)
 function buildSystemPrompt(activeCharacterKey, sessionData, mode, turnGuard = "") {
-const c = characters[activeCharacterKey] || characters.sophia;
-const student = sessionData?.userName || "friend";
-let vocabContext = "";
-if (Array.isArray(sessionData?.lessonWordlist) && sessionData.lessonWordlist.length) {
-const sample = sessionData.lessonWordlist.slice(0, 40).join(", ");
-vocabContext = `\nUse/recirculate these lesson words when natural: ${sample}`;
+  const c = characters[activeCharacterKey] || characters.sophia;
+  const student = sessionData?.userName || "friend";
+  let vocabContext = "";
+  if (Array.isArray(sessionData?.lessonWordlist) && sessionData.lessonWordlist.length) {
+    const sample = sessionData.lessonWordlist.slice(0, 40).join(", ");
+    vocabContext = `\nUse/recirculate these lesson words when natural: ${sample}`;
   }
-// List all character names once for the "do not switch" rule
-const allNames = Object.values(characters)
-    .map((ch) => ch.name)
-    .join(", ");
-let coachMode = "";
-
-// Lesson mode: only when a lesson is active
-const inLesson =
+  // List all character names once for the "do not switch" rule
+  const allNames = Object.values(characters)
+      .map((ch) => ch.name)
+      .join(", ");
+  let coachMode = "";
+  // Lesson mode: only when a lesson is active
+  const inLesson =
   !!sessionData?.currentLesson &&
   Array.isArray(sessionData?.lessonWordlist) &&
   sessionData.lessonWordlist.length > 0;
+  
+  // **Add this: Proactive topic anchor for drift prevention**
+  const topicAnchor = inLesson ? `TOPIC ANCHOR: Current lesson topic is "${sessionData.currentLesson.chapter}". After answering off-topic questions briefly, return to the lesson topic within 1 turn.` : "";
 
 // Demo flag: use sessionData.demo if you store it, otherwise fall back to false
 const isDemo = !!sessionData?.demo;
@@ -437,7 +439,6 @@ Use phrases like:
 • "What would you like to ask me?"
 • "Do you have a question about this?"
 
-
 VILLAGE CURIOSITY (use occasionally):
 
 Every few turns, gently invite curiosity about Waterwheel Village and the character’s life.
@@ -484,32 +485,36 @@ Always redirect and continue the lesson.
 
 `;
 }
-  
-return [
-`You are an ESL tutor persona from Waterwheel Village (v${WWV_VERSION}).`,
-VILLAGE_LORE,
-`Persona: ${c.name}. Speak and think like this person.`,
-`Style: ${c.style}`,
-`Backstory: ${c.background}`,
-`Signature phrases (use sparingly, naturally): ${c.phrases.join(" | ")}`,
-// 🔒 CHARACTER LOCK: never switch to Liang or anyone else
-`Character lock: In this conversation you MUST remain ${c.name} only.`,
-`Never speak as or introduce yourself as any other Waterwheel Village character (${allNames}).`,
-`Even if the student mentions another name (for example: "Who is Sophia?", "Who is Liang?"), you still answer ONLY as ${c.name}.`,
-`Student name: ${student}. Address the student by name.`,
-`Teaching goals: help the student speak fluently, model correct grammar by recasting (implicit correction), keep tone kind and encouraging.`,
-`Never say you're an AI or language model. Stay in character.`,
-`Usually end with one short follow-up question, unless STUDENT-LEADS MODE requires the student to ask the next question.`,
-`If explicitly asked for translation or Finnish, give one short sentence in Finnish first, then continue in simple English.`,
-mode === "voice"
-? `Mode: Voice. Do NOT mention punctuation or capitalization. Correct gently by example.`
-: `Mode: Text. Correct gently by example (do NOT comment on punctuation).`,
-...(turnGuard ? [turnGuard] : []),
-coachMode,
 
-vocabContext,
+  return [
+    `You are an ESL tutor persona from Waterwheel Village (v${WWV_VERSION}).`,
+    VILLAGE_LORE,
+    `Persona: ${c.name}. Speak and think like this person.`,
+    `Style: ${c.style}`,
+    `Backstory: ${c.background}`,
+    `Signature phrases (use sparingly, naturally): ${c.phrases.join(" | ")}`,
+    // 🔒 CHARACTER LOCK: never switch to Liang or anyone else
+    `Character lock: In this conversation you MUST remain ${c.name} only.`,
+    `Never speak as or introduce yourself as any other Waterwheel Village character (${allNames}).`,
+    `Even if the student mentions another name (for example: "Who is Sophia?", "Who is Liang?"), you still answer ONLY as ${c.name}.`,
+    // **Add this: Real-world facts rule to prevent invented backstories leading to drift**
+    `REAL-WORLD FACTS RULE: Do not claim a real-world nationality or personal biography unless it is in your character backstory. If asked, answer generally or connect back to the village.`,
+    `Student name: ${student}. Address the student by name.`,
+    `Teaching goals: help the student speak fluently, model correct grammar by recasting (implicit correction), keep tone kind and encouraging.`,
+    `Never say you're an AI or language model. Stay in character.`,
+    `Usually end with one short follow-up question, unless STUDENT-LEADS MODE requires the student to ask the next question.`,
+    `If explicitly asked for translation or Finnish, give one short sentence in Finnish first, then continue in simple English.`,
+    mode === "voice"
+    ? `Mode: Voice. Do NOT mention punctuation or capitalization. Correct gently by example.`
+    : `Mode: Text. Correct gently by example (do NOT comment on punctuation).`,
+    // **Include topicAnchor here in the array**
+    topicAnchor,
+    ...(turnGuard ? [turnGuard] : []),
+    coachMode,
+    vocabContext,
   ].join("\n");
 }
+
 // History helper: keep last 40 messages
 async function loadHistory(sessionId) {
 return JSON.parse((await redis.get(`history:${sessionId}`)) || "[]");
