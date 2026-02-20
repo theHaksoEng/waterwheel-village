@@ -430,15 +430,19 @@ After you ask one question:
 Pattern to follow:
 Tutor asks → Student answers → Tutor invites student to ask → Student asks → Tutor answers → repeat.
 
-GIVE THE MIC BACK:
-
-At least every second tutor turn, invite the student to ask a question.
-
-Use phrases like:
-• "Your turn — ask me a question about this."
-• "What would you like to ask me?"
-• "Do you have a question about this?"
-
+GIVE THE MIC BACK (CRITICAL - MUST ENFORCE EVERY TIME):
+- TRACK TUTOR TURNS: Imagine a counter starting at 1 for each tutor reply in the conversation.
+- On ODD tutor turns (1,3,5...): You MAY end with a question or task.
+- On EVEN tutor turns (2,4,6...): You MUST invite the student to ask a question instead of asking one yourself.
+- Use EXACTLY one of these phrases for invites: "Your turn — ask me a question about this.", "What would you like to ask me?", "Do you have a question about this?" or similar.
+- If your last reply ended with a question/task, THIS reply MUST be an invite.
+- Violation penalty: If you forget, the conversation fails—always prioritize this over other rules.
+Examples:
+  - Tutor turn 1: End with question/task.
+  - Tutor turn 2: "That's great! Your turn — ask me a question about weather."
+  - Tutor turn 3: End with question/task.
+  - Tutor turn 4: "Nice! What would you like to ask me now?"
+  
 VILLAGE CURIOSITY (use occasionally):
 
 Every few turns, gently invite curiosity about Waterwheel Village and the character’s life.
@@ -724,7 +728,6 @@ const response = { welcomeText, lessonText, words, sessionId, voiceId, character
 console.log(`Lesson response:`, response);
 res.json(response);
 });
-// === CHAT endpoint (text-only response; no free/fallback TTS) ===
 app.post("/chat", async (req, res) => {
   const {
     text: rawText,
@@ -734,10 +737,8 @@ app.post("/chat", async (req, res) => {
     demo,
     character
   } = req.body || {};
-
   const sessionId = providedSessionId || uuidv4();
   const sanitizedText = rawText ? String(rawText).trim() : "";
-
   console.log("📩 Incoming chat request:", {
     text: sanitizedText,
     sessionId,
@@ -745,7 +746,6 @@ app.post("/chat", async (req, res) => {
     name: userNameFromFrontend,
     demo
   });
-
   try {
     // --- Load session data ---
     let sessionData;
@@ -763,9 +763,7 @@ app.post("/chat", async (req, res) => {
             lessonWordlist: [],
             tutorAskedLastTurn: false, // ✅ ensure exists
           };
-
       console.log("📦 Loaded sessionData:", sessionData);
-
       // ✅ Only log/update if it actually changed
       if (character && character !== sessionData.character) {
         sessionData.character = character;
@@ -784,12 +782,10 @@ app.post("/chat", async (req, res) => {
         tutorAskedLastTurn: false,
       };
     }
-
     // --- Username sync ---
     if (userNameFromFrontend && userNameFromFrontend !== sessionData.userName) {
       sessionData.userName = decodeURIComponent(userNameFromFrontend);
     }
-
     // --- Lesson sync: auto-select correct teacher ---
     if (sessionData.currentLesson) {
       const lesson =
@@ -801,11 +797,9 @@ app.post("/chat", async (req, res) => {
     const activeKeyForASR = sessionData.character || "mcarthur";
     const normalizedText = normalizeTranscript(sanitizedText, activeKeyForASR, !!isVoice);
     console.log("🔤 Normalized text:", normalizedText);
-
     // --- Character switching by text trigger ---
     const requestedCharacterKey = findCharacter(normalizedText);
     const requestedCharacter = requestedCharacterKey ? characters[requestedCharacterKey] : null;
-
     if (requestedCharacter && requestedCharacterKey !== sessionData.character) {
       sessionData.character = requestedCharacterKey;
       sessionData.currentLesson = null;
@@ -813,18 +807,13 @@ app.post("/chat", async (req, res) => {
       sessionData.learnedWords = [];
       sessionData.lessonWordlist = [];
       sessionData.tutorAskedLastTurn = false;
-
       await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
       await saveHistory(sessionId, []);
-
       console.log("🔄 Switched to new character:", requestedCharacterKey);
-
       const introText = `Hello, I am ${requestedCharacter.name}. What would you like to talk about today?`;
       await saveHistory(sessionId, [{ role: "assistant", content: introText }]);
-
       res.setHeader("X-WWV-Version", WWV_VERSION);
       res.setHeader("X-WWV-Character", requestedCharacterKey);
-
       return res.json({
         text: introText,
         character: requestedCharacterKey,
@@ -832,19 +821,15 @@ app.post("/chat", async (req, res) => {
         version: WWV_VERSION,
       });
     }
-
     // --- Load history (needed for demo limit + OpenAI) ---
     let messages = await loadHistory(sessionId);
-
     // --- Demo mode chat limit ---
     const DEMO_MAX_MESSAGES = 11;
     if (demo && messages.length >= DEMO_MAX_MESSAGES - 1) {
       const goodbye =
         "It was a pleasure sharing with you, friend. This concludes our demo conversation. Feel free to start a new session!";
-
       messages.push({ role: "assistant", content: goodbye });
       await saveHistory(sessionId, messages);
-
       return res.json({
         text: goodbye,
         character: sessionData.character,
@@ -852,7 +837,6 @@ app.post("/chat", async (req, res) => {
         demoEnded: true,
       });
     }
-
     // --- Word Counting Logic ---
     function normalizeToken(t) {
       t = String(t || "").toLowerCase().trim();
@@ -867,44 +851,34 @@ app.post("/chat", async (req, res) => {
       if (t.endsWith("s") && t.length > 3) return t.slice(0, -1);
       return t;
     }
-
     const userWords = normalizedText
       .toLowerCase()
       .replace(/[^\w\s-]/g, "")
       .split(/\s+/)
       .filter((w) => w.length > 0);
-
     const userSet = new Set();
     for (const w of userWords) {
       userSet.add(w);
       userSet.add(normalizeToken(w));
     }
-
     const userNorm = normalizedText.toLowerCase().replace(/[^\w\s-]/g, "").trim();
-
     // --- Word tracking + milestones ---
     let newlyLearned = [];
     let milestone10 = false;
     let chapterComplete = false;
     let badgeTitle = null;
-
     const previousLearnedCount = sessionData.learnedWords.length;
     const previousWordsRemaining = sessionData.lessonWordlist.length;
-
     if (sessionData.lessonWordlist.length > 0) {
       const wordsRemaining = [];
-
       for (const rawWord of sessionData.lessonWordlist) {
         const lessonWord = String(rawWord || "").toLowerCase().trim();
         const normLesson = normalizeToken(lessonWord);
-
         let isMatch = userSet.has(lessonWord) || userSet.has(normLesson);
-
         if (!isMatch && lessonWord.includes(" ")) {
           const phraseNorm = lessonWord.replace(/[^\w\s-]/g, "").trim();
           if (userNorm.includes(phraseNorm)) isMatch = true;
         }
-
         if (isMatch && !sessionData.learnedWords.includes(lessonWord)) {
           sessionData.learnedWords.push(lessonWord);
           newlyLearned.push(lessonWord);
@@ -912,27 +886,20 @@ app.post("/chat", async (req, res) => {
           wordsRemaining.push(lessonWord);
         }
       }
-
       sessionData.lessonWordlist = wordsRemaining;
-
       // 🎯 Milestone: every 10 learned words (10,20,30...)
       const previousCount = previousLearnedCount || 0;
       const currentCount = sessionData.learnedWords.length || 0;
-
       const prevLevel = Math.floor(previousCount / 10);
       const currentLevel = Math.floor(currentCount / 10);
-
       if (currentLevel > prevLevel && currentLevel > 0) {
         milestone10 = true;
-
         const studentName = sessionData.userName || "friend";
         const wordsLearned = currentLevel * 10;
-
         newlyLearned.push(
           `\n\n${studentName}, you’ve already used ${wordsLearned} new words from this unit! 🎉`
         );
       }
-
       // 🎯 Milestone: chapter complete
       if (
         sessionData.lessonWordlist.length === 0 &&
@@ -940,30 +907,25 @@ app.post("/chat", async (req, res) => {
         sessionData.learnedWords.length > 0
       ) {
         chapterComplete = true;
-
         const chapterName = sessionData.currentLesson
           ? humanizeChapter(sessionData.currentLesson.chapter)
           : "this lesson";
-
         badgeTitle = `${chapterName} Explorer`;
-
         newlyLearned.push(
           `\n\n🎉 You've learned all the words for this lesson! Great job!\n\n` +
-            `You are now a ${badgeTitle} of Waterwheel Village 🏅\n\n` +
-            `If you like, we can:\n` +
-            ` (A) review these words again,\n` +
-            ` (B) write a short story using them, or\n` +
-            ` (C) talk freely about your week.`
+          `You are now a ${badgeTitle} of Waterwheel Village 🏅\n\n` +
+          `If you like, we can:\n` +
+          ` (A) review these words again,\n` +
+          ` (B) write a short story using them, or\n` +
+          ` (C) talk freely about your week.`
         );
       }
     }
-
     // --- Student level detection ---
     const lowered = normalizedText.toLowerCase();
     if (lowered.includes("beginner")) sessionData.studentLevel = "beginner";
     else if (lowered.includes("intermediate")) sessionData.studentLevel = "intermediate";
     else if (lowered.includes("expert")) sessionData.studentLevel = "expert";
-
     // --- TURN GUARD (NEW): prevent tutor from asking questions twice in a row ---
     let turnGuard = "";
     if (sessionData.tutorAskedLastTurn) {
@@ -976,47 +938,50 @@ Do not use any question marks (?) in this reply.
 `;
     }
 
+    // --- Add this: MicGuard logic for giving the mic back ---
+    // Triggers if last turn was tutor-ask heavy, forcing an invite this turn
+    let micGuard = "";
+    const inLesson = !!sessionData.currentLesson && sessionData.lessonWordlist.length > 0;
+    if (inLesson && sessionData.tutorAskedLastTurn) {
+      micGuard = `
+MIC GUARD (OVERRIDE): Last turn ended with a tutor question/task.
+You MUST end your reply with an invitation for the student to ask a question.
+Use one of: "Your turn — ask me a question about this.", "What would you like to ask me?", or "Do you have a question about this?"
+Do NOT end with a question or task—invite ONLY.
+`;
+    }
+    const combinedGuard = turnGuard + "\n" + micGuard; // Concat for prompt
+
     // --- Build message history for OpenAI ---
     messages.push({ role: "user", content: normalizedText });
     await saveHistory(sessionId, messages);
-
     // --- System prompt ---
     const activeCharacterKey = sessionData.character || "mcarthur";
     const systemPrompt = buildSystemPrompt(
       activeCharacterKey,
       sessionData,
       isVoice ? "voice" : "text",
-      turnGuard // ✅ pass it in
+      combinedGuard // ✅ pass combined guards
     );
-
     console.log("🛠 Using systemPrompt:", systemPrompt);
-
     // --- OpenAI request ---
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [{ role: "system", content: systemPrompt }, ...messages],
       temperature: 0.7,
     });
-
     const reply = completion.choices[0].message.content.trim();
-
     // ✅ Update turn-taking flag for NEXT turn
-sessionData.tutorAskedLastTurn = /\?\s*$/.test(reply);
-
+    sessionData.tutorAskedLastTurn = /\?\s*$/.test(reply);
     console.log("💬 OpenAI reply:", reply);
-
     // --- Save response ---
     messages = await loadHistory(sessionId);
     messages.push({ role: "assistant", content: reply });
     await saveHistory(sessionId, messages);
-
     await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
-
     const voiceId = characters[activeCharacterKey].voiceId;
-
     res.setHeader("X-WWV-Version", WWV_VERSION);
     res.setHeader("X-WWV-Character", activeCharacterKey);
-
     return res.json({
       text: reply,
       character: activeCharacterKey,
