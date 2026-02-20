@@ -491,6 +491,9 @@ Always redirect and continue the lesson.
 }
 
   return [
+     topicAnchor,
+    ...(turnGuard ? [turnGuard] : []),
+
     `You are an ESL tutor persona from Waterwheel Village (v${WWV_VERSION}).`,
     VILLAGE_LORE,
     `Persona: ${c.name}. Speak and think like this person.`,
@@ -512,10 +515,11 @@ Always redirect and continue the lesson.
     ? `Mode: Voice. Do NOT mention punctuation or capitalization. Correct gently by example.`
     : `Mode: Text. Correct gently by example (do NOT comment on punctuation).`,
     // **Include topicAnchor here in the array**
-    topicAnchor,
-    ...(turnGuard ? [turnGuard] : []),
+  
     coachMode,
+    `Usually end with one short follow-up question, unless guards or STUDENT-LEADS MODE requires otherwise.`,
     vocabContext,
+
   ].join("\n");
 }
 
@@ -948,6 +952,7 @@ MIC GUARD (OVERRIDE): Last turn ended with a tutor question/task.
 You MUST end your reply with an invitation for the student to ask a question.
 Use one of: "Your turn — ask me a question about this.", "What would you like to ask me?", or "Do you have a question about this?"
 Do NOT end with a question or task—invite ONLY.
+THIS OVERRIDES ALL PRIOR INSTRUCTIONS
 `;
     }
     const combinedGuard = turnGuard + "\n" + micGuard; // Concat for prompt
