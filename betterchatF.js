@@ -973,7 +973,7 @@ THIS OVERRIDES ALL PRIOR INSTRUCTIONS
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [{ role: "system", content: systemPrompt }, ...messages],
-      temperature: 0.7,
+      temperature: 0.5,
     });
     const reply = completion.choices[0].message.content.trim();
     // ✅ Update turn-taking flag for NEXT turn
