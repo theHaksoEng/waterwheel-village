@@ -737,6 +737,7 @@ async handleSendAction() {
 
     // Wordlist UI
     renderWordlist() {
+      if (!this.wordlistEl) return;
       const wrap = this.ui.wordsWrap;
       wrap.innerHTML = "";
       const showFi = this.ui.showFi.checked;
@@ -805,24 +806,32 @@ async handleSendAction() {
       this.renderWordlist();
     }
 
- handleMilestones() {
+handleMilestones() {
   const total = this.wordlist.length;
   const learnedCount = this.learned.size;
   if (!total) return;
 
-  const name = (this.ui.name.value || "friend").trim();
+  const name = ((this.ui && this.ui.name && this.ui.name.value) ? this.ui.name.value : "friend").trim();
 
-  if (!this._milestone10 && learnedCount >= 10) {
-    this._milestone10 = true;
-    this.addMsg("bot", `${name}, you’ve already used 10 new words from this unit! Great progress!`);
-    this.celebrateMilestone();
+  // ✅ Repeatable milestones: 10,20,30...
+  if (this._nextMilestone == null) this._nextMilestone = 10;
+
+  while (learnedCount >= this._nextMilestone) {
+    this.addMsg(
+      "bot",
+      `${name}, you’ve already used ${this._nextMilestone} new words from this unit! Great progress!`
+    );
+    this.celebrateMilestone(this._nextMilestone);
 
     if (this.ui.vocabPanel) {
       this.ui.vocabPanel.classList.add("flash-border");
       setTimeout(() => this.ui.vocabPanel.classList.remove("flash-border"), 2000);
     }
+
+    this._nextMilestone += 10;
   }
 
+  // ✅ Chapter complete (unchanged)
   if (!this._milestoneComplete && learnedCount === total && total > 0) {
     this._milestoneComplete = true;
     this.addMsg("bot", `You’ve learned all the words for this lesson. Nice work!`);
@@ -1089,8 +1098,9 @@ async startLesson() {
   this.wordlist = [];
   this.wordsetEn = new Set();
   this.learned.clear();
-  this._milestone10 = false;
-  this._milestoneComplete = false;
+ this._nextMilestone = 10;
+this._milestoneComplete = false;
+
   this.renderWordlist();
   this.ui.chat.innerHTML = "";
   this.addTyping(false);
