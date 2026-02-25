@@ -735,47 +735,51 @@ async handleSendAction() {
       }
     }
 
-    // Wordlist UI
-    renderWordlist() {
-      if (!this.wordlistEl) return;
-      const wrap = this.ui.wordsWrap;
-      wrap.innerHTML = "";
-      const showFi = this.ui.showFi.checked;
+   // Wordlist UI
+renderWordlist() {
+  const wrap = this.ui?.wordsWrap;
+  if (!wrap) return;                 // ✅ check the element you actually render into
+  wrap.innerHTML = "";
 
-      this.wordlist.forEach(({ en, fi }) => {
-        const key = String(en || "").toLowerCase();
-        const pill = ce("div", { className: "pill", role: "group" });
-        if (this.learned.has(key)) pill.classList.add("learned");
+  const showFi = !!this.ui?.showFi?.checked;
 
-        const label = ce("span", {
-          textContent: showFi && fi ? en + " · " + fi : en,
-        });
-        pill.appendChild(label);
+  this.wordlist.forEach(({ en, fi }) => {
+    const key = String(en || "").toLowerCase();
+    const pill = ce("div", { className: "pill", role: "group" });
+    if (this.learned.has(key)) pill.classList.add("learned");
 
-        const sayBtn = ce("button", {
-          className: "say",
-          type: "button",
-          textContent: "Say",
-        });
-        sayBtn.addEventListener("click", () => this.pronounceWord(en));
-        pill.appendChild(sayBtn);
+    const label = ce("span", {
+      textContent: showFi && fi ? `${en} · ${fi}` : en,
+    });
+    pill.appendChild(label);
 
-        pill.addEventListener("click", (ev) => {
-          if (ev.target === sayBtn) return;
-          this.ui.input.value =
-            (this.ui.input.value ? this.ui.input.value + " " : "") + en;
-          this.ui.input.focus();
-        });
+    const sayBtn = ce("button", {
+      className: "say",
+      type: "button",
+      textContent: "Say",
+    });
+    sayBtn.addEventListener("click", () => this.pronounceWord(en));
+    pill.appendChild(sayBtn);
 
-        wrap.appendChild(pill);
-      });
+    pill.addEventListener("click", (ev) => {
+      if (ev.target === sayBtn) return;
+      if (this.ui?.input) {
+        this.ui.input.value =
+          (this.ui.input.value ? this.ui.input.value + " " : "") + en;
+        this.ui.input.focus();
+      }
+    });
 
-      const total = this.wordlist.length;
-      const got = this.learned.size;
-      const pct = total ? Math.round((got * 100) / total) : 0;
-      this.ui.progBar.style.width = pct + "%";
-      this.ui.progLbl.textContent = `${got} / ${total} learned (${pct}%)`;
-    }
+    wrap.appendChild(pill);
+  });
+
+  const total = this.wordlist.length;
+  const got = this.learned.size;
+  const pct = total ? Math.round((got * 100) / total) : 0;
+
+  if (this.ui?.progBar) this.ui.progBar.style.width = pct + "%";
+  if (this.ui?.progLbl) this.ui.progLbl.textContent = `${got} / ${total} learned (${pct}%)`;
+}
 
     updateLearnedFromText(text) {
       if (!text) return;
