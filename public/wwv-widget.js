@@ -102,7 +102,7 @@ const isDemoMode = getWWVMode() === "demo";
 //const params = new URLSearchParams(window.location.search);
 //const isDemo = params.get("demo") === "1";
 
-class WaterwheelChat extends HTMLElement {
+class WaterwheelChat extends HTMLElement {   
   constructor() {
     super();
     this.demo = isDemoMode;
@@ -1479,7 +1479,33 @@ downloadTranscript() {
   a.remove();
   URL.revokeObjectURL(url);
 }
+_updateDashboardFromProgress(payload) {
+  try {
+    const sr = this.shadowRoot;
+    if (!sr) return;
 
+    const got = Number(payload && payload.got) || 0;
+    const total = Number(payload && payload.total) || 0;
+    const pct = total ? Math.round((got * 100) / total) : 0;
+
+    const elCompletion = sr.querySelector("#dashCompletion");
+    if (elCompletion) elCompletion.textContent = pct + "%";
+
+    const elBar = sr.querySelector("#dashCompletionBar");
+    if (elBar) elBar.style.width = pct + "%";
+
+    const elWords = sr.querySelector("#dashWords");
+    if (elWords) elWords.textContent = String(got);
+
+    const elWordsTotal = sr.querySelector("#dashWordsTotal");
+    if (elWordsTotal) elWordsTotal.textContent = String(total);
+
+    const elWordsPct = sr.querySelector("#dashWordsPct");
+    if (elWordsPct) elWordsPct.textContent = pct + "% mastered";
+  } catch (e) {
+    console.warn("Dashboard update failed:", e);
+  }
+}
 } // ✅ CLOSE CLASS WaterwheelChat
 
 customElements.define("waterwheel-chat", WaterwheelChat);
