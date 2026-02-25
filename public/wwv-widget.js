@@ -293,6 +293,30 @@ const headerText = this.demo
   border-color: rgba(255,255,255,.55);
 }
 
+/* --- Dashboard styles START --- */
+
+.dash {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  padding: 12px 14px;
+  background: #f8fafc;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.dash .card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 10px 12px;
+  box-shadow: 0 8px 18px rgba(0,0,0,.04);
+}
+
+.dash .label { font-size: 12px; color:#475569; margin-bottom: 6px; }
+.dash .value { font-size: 18px; font-weight: 800; color:#0f172a; }
+
+/* --- Dashboard styles END --- */
+
         </style>
 
        <div class="wrap" role="region" aria-label="Waterwheel Village Chat">
@@ -301,66 +325,102 @@ const headerText = this.demo
   ${demoOnlyUI}
 
 ${this.demo ? "" : `
-<div class="pane">
-  <input id="name" placeholder="Your name" />
+  <!-- Dashboard goes BETWEEN banner and inputs -->
+  <div class="dash" aria-label="Student dashboard">
+    <div class="card">
+      <div class="label">Completion</div>
+      <div class="value"><span id="dashCompletion">65%</span></div>
+      <div class="meter"><div id="dashCompletionBar"></div></div>
+      <div class="sub" id="dashCourse">Month 5 • Doctor & Medicine</div>
+    </div>
 
-  <select id="month">
-    <option value="">Month...</option>
-    <option value="month1">Month 1 – Greetings & Daily Life</option>
-    <option value="month2">Month 2 – Home & Feelings</option>
-    <option value="month3">Month 3 – Work & School</option>
-    <option value="month4">Month 4 – Travel & Shopping</option>
-    <option value="month5">Month 5 – Health & Community</option>
-    <option value="month6">Month 6 – Nature & Culture</option>
-  </select>
+    <div class="card">
+      <div class="label">Words learned</div>
+      <div class="value"><span id="dashWords">2</span> / <span id="dashWordsTotal">44</span></div>
+      <div class="sub" id="dashWordsPct">5% mastered</div>
+    </div>
 
- <select id="chapter">
-  <option value="">Chapter...</option>
+    <div class="card">
+      <div class="label">Streak</div>
+      <div class="value"><span id="dashStreak">5</span> days 🔥</div>
+      <div class="sub" id="dashLastActive">Last active: Today</div>
+    </div>
 
-  <!-- Month 1 -->
-  <option value="greetings_introductions">Greetings & Introductions (M1)</option>
-  <option value="numbers_days_questions">Numbers, Days & Questions (M1)</option>
-  <option value="food_drink">Food & Drink (M1)</option>
-  <option value="daily_phrases">Daily Phrases (M1)</option>
+    <div class="card cta">
+      <button id="dashContinue">Continue</button>
+      <div class="sub" id="dashNext">Next: Practice conversation</div>
+    </div>
+  </div>
 
-  <!-- Month 2 -->
-  <option value="family_members">Family Members (M2)</option>
-  <option value="house_furniture">House & Furniture (M2)</option>
-  <option value="routines_chores">Routines & Chores (M2)</option>
-  <option value="feelings_emotions">Feelings & Emotions (M2)</option>
+  <div class="pane">
+    <div class="row">
+      <input id="name" placeholder="Your name" />
 
-  <!-- Month 3 -->
-  <option value="professions_tools">Professions & Tools (M3)</option>
-  <option value="classroom_office">Classroom & Office (M3)</option>
-  <option value="common_tasks">Common Tasks (M3)</option>
-  <option value="workplace_dialogues">Workplace Dialogues (M3)</option>
+      <!-- Month + Chapter on SAME line -->
+      <div class="selrow">
+        <select id="month">
+          <option value="">Month...</option>
+          <option value="month1">Month 1 – Greetings & Daily Life</option>
+          <option value="month2">Month 2 – Home & Feelings</option>
+          <option value="month3">Month 3 – Work & School</option>
+          <option value="month4">Month 4 – Travel & Shopping</option>
+          <option value="month5">Month 5 – Health & Community</option>
+          <option value="month6">Month 6 – Nature & Culture</option>
+        </select>
 
-  <!-- Month 4 -->
-  <option value="transport">Transport (M4)</option>
-  <option value="shops_money">Shops & Money (M4)</option>
-  <option value="asking_directions">Asking Directions (M4)</option>
-  <option value="eating_restaurants">Eating & Restaurants (M4)</option>
+        <select id="chapter">
+          <option value="">Chapter...</option>
 
-  <!-- Month 5 -->
-  <option value="body_health">Body & Health (M5)</option>
-  <option value="doctor_medicine">Doctor & Medicine (M5)</option>
-  <option value="community_places">Community Places (M5)</option>
-  <option value="emergency_phrases">Emergency Phrases (M5)</option>
+          <!-- Month 1 -->
+          <option value="greetings_introductions">Greetings & Introductions (M1)</option>
+          <option value="numbers_days_questions">Numbers, Days & Questions (M1)</option>
+          <option value="food_drink">Food & Drink (M1)</option>
+          <option value="daily_phrases">Daily Phrases (M1)</option>
 
-  <!-- Month 6 -->
-  <option value="weather_seasons">Weather & Seasons (M6)</option>
-  <option value="animals_plants_environment">Animals, Plants & Environment (M6)</option>
-  <option value="traditions_celebrations">Traditions & Celebrations (M6)</option>
-  <option value="review_integration">Review & Integration (M6)</option>
-</select>
+          <!-- Month 2 -->
+          <option value="family_members">Family Members (M2)</option>
+          <option value="house_furniture">House & Furniture (M2)</option>
+          <option value="routines_chores">Routines & Chores (M2)</option>
+          <option value="feelings_emotions">Feelings & Emotions (M2)</option>
 
-  <button id="start" class="btn secondary">Start Lesson</button>
-  <button id="voiceToggle" class="btn ghost">Voice: ON</button>
-  <button id="voiceTest" class="btn ghost">Test Voice</button>
-  <button id="download" class="btn">Download</button>
+          <!-- Month 3 -->
+          <option value="professions_tools">Professions & Tools (M3)</option>
+          <option value="classroom_office">Classroom & Office (M3)</option>
+          <option value="common_tasks">Common Tasks (M3)</option>
+          <option value="workplace_dialogues">Workplace Dialogues (M3)</option>
 
-  <span id="status" class="hint" aria-live="polite" style="margin-left:auto"></span>
-</div>
+          <!-- Month 4 -->
+          <option value="transport">Transport (M4)</option>
+          <option value="shops_money">Shops & Money (M4)</option>
+          <option value="asking_directions">Asking Directions (M4)</option>
+          <option value="eating_restaurants">Eating & Restaurants (M4)</option>
+
+          <!-- Month 5 -->
+          <option value="body_health">Body & Health (M5)</option>
+          <option value="doctor_medicine">Doctor & Medicine (M5)</option>
+          <option value="community_places">Community Places (M5)</option>
+          <option value="emergency_phrases">Emergency Phrases (M5)</option>
+
+          <!-- Month 6 -->
+          <option value="weather_seasons">Weather & Seasons (M6)</option>
+          <option value="animals_plants_environment">Animals, Plants & Environment (M6)</option>
+          <option value="traditions_celebrations">Traditions & Celebrations (M6)</option>
+          <option value="review_integration">Review & Integration (M6)</option>
+        </select>
+      </div>
+
+      <!-- Start button nicer color -->
+      <button id="start" class="btn primary">Start Lesson</button>
+
+      <button id="voiceToggle" class="btn ghost">Voice: ON</button>
+      <button id="voiceTest" class="btn ghost">Test Voice</button>
+
+      <!-- Download renamed + moved next to Test Voice -->
+      <button id="download" class="btn ghost">Download Lesson</button>
+
+      <span id="status" class="hint" aria-live="polite" style="margin-left:auto"></span>
+    </div>
+  </div>
 `}
 
 
