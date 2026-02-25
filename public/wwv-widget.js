@@ -1181,10 +1181,19 @@ this._milestoneComplete = false;
     })).filter(w => w.en);
     this.wordsetEn = new Set(this.wordlist.map(w => w.en.toLowerCase()));
     this.renderWordlist();
-    console.log("Wordlist loaded:", this.wordlist.length, "words");
 
-    // Start lesson
-    const url = `${this.backend}/lesson/${encodeURIComponent(m)}/${encodeURIComponent(c)}?sessionId=${encodeURIComponent(this.sessionId)}&name=${encodeURIComponent(name)}&character=${encodeURIComponent(this.activeCharacter)}&demo=${encodeURIComponent(this.demo ? "1" : "0")}`;
+// ✅ Update dashboard immediately after wordlist loads
+this._updateDashboardFromProgress({
+  month: m,
+  chapter: this.ui?.chapter?.selectedOptions?.[0]?.textContent || c,
+  got: this.learned?.size || 0,
+  total: this.wordlist?.length || 0
+});
+
+console.log("Wordlist loaded:", this.wordlist.length, "words");
+
+// Start lesson
+const url = `${this.backend}/lesson/${encodeURIComponent(m)}/${encodeURIComponent(c)}?sessionId=${encodeURIComponent(this.sessionId)}&name=${encodeURIComponent(name)}&character=${encodeURIComponent(this.activeCharacter)}&demo=${encodeURIComponent(this.demo ? "1" : "0")}`;
     console.log("Fetching lesson:", url);
 
     const r = await fetch(url);
