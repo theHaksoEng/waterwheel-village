@@ -1,4 +1,5 @@
 /* jshint esversion: 9 */
+const DEMO_MODE = new URLSearchParams(window.location.search).get('demo') === '1';
 console.log('app.js LOADED SUCCESSFULLY');
 
 // === CORRECT API BASE (same origin, no /api prefix) ===
@@ -84,6 +85,23 @@ function speak(text) {
   window.speechSynthesis.speak(u);
 }
 
+function renderVocab(words) {
+  const panel = document.getElementById('vocabPanel');
+  if (!panel) return;
+
+  panel.style.display = 'block';
+  panel.innerHTML = `
+    <div class="vocab-title">Vocabulary</div>
+    <ul class="vocab-list">
+      ${words.map(w => `
+        <li>
+          <strong>${w.en}</strong>
+          ${w.fi ? ` — ${w.fi}` : ''}
+        </li>
+      `).join('')}
+    </ul>
+  `;
+}
 // === API Helper ===
 async function fetchJSON(url, options = {}) {
   const resp = await fetch(url, {
@@ -125,10 +143,9 @@ window.startLesson = async function(month, chapter) {
       speak(data.lessonText);
     }
 
-    if (wordProgress && data.words) {
-      wordProgress.style.display = 'block';
-      wordProgress.textContent = `Words: ${data.words.length}`;
-    }
+    if (data.words) {
+  renderVocab(data.words);
+}
   } catch (e) {
     console.error('Lesson failed:', e);
     addBubble('assistant', `Welcome, ${state.name}! Let's begin.`);
