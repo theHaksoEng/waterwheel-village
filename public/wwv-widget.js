@@ -511,8 +511,40 @@ if (!this.demo) {
   this.ui.progBar = qs(this.shadowRoot, "#progBar");
   this.ui.progLbl = qs(this.shadowRoot, "#progLbl");
   this.ui.vocabPanel = qs(this.shadowRoot, ".col-words");
+  this.ui.month = qs(this.shadowRoot, "#month");
+  this.ui.chapter = qs(this.shadowRoot, "#chapter");
+  // Keep dashboard course line in sync
+if (this.ui.month) {
+  this.ui.month.addEventListener("change", this._updateDashCourseLine.bind(this));
 }
-    }
+if (this.ui.chapter) {
+  this.ui.chapter.addEventListener("change", this._updateDashCourseLine.bind(this));
+}
+
+// Set it once now (removes placeholder Month 5)
+this._updateDashCourseLine();
+}
+}
+
+/* ---------- Dashboard Course Line ---------- */
+_updateDashCourseLine() {
+  const sr = this.shadowRoot;
+  if (!sr) return;
+
+  const monthText = this.ui && this.ui.month && this.ui.month.selectedOptions[0]
+    ? this.ui.month.selectedOptions[0].textContent
+    : "";
+
+  const chapterText = this.ui && this.ui.chapter && this.ui.chapter.selectedOptions[0]
+    ? this.ui.chapter.selectedOptions[0].textContent
+    : "";
+
+  const monthShort = monthText ? monthText.split("–")[0].trim() : "";
+
+  const course = sr.querySelector("#dashCourse");
+  if (course) course.textContent = monthShort + " • " + chapterText;
+}
+
 initSession() {
   let sid = localStorage.getItem("wwv-sessionId");
 
@@ -839,6 +871,18 @@ renderWordlist() {
 
   if (this.ui?.progBar) this.ui.progBar.style.width = pct + "%";
   if (this.ui?.progLbl) this.ui.progLbl.textContent = `${got} / ${total} learned (${pct}%)`;
+}
+_updateDashCourseLine() {
+  const sr = this.shadowRoot;
+  if (!sr) return;
+
+  const monthText = this.ui?.month?.selectedOptions?.[0]?.textContent || "";
+  const chapterText = this.ui?.chapter?.selectedOptions?.[0]?.textContent || "";
+
+  // Keep it short/clean: "Month 2 • House & Furniture (M2)"
+  const monthShort = monthText ? monthText.split("–")[0].trim() : "";
+  const course = sr.querySelector("#dashCourse");
+  if (course) course.textContent = `${monthShort} • ${chapterText}`.trim();
 }
 
     updateLearnedFromText(text) {
