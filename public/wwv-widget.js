@@ -871,6 +871,10 @@ renderWordlist() {
 
   if (this.ui?.progBar) this.ui.progBar.style.width = pct + "%";
   if (this.ui?.progLbl) this.ui.progLbl.textContent = `${got} / ${total} learned (${pct}%)`;
+  this._updateDashboardFromProgress({
+  got,
+  total
+});
 }
 _updateDashCourseLine() {
   const sr = this.shadowRoot;
