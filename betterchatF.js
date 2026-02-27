@@ -15,6 +15,28 @@ const fs = require("fs");
 const path = require("path");
 const { v4: uuidv4 } = require("uuid");
 const fetch = (...args) => import("node-fetch").then(({ default: f }) => f(...args));
+// ==============================
+// Helper functions (TOP OF FILE)
+// ==============================
+
+function detectEndOrNextIntent(text) {
+  const t = (text || "").toLowerCase().trim();
+
+  const endPhrases = [
+    "goodbye", "bye", "that's enough", "i'm done",
+    "all done", "finished", "stop", "end lesson", "exit"
+  ];
+
+  const nextPhrases = [
+    "next chapter", "ready for the next chapter",
+    "go to next chapter", "next lesson", "continue"
+  ];
+
+  return {
+    wantsEnd: endPhrases.some(p => t.includes(p)),
+    wantsNext: nextPhrases.some(p => t.includes(p)),
+  };
+}
 // === Express setup ===
 const app = express();
 console.log("ROUTES will include /debug/static");
@@ -780,138 +802,168 @@ app.post("/chat", async (req, res) => {
       userSet.add(normalizeToken(w));
     }
     const userNorm = normalizedText.toLowerCase().replace(/[^\w\s-]/g, "").trim();
-    // --- Word tracking + milestones ---
-    let newlyLearned = [];
-    let milestone10 = false;
-    let chapterComplete = false;
-    let badgeTitle = null;
-    const previousLearnedCount = sessionData.learnedWords.length;
-    const previousWordsRemaining = sessionData.lessonWordlist.length;
-    if (sessionData.lessonWordlist.length > 0) {
-      const wordsRemaining = [];
-      for (const rawWord of sessionData.lessonWordlist) {
-        const lessonWord = String(rawWord || "").toLowerCase().trim();
-        const normLesson = normalizeToken(lessonWord);
-        let isMatch = userSet.has(lessonWord) || userSet.has(normLesson);
-        if (!isMatch && lessonWord.includes(" ")) {
-          const phraseNorm = lessonWord.replace(/[^\w\s-]/g, "").trim();
-          if (userNorm.includes(phraseNorm)) isMatch = true;
-        }
-        if (isMatch && !sessionData.learnedWords.includes(lessonWord)) {
-          sessionData.learnedWords.push(lessonWord);
-          newlyLearned.push(lessonWord);
-        } else {
-          wordsRemaining.push(lessonWord);
-        }
-      }
-      sessionData.lessonWordlist = wordsRemaining;
-      // 🎯 Milestone: every 10 learned words (10,20,30...)
-      const previousCount = previousLearnedCount || 0;
-      const currentCount = sessionData.learnedWords.length || 0;
-      const prevLevel = Math.floor(previousCount / 10);
-      const currentLevel = Math.floor(currentCount / 10);
-      if (currentLevel > prevLevel && currentLevel > 0) {
-        milestone10 = true;
-        const studentName = sessionData.userName || "friend";
-        const wordsLearned = currentLevel * 10;
-        newlyLearned.push(
-          `\n\n${studentName}, you’ve already used ${wordsLearned} new words from this unit! 🎉`
-        );
-      }
-      // 🎯 Milestone: chapter complete
-      if (
-        sessionData.lessonWordlist.length === 0 &&
-        previousWordsRemaining > 0 &&
-        sessionData.learnedWords.length > 0
-      ) {
-        chapterComplete = true;
-        const chapterName = sessionData.currentLesson
-          ? humanizeChapter(sessionData.currentLesson.chapter)
-          : "this lesson";
-        badgeTitle = `${chapterName} Explorer`;
-        newlyLearned.push(
-          `\n\n🎉 You've learned all the words for this lesson! Great job!\n\n` +
-          `You are now a ${badgeTitle} of Waterwheel Village 🏅\n\n` +
-          `If you like, we can:\n` +
-          ` (A) review these words again,\n` +
-          ` (B) write a short story using them, or\n` +
-          ` (C) talk freely about your week.`
-        );
-      }
-    }
-    // --- Student level detection ---
-    const lowered = normalizedText.toLowerCase();
-    if (lowered.includes("beginner")) sessionData.studentLevel = "beginner";
-    else if (lowered.includes("intermediate")) sessionData.studentLevel = "intermediate";
-    else if (lowered.includes("expert")) sessionData.studentLevel = "expert";
-    // --- TURN GUARD (NEW): prevent tutor from asking questions twice in a row ---
-    let turnGuard = "";
-    if (sessionData.tutorAskedLastTurn) {
-      turnGuard = `
-TURN GUARD:
-In your previous message you asked the student a question.
-You MUST NOT ask another question in this reply.
-End with either a short task OR invite the student to ask a question.
-Do not use any question marks (?) in this reply.
-`;
+// --- Word tracking + milestones ---
+let newlyLearned = [];
+let milestone10 = false;
+let chapterComplete = false;
+let badgeTitle = null;
+
+const previousLearnedCount = sessionData.learnedWords.length;
+const previousWordsRemaining = sessionData.lessonWordlist.length;
+
+if (sessionData.lessonWordlist.length > 0) {
+  const wordsRemaining = [];
+
+  for (const rawWord of sessionData.lessonWordlist) {
+    const lessonWord = String(rawWord || "").toLowerCase().trim();
+    const normLesson = normalizeToken(lessonWord);
+
+    let isMatch = userSet.has(lessonWord) || userSet.has(normLesson);
+
+    if (!isMatch && lessonWord.includes(" ")) {
+      const phraseNorm = lessonWord.replace(/[^\w\s-]/g, "").trim();
+      if (userNorm.includes(phraseNorm)) isMatch = true;
     }
 
-    // --- Add this: MicGuard logic for giving the mic back ---
-    // Triggers if last turn was tutor-ask heavy, forcing an invite this turn
-    let micGuard = "";
-    const inLesson = !!sessionData.currentLesson && sessionData.lessonWordlist.length > 0;
-    if (inLesson && sessionData.tutorAskedLastTurn) {
-      micGuard = `
-MIC GUARD (OVERRIDE): Last turn ended with a tutor question/task.
-You MUST end your reply with an invitation for the student to ask a question.
-Use one of: "Your turn — ask me a question about this.", "What would you like to ask me?", or "Do you have a question about this?"
-Do NOT end with a question or task—invite ONLY.
-THIS OVERRIDES ALL PRIOR INSTRUCTIONS
-`;
+    if (isMatch && !sessionData.learnedWords.includes(lessonWord)) {
+      sessionData.learnedWords.push(lessonWord);
+      newlyLearned.push(lessonWord);
+    } else {
+      wordsRemaining.push(lessonWord);
     }
-    const combinedGuard = turnGuard + "\n" + micGuard; // Concat for prompt
+  }
 
-    // --- Build message history for OpenAI ---
-    messages.push({ role: "user", content: normalizedText });
-    await saveHistory(sessionId, messages);
-    // --- System prompt ---
-    const activeCharacterKey = sessionData.character || "mcarthur";
-    const systemPrompt = buildSystemPrompt(
-      activeCharacterKey,
-      sessionData,
-      isVoice ? "voice" : "text",
-      combinedGuard // ✅ pass combined guards
+  sessionData.lessonWordlist = wordsRemaining;
+
+  // 🎯 Milestone: every 10 learned words (10,20,30...)
+  const previousCount = previousLearnedCount || 0;
+  const currentCount = sessionData.learnedWords.length || 0;
+  const prevLevel = Math.floor(previousCount / 10);
+  const currentLevel = Math.floor(currentCount / 10);
+
+  if (currentLevel > prevLevel && currentLevel > 0) {
+    milestone10 = true;
+    const studentName = sessionData.userName || "friend";
+    const wordsLearned = currentLevel * 10;
+    newlyLearned.push(
+      `\n\n${studentName}, you’ve already used ${wordsLearned} new words from this unit! 🎉`
     );
-    console.log("🛠 Using systemPrompt:", systemPrompt);
-    // --- OpenAI request ---
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [{ role: "system", content: systemPrompt }, ...messages],
-      temperature: 0.5,
-    });
-    const reply = completion.choices[0].message.content.trim();
-    // ✅ Update turn-taking flag for NEXT turn
-    sessionData.tutorAskedLastTurn = /\?\s*$/.test(reply);
-    console.log("💬 OpenAI reply:", reply);
-    // --- Save response ---
-    messages = await loadHistory(sessionId);
-    messages.push({ role: "assistant", content: reply });
-    await saveHistory(sessionId, messages);
-    await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
-    const voiceId = characters[activeCharacterKey].voiceId;
-    res.setHeader("X-WWV-Version", WWV_VERSION);
-    res.setHeader("X-WWV-Character", activeCharacterKey);
-    return res.json({
-      text: reply,
-      character: activeCharacterKey,
-      voiceId,
-      learnedCount: sessionData.learnedWords.length,
-      newlyLearned,
-      milestone10,
-      chapterComplete,
-      badgeTitle,
-      version: WWV_VERSION,
-    });
+  }
+
+  // 🎯 Milestone: chapter complete (this turn)
+  if (
+    sessionData.lessonWordlist.length === 0 &&
+    previousWordsRemaining > 0 &&
+    sessionData.learnedWords.length > 0
+  ) {
+    chapterComplete = true;
+
+    const chapterName = sessionData.currentLesson
+      ? humanizeChapter(sessionData.currentLesson.chapter)
+      : "this lesson";
+
+    badgeTitle = `${chapterName} Explorer`;
+
+    newlyLearned.push(
+      `\n\n🎉 You've learned all the words for this lesson! Great job!\n\n` +
+        `You are now a ${badgeTitle} of Waterwheel Village 🏅\n\n` +
+        `If you like, we can:\n` +
+        ` (A) review these words again,\n` +
+        ` (B) write a short story using them, or\n` +
+        ` (C) talk freely about your week.`
+    );
+  }
+}
+
+// ✅ Robust completion flag (works even on later turns)
+const isCompleteNow =
+  chapterComplete ||
+  (sessionData.lessonWordlist.length === 0 && sessionData.learnedWords.length > 0);
+
+// ✅ Hard stop if lesson complete + user wants to end or move on
+const { wantsEnd, wantsNext } = detectEndOrNextIntent(normalizedText);
+
+if (isCompleteNow && (wantsEnd || wantsNext)) {
+  const activeCharacterKey = sessionData.character || "mcarthur";
+  const voiceId = characters[activeCharacterKey].voiceId;
+
+  const closing = wantsNext
+    ? "Great! Lesson complete — moving to the next chapter."
+    : "Great! Lesson complete — goodbye!";
+
+  // Use existing loaded history (messages)
+  messages.push({ role: "user", content: normalizedText });
+  messages.push({ role: "assistant", content: closing });
+  await saveHistory(sessionId, messages);
+
+  sessionData.conversationState = wantsNext ? "ADVANCE_CHAPTER" : "ENDED";
+  sessionData.tutorAskedLastTurn = false;
+  await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
+
+  res.setHeader("X-WWV-Version", WWV_VERSION);
+  res.setHeader("X-WWV-Character", activeCharacterKey);
+
+  return res.json({
+    text: closing,
+    character: activeCharacterKey,
+    voiceId,
+    learnedCount: sessionData.learnedWords.length,
+    newlyLearned,
+    milestone10,
+    chapterComplete: isCompleteNow,
+    badgeTitle,
+    action: wantsNext ? "NEXT_CHAPTER" : "END_LESSON",
+    version: WWV_VERSION,
+  });
+}
+// --- TURN GUARD / MIC GUARD (if you already build these earlier, keep them) ---
+// --- Build message history for OpenAI ---
+messages.push({ role: "user", content: normalizedText });
+await saveHistory(sessionId, messages);
+
+// --- System prompt ---
+const activeCharacterKey = sessionData.character || "mcarthur";
+const systemPrompt = buildSystemPrompt(
+  activeCharacterKey,
+  sessionData,
+  isVoice ? "voice" : "text",
+  combinedGuard
+);
+console.log("🛠 Using systemPrompt:", systemPrompt);
+
+// --- OpenAI request ---
+const completion = await openai.chat.completions.create({
+  model: "gpt-4o-mini",
+  messages: [{ role: "system", content: systemPrompt }, ...messages],
+  temperature: 0.5,
+});
+
+const reply = (completion.choices?.[0]?.message?.content || "").trim() || "Okay.";
+sessionData.tutorAskedLastTurn = /\?\s*$/.test(reply);
+console.log("💬 OpenAI reply:", reply);
+
+// --- Save response ---
+messages = await loadHistory(sessionId);
+messages.push({ role: "assistant", content: reply });
+await saveHistory(sessionId, messages);
+
+await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
+
+const voiceId = characters[activeCharacterKey].voiceId;
+res.setHeader("X-WWV-Version", WWV_VERSION);
+res.setHeader("X-WWV-Character", activeCharacterKey);
+
+return res.json({
+  text: reply,
+  character: activeCharacterKey,
+  voiceId,
+  learnedCount: sessionData.learnedWords.length,
+  newlyLearned,
+  milestone10,
+  chapterComplete: isCompleteNow ?? chapterComplete,
+  badgeTitle,
+  version: WWV_VERSION,
+});
   } catch (err) {
     console.error("❌ Chat error:", err?.message || err, err?.stack || "");
     return res.status(500).json({ error: "Chat failed", details: err?.message || "Unknown error" });
