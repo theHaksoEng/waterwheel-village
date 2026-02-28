@@ -892,7 +892,6 @@ if (isCompleteNow && (wantsEnd || wantsNext)) {
     : "Great! Lesson complete — goodbye!";
 
   // Use existing loaded history (messages)
-  messages.push({ role: "user", content: normalizedText });
   messages.push({ role: "assistant", content: closing });
   await saveHistory(sessionId, messages);
 
@@ -923,6 +922,7 @@ await saveHistory(sessionId, messages);
 
 // --- System prompt ---
 const activeCharacterKey = sessionData.character || "mcarthur";
+const combinedGuard = "";
 const systemPrompt = buildSystemPrompt(
   activeCharacterKey,
   sessionData,
