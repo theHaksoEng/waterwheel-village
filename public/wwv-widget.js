@@ -26,6 +26,40 @@ console.log("WWV script loaded ✅", new Date().toISOString());
   const qs = (root, sel) => root.querySelector(sel);
   const ce = (tag, props = {}) => Object.assign(document.createElement(tag), props);
 
+  /* ===============================
+     Background Music Helper
+  =============================== */
+
+  let wwvMusicStarted = false;
+
+  function startWWVMusic() {
+    if (wwvMusicStarted) return;
+
+    const audio = document.getElementById("wwvBgMusic");
+    if (!audio) return;
+
+    wwvMusicStarted = true;
+    audio.volume = 0;
+
+    const target = 0.2;
+    const duration = 3000;
+    const stepTime = 50;
+    const steps = duration / stepTime;
+    const volStep = target / steps;
+    let i = 0;
+
+    const fader = setInterval(() => {
+      i++;
+      audio.volume = Math.min(i * volStep, target);
+      if (i >= steps) clearInterval(fader);
+    }, stepTime);
+
+    audio.play().catch(() => {
+      document.addEventListener("click", () => {
+        audio.play();
+      }, { once: true });
+    });
+  }
   // 🔁 Retry helper for sleeping Render server
 async function fetchWithRetry(url, options, retries = 2, delay = 15000) {
   for (let i = 0; i < retries; i++) {
@@ -801,7 +835,8 @@ async handleSendAction() {
   }
 }
     // Chat bubbles
-  addMsg(role, text) {
+  addMsg(role, text) {
+  if (role === "bot") startWWVMusic();  
   console.log("ADDMSG called:", role, text, "chatEl=", this.ui.chat);
   const row = ce("div", { className: "msg " + (role === "user" ? "user" : "bot") });
   const bubble = ce("div", { className: "bubble" });
