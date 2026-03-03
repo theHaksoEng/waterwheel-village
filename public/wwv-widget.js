@@ -836,8 +836,10 @@ async handleSendAction() {
 }
     // Chat bubbles
   addMsg(role, text) {
-  if (role === "bot") startWWVMusic();  
-  console.log("ADDMSG called:", role, text, "chatEl=", this.ui.chat);
+if (role === "bot") {
+  startWWVMusic();
+  setTimeout(() => fadeOutWWVMusic(2000), 45000); // fade after 45s
+}  console.log("ADDMSG called:", role, text, "chatEl=", this.ui.chat);
   const row = ce("div", { className: "msg " + (role === "user" ? "user" : "bot") });
   const bubble = ce("div", { className: "bubble" });
   bubble.textContent = text;
