@@ -85,7 +85,6 @@ function fadeOutWWVMusic(duration = 2000) {
       clearInterval(fader);
       audio.pause();
       audio.currentTime = 0;
-      wwvMusicStarted = false;
       wwvMusicFadingOut = false;
     }
   }, stepTime);
