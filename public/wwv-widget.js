@@ -743,13 +743,13 @@ connectedCallback() {
     e.preventDefault();
     this.handleSendAction();
   });
-  this.ui.input?.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      this.handleSendAction();
-    }
-  });
-
+ this.ui.input?.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault(); 
+    // Make sure this matches the name of your function (send or handleSendAction)
+    this.send(); 
+  }
+});
   // School-only setups
   if (!this.demo) {
     // 1. Setup Name & LocalStorage
@@ -837,27 +837,99 @@ connectedCallback() {
   });
 }
 
-// Helper to prevent the "Double Trigger"
-async handleSendAction() {
-  const text = (this.ui.input?.value || "").trim();
-  if (!text || this.isProcessing) return;
+// --- REPLACE EVERYTHING FROM HERE ---
+  
+  async handleSendAction() {
+    const text = (this.ui.input?.value || "").trim();
+    if (!text) return;
 
-  this.isProcessing = true;
+    this.ui.input.value = "";
+    this.ui.input.focus();
 
-  // 1️⃣ show user message immediately
-  this.addMsg("user", text);
-
-  // 2️⃣ clear input immediately (prevents double-send)
-  this.ui.input.value = "";
-  this.ui.input.focus();
-
-  try {
-    // 3️⃣ send to backend
     await this.sendText(text, false);
-  } finally {
-    this.isProcessing = false;
   }
-}
+
+  async send() {
+    // This often maps to the 'Send' button
+    await this.handleSendAction();
+  }
+
+  async sendText(text, isVoice) {
+    if (this.isProcessing) {
+      console.warn("Blocked duplicate call to sendText");
+      return;
+    }
+
+    this.isProcessing = true;
+    this.addTyping(true);
+
+    // Only add user bubble if NOT coming from voice 
+    // (because flushSpeech already adds it for voice)
+    if (!isVoice) {
+      this.addMsg("user", text);
+    }
+
+    try {
+      const userName = (this.ui?.name?.value || "friend").trim();
+      const r = await fetchWithRetry(this.backend + "/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text,
+          sessionId: this.sessionId,
+          isVoice: !!isVoice,
+          name: userName,
+          character: this.activeCharacter,
+          demo: !!this.demo,
+        }),
+      });
+
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error((d && d.error) || "Chat failed");
+
+      const reply = d.text || "(no response)";
+      if (d.voiceId) this.lastVoiceId = d.voiceId;
+      
+      this.addMsg("bot", reply);
+
+      // --- Voice/TTS Logic ---
+      const charKey = d.character || this.activeCharacter || "mcarthur";
+      const usedByChar = this.demoVoicedByCharacter?.[charKey] || 0;
+      const canVoice = this.voice && (!this.demo || (this.demoVoiceUsed < this.demoVoiceMax && usedByChar < 2));
+
+      if (canVoice) {
+        const vid = d.voiceId || this.lastVoiceId || (typeof MCARTHUR_VOICE !== 'undefined' ? MCARTHUR_VOICE : null);
+        const parts = String(reply || "").split(/(?<=[.!?])\s+/).map(s => s.trim()).filter(Boolean);
+        for (const p of parts) this.enqueueSpeak(p, vid);
+
+        if (this.demo) {
+          this.demoVoiceUsed++;
+          this.demoVoicedByCharacter = this.demoVoicedByCharacter || {};
+          this.demoVoicedByCharacter[charKey] = usedByChar + 1;
+        }
+      }
+
+      if (d.newlyLearned) this.mergeNewlyLearned(d.newlyLearned);
+
+      // --- Milestone Logic ---
+      if (d.milestone && typeof this.celebrateMilestone === 'function') {
+        this.celebrateMilestone(d.milestone);
+      }
+      if (typeof this.handleMilestones === 'function') {
+        this.handleMilestones();
+      }
+
+    } catch (e) {
+      console.error("SENDTEXT Error:", e);
+      this.addMsg("bot", "I'm sorry, I missed that. Could you say it again?");
+    } finally {
+      this.addTyping(false);
+      this.isProcessing = false; 
+      console.log("Gate open. Ready for next message.");
+    }
+  }
+
+  // --- STOP REPLACING HERE (Keep your addMsg(role, text) { ... } below this) ---
     // Chat bubbles
   addMsg(role, text) {
 if (role === "bot" && !wwvMusicStarted) {
@@ -1497,73 +1569,43 @@ setupMic() {
  const flushSpeech = () => {
     clearTimeout(this.holdTimer);
     
+    // 1. Grab the text and IMMEDIATELY wipe the buffer
     const toSend = this.speechBuf.trim();
-    this.speechBuf = ""; // Clear buffer immediately so it can't be sent twice
+    this.speechBuf = ""; 
     
+    // 2. If the buffer was already empty, stop here.
     if (!toSend) return;
 
-    // Safety Gate: If the bot is already thinking/typing, stop here!
+    // 3. Check the gate
     if (this.isProcessing) {
-      console.warn("flushSpeech blocked: Chat is currently busy.");
+      console.warn("flushSpeech blocked: Chat is busy.");
       return;
     }
 
+    // 4. Send the message
+    console.log("Mic sending unique message:", toSend);
     this.addMsg("user", toSend);
     this.updateLearnedFromText(toSend);
     this.ui.input.value = "";
-    
-    // Send to backend
     this.sendText(toSend, true);
   };
-
-  // Simple timer reset on any speech activity
-  const resetPauseTimer = () => {
-    clearTimeout(this.holdTimer);
-    this.holdTimer = setTimeout(flushSpeech, this.PAUSE_GRACE_MS);
-  };
-
-  this.ui.mic.addEventListener("click", async () => {
-    if (this.recActive) {
-      flushSpeech();
-      this.stopMic();
-      return;
-    }
-
-    if (!this.primed && navigator.mediaDevices) {
-      try {
-        const s = await navigator.mediaDevices.getUserMedia({ audio: true });
-        s.getTracks().forEach(t => t.stop());
-        this.primed = true;
-      } catch (e) {
-        this.ui.micErr.textContent = "Mic permission denied.";
-        return;
-      }
-    }
-
-    this.recActive = true;
-    this.ui.mic.classList.add("rec");
-    this.ui.mic.textContent = "Stop";
-    this.ui.micErr.textContent = "";
-    this.speechBuf = "";
-    try { rec.start(); } catch {}
-  });
 
   rec.onresult = (e) => {
     if (!e.results.length) return;
 
-    // 🔥 THE FIX: Take the engine’s latest full transcript (overwrite, never append)
     const latest = e.results[e.results.length - 1];
     const transcript = latest[0].transcript.trim();
 
     if (transcript) {
-      this.speechBuf = transcript;   // ← This single line kills all duplication
+      // Only update if it's different to prevent jitter
+      this.speechBuf = transcript;
       resetPauseTimer();
     }
 
-    // Show live interim (gray text)
+    // 5. CRITICAL: Only show interim if it's NOT final. 
+    // If it is final, we let flushSpeech handle the UI.
     showInterim(latest.isFinal ? "" : transcript);
   };
-
   rec.onstart = () => showInterim("(listening...)");
   rec.onsoundstart = () => showInterim("(capturing speech...)");
 
