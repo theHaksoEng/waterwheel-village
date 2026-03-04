@@ -1354,104 +1354,92 @@ for (const p of parts) {
 
 // --- REPLACE FROM HERE ---
 async send() {
-  // 1. GATEKEEPER: Stop if we are already busy
-  if (this.isProcessing) return;
+    if (this.isProcessing) return;
 
-  const text = this.ui.input.value.trim();
-  if (!text) return;
+    const text = this.ui.input.value.trim();
+    if (!text) return;
 
-  this.addMsg("user", text);
-  this.updateLearnedFromText(text);
-  this.ui.input.value = "";
-  await this.sendText(text, false);
-}
-
-async sendText(text, isVoice) {
-  // 2. GATEKEEPER: Prevent the mic from double-firing
-  if (this.isProcessing) {
-    console.warn("Blocked a duplicate sendText call.");
-    return;
+    this.addMsg("user", text);
+    this.updateLearnedFromText(text);
+    this.ui.input.value = "";
+    await this.sendText(text, false);
   }
 
-  console.log("sendText ENTERED", { text, isVoice, voice: this.voice });
-  
-  this.isProcessing = true; // LOCK the gate
-  this.addTyping(true);
-
-  const userName =
-    (this.ui && this.ui.name && this.ui.name.value)
-      ? this.ui.name.value.trim()
-      : "friend";
-
-  try {
-    const r = await fetchWithRetry(this.backend + "/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        text,
-        sessionId: this.sessionId,
-        isVoice: !!isVoice,
-        name: userName,
-        character: this.activeCharacter,
-        demo: !!this.demo,
-      }),
-    });
-
-    console.log("SENDTEXT fetch done. status=", r.status, "ok=", r.ok);
-    const d = await r.json().catch(() => ({}));
-    console.log("SENDTEXT response json:", d);
-
-    if (!r.ok) {
-      console.error("SENDTEXT HTTP error:", r.status, d);
-      throw new Error((d && d.error) || "Chat failed");
+  async sendText(text, isVoice) {
+    // 1. GATEKEEPER: Prevent the mic from double-firing
+    if (this.isProcessing) {
+      console.warn("Blocked a duplicate sendText call.");
+      return;
     }
 
-    const reply = d.text || "(no response)";
-    if (d.voiceId) this.lastVoiceId = d.voiceId;
+    console.log("sendText ENTERED", { text, isVoice, voice: this.voice });
+    
+    this.isProcessing = true; // LOCK the gate
+    this.addTyping(true);
 
-    this.addMsg("bot", reply);
+    const userName = (this.ui?.name?.value || "friend").trim();
 
-    const charKey = d.character || this.activeCharacter || "mcarthur";
-    const usedByChar = this.demoVoicedByCharacter?.[charKey] || 0;
-    const canVoice =
-      this.voice &&
-      (!this.demo || (this.demoVoiceUsed < this.demoVoiceMax && usedByChar < 2));
+    try {
+      const r = await fetchWithRetry(this.backend + "/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text,
+          sessionId: this.sessionId,
+          isVoice: !!isVoice,
+          name: userName,
+          character: this.activeCharacter,
+          demo: !!this.demo,
+        }),
+      });
 
-    if (canVoice) {
-      const vid = d.voiceId || this.lastVoiceId || MCARTHUR_VOICE;
-      const parts = String(reply || "")
-        .split(/(?<=[.!?])\s+/)
-        .map((s) => s.trim())
-        .filter(Boolean);
+      console.log("SENDTEXT fetch done. status=", r.status);
+      const d = await r.json().catch(() => ({}));
 
-      for (const p of parts) this.enqueueSpeak(p, vid);
-
-      if (this.demo) {
-        this.demoVoiceUsed++;
-        this.demoVoicedByCharacter = this.demoVoicedByCharacter || {};
-        this.demoVoicedByCharacter[charKey] = usedByChar + 1;
+      if (!r.ok) {
+        throw new Error((d && d.error) || "Chat failed");
       }
+
+      const reply = d.text || "(no response)";
+      if (d.voiceId) this.lastVoiceId = d.voiceId;
+
+      this.addMsg("bot", reply);
+
+      // Handle Voice Output
+      const charKey = d.character || this.activeCharacter || "mcarthur";
+      const usedByChar = this.demoVoicedByCharacter?.[charKey] || 0;
+      const canVoice = this.voice && (!this.demo || (this.demoVoiceUsed < this.demoVoiceMax && usedByChar < 2));
+
+      if (canVoice) {
+        const vid = d.voiceId || this.lastVoiceId || (typeof MCARTHUR_VOICE !== 'undefined' ? MCARTHUR_VOICE : null);
+        const parts = String(reply || "").split(/(?<=[.!?])\s+/).map(s => s.trim()).filter(Boolean);
+        for (const p of parts) this.enqueueSpeak(p, vid);
+
+        if (this.demo) {
+          this.demoVoiceUsed++;
+          this.demoVoicedByCharacter = this.demoVoicedByCharacter || {};
+          this.demoVoicedByCharacter[charKey] = usedByChar + 1;
+        }
+      }
+
+      if (d.newlyLearned) this.mergeNewlyLearned(d.newlyLearned);
+
+      // ✅ MILESTONE LOGIC (Kept exactly as you had it)
+      if (d.milestone) this.celebrateMilestone(d.milestone);
+      if (typeof this.handleMilestones === 'function') this.handleMilestones();
+
+      console.log("SENDTEXT done. msg count =", this.ui.chat?.children?.length);
+      return d;
+
+    } catch (e) {
+      console.error("SENDTEXT error:", e);
+      this.addMsg("bot", "Sorry, I had a little trouble. Can you say that again?");
+    } finally {
+      // 2. IMPORTANT: This opens the gate for the next message (Written or Voice)
+      this.addTyping(false);
+      this.isProcessing = false; 
     }
-
-    if (d.newlyLearned) this.mergeNewlyLearned(d.newlyLearned);
-
-    // ✅ PRESERVED: Milestone logic
-    if (d.milestone) this.celebrateMilestone(d.milestone);
-    this.handleMilestones();
-
-    console.log("SENDTEXT done. msg count now =", this.ui.chat?.children?.length);
-    return d;
-
-  } catch (e) {
-    console.error("SENDTEXT error:", e);
-    this.addMsg("bot", "Sorry, something went wrong sending your message.");
-    throw e;
-  } finally {
-    // 3. UNLOCK the gate and hide typing (no matter what happened)
-    this.addTyping(false);
-    this.isProcessing = false; 
   }
-}
 
 // Mic with REAL 6-second pause-to-send — NO MORE DUPLICATION
 setupMic() {
