@@ -1,4 +1,4 @@
-window.__WWV_VERSION = "2026-02-09-split-1";
+window.__WWV_VERSION = "2026-03-04-music-fix";
 console.log("WWV script loaded VERSION:", window.__WWV_VERSION);
 
 // @ts-nocheck
@@ -61,31 +61,25 @@ function startWWVMusic() {
       }, { once: true });
     });
   }
-  let wwvMusicFadingOut = false;
-
+let wwvMusicFadingOut = false;
 function fadeOutWWVMusic(duration = 2000) {
   if (wwvMusicFadingOut) return;
-
   const audio = document.getElementById("wwvBgMusic");
   if (!audio) return;
-
   wwvMusicFadingOut = true;
-
   const startVol = audio.volume;
   const stepTime = 50;
   const steps = duration / stepTime;
   const volStep = startVol / steps;
   let i = 0;
-
   const fader = setInterval(() => {
     i++;
     audio.volume = Math.max(0, startVol - volStep * i);
-
     if (i >= steps) {
       clearInterval(fader);
       audio.pause();
       audio.currentTime = 0;
-      wwvMusicStarted = false;
+      // DO NOT reset wwvMusicStarted here → music stays "played" for the whole lesson
       wwvMusicFadingOut = false;
     }
   }, stepTime);
