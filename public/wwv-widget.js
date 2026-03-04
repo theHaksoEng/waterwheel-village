@@ -1498,8 +1498,7 @@ setupMic() {
       this.updateLearnedFromText(toSend);
       this.ui.input.value = "";
       this.sendText(toSend, true);
-      this.stopMic();
-    }
+   // this.stopMic();    }
   };
 
   const queueSpeech = (finalChunk) => {
