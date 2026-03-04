@@ -60,6 +60,35 @@ console.log("WWV script loaded ✅", new Date().toISOString());
       }, { once: true });
     });
   }
+  let wwvMusicFadingOut = false;
+
+function fadeOutWWVMusic(duration = 2000) {
+  if (wwvMusicFadingOut) return;
+
+  const audio = document.getElementById("wwvBgMusic");
+  if (!audio) return;
+
+  wwvMusicFadingOut = true;
+
+  const startVol = audio.volume;
+  const stepTime = 50;
+  const steps = duration / stepTime;
+  const volStep = startVol / steps;
+  let i = 0;
+
+  const fader = setInterval(() => {
+    i++;
+    audio.volume = Math.max(0, startVol - volStep * i);
+
+    if (i >= steps) {
+      clearInterval(fader);
+      audio.pause();
+      audio.currentTime = 0;
+      wwvMusicStarted = false;
+      wwvMusicFadingOut = false;
+    }
+  }, stepTime);
+}
   // 🔁 Retry helper for sleeping Render server
 async function fetchWithRetry(url, options, retries = 2, delay = 15000) {
   for (let i = 0; i < retries; i++) {
@@ -836,9 +865,9 @@ async handleSendAction() {
 }
     // Chat bubbles
   addMsg(role, text) {
-if (role === "bot") {
+if (role === "bot" && !wwvMusicStarted) {
   startWWVMusic();
-  setTimeout(() => fadeOutWWVMusic(2000), 45000); // fade after 45s
+  setTimeout(() => fadeOutWWVMusic(2000), 45000);
 }  console.log("ADDMSG called:", role, text, "chatEl=", this.ui.chat);
   const row = ce("div", { className: "msg " + (role === "user" ? "user" : "bot") });
   const bubble = ce("div", { className: "bubble" });
