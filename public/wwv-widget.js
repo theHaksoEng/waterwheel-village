@@ -1,4 +1,4 @@
-window.__WWV_VERSION = "2026-03-04-music-fix";
+window.__WWV_VERSION = "2026-03-04-mic-pause-fixed";
 console.log("WWV script loaded VERSION:", window.__WWV_VERSION);
 
 // @ts-nocheck
@@ -221,7 +221,7 @@ this.activeCharacter = "mcarthur";
       this.restartWanted = false;
       this.speechBuf = "";
       this.holdTimer = null;
-      this.PAUSE_GRACE_MS = 6000;
+      this.PAUSE_GRACE_MS = 8000;
 
       // Build shadow DOM
       this.attachShadow({ mode: "open" });
@@ -1444,7 +1444,7 @@ this.handleMilestones();
 }
 
 
-// Mic with real pause-to-send (6-second silence = send)
+// Mic with REAL 6-second pause-to-send (fixed for browser quirks)
 setupMic() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   const isHttps = location.protocol === "https:";
@@ -1470,7 +1470,7 @@ setupMic() {
   rec.maxAlternatives = 1;
   this.rec = rec;
 
-  this.ui.micInfo.textContent = "Click mic → speak → pause 6 seconds = auto-send";
+  this.ui.micInfo.textContent = "Click mic → speak naturally → wait 6 full seconds of silence = auto-send";
 
   const showInterim = (t) => {
     if (!this._interimNode) {
@@ -1495,10 +1495,10 @@ setupMic() {
       this.ui.input.value = "";
       this.sendText(toSend, true);
     }
-    this.stopMic(); // optional: auto-stop after sending (remove this line if you want continuous listening)
+    // Do NOT auto-stop mic here — user can keep talking if they want
   };
 
-  // Reset timer on ANY speech activity (this is the key fix)
+  // 🔥 KEY FIX: Reset timer on EVERY bit of speech (interim + final)
   const resetPauseTimer = (newText = "") => {
     if (newText && newText.trim()) {
       this.speechBuf += (this.speechBuf ? " " : "") + newText.trim();
@@ -1509,12 +1509,11 @@ setupMic() {
 
   this.ui.mic.addEventListener("click", async () => {
     if (this.recActive) {
-      flushSpeech();        // manual stop = send immediately
+      flushSpeech();        // manual stop = send now
       this.stopMic();
       return;
     }
 
-    // Prime microphone permission
     if (!this.primed && navigator.mediaDevices) {
       try {
         const s = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -1531,28 +1530,35 @@ setupMic() {
     this.ui.mic.classList.add("rec");
     this.ui.mic.textContent = "Stop";
     this.ui.micErr.textContent = "";
-    this.speechBuf = "";   // clear buffer for new recording
+    this.speechBuf = "";           // fresh buffer
     try { rec.start(); } catch {}
   });
 
   rec.onresult = (e) => {
     let interim = "";
     for (let i = e.resultIndex; i < e.results.length; i++) {
-      const t = e.results[i][0].transcript;
-      if (e.results[i].isFinal) {
-        resetPauseTimer(t);     // final text
-      } else {
-        interim += t;
+      const t = e.results[i][0].transcript.trim();
+      if (t) {
+        if (e.results[i].isFinal) {
+          resetPauseTimer(t);        // final → commit + reset
+        } else {
+          interim += t + " ";
+        }
       }
     }
-    showInterim(interim || "");
+    if (interim) {
+      resetPauseTimer(interim);      // ←←← THIS WAS MISSING: interim also resets timer!
+      showInterim(interim);
+    } else {
+      showInterim("");
+    }
   };
 
   rec.onstart = () => showInterim("(listening...)");
   rec.onsoundstart = () => showInterim("(capturing speech...)");
 
   rec.onerror = (ev) => {
-    if (ev.error === "no-speech") this.ui.micErr.textContent = "No speech heard.";
+    if (ev.error === "no-speech") this.ui.micErr.textContent = "No speech heard. Try again.";
     else if (ev.error === "not-allowed") this.ui.micErr.textContent = "Mic blocked in site settings.";
     else if (ev.error !== "aborted") this.ui.micErr.textContent = "Mic error: " + ev.error;
   };
