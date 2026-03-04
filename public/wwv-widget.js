@@ -1444,11 +1444,12 @@ this.handleMilestones();
 }
 
 
-// Mic with pause buffer
+// Mic with real pause-to-send (6-second silence = send)
 setupMic() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   const isHttps = location.protocol === "https:";
   const isTop = window.top === window.self;
+
   if (!SR) {
     this.ui.micInfo.textContent = "Mic not supported in this browser.";
     return;
@@ -1469,7 +1470,7 @@ setupMic() {
   rec.maxAlternatives = 1;
   this.rec = rec;
 
-  this.ui.micInfo.textContent = "Click mic, speak, pause to send, click again to stop.";
+  this.ui.micInfo.textContent = "Click mic → speak → pause 6 seconds = auto-send";
 
   const showInterim = (t) => {
     if (!this._interimNode) {
@@ -1493,13 +1494,14 @@ setupMic() {
       this.updateLearnedFromText(toSend);
       this.ui.input.value = "";
       this.sendText(toSend, true);
-      this.stopMic();
     }
+    this.stopMic(); // optional: auto-stop after sending (remove this line if you want continuous listening)
   };
 
-  const queueSpeech = (finalChunk) => {
-    if (finalChunk && finalChunk.trim()) {
-      this.speechBuf += (this.speechBuf ? " " : "") + finalChunk.trim();
+  // Reset timer on ANY speech activity (this is the key fix)
+  const resetPauseTimer = (newText = "") => {
+    if (newText && newText.trim()) {
+      this.speechBuf += (this.speechBuf ? " " : "") + newText.trim();
     }
     clearTimeout(this.holdTimer);
     this.holdTimer = setTimeout(flushSpeech, this.PAUSE_GRACE_MS);
@@ -1507,19 +1509,19 @@ setupMic() {
 
   this.ui.mic.addEventListener("click", async () => {
     if (this.recActive) {
-      flushSpeech();
+      flushSpeech();        // manual stop = send immediately
       this.stopMic();
       return;
     }
 
-    if (!this.primed && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    // Prime microphone permission
+    if (!this.primed && navigator.mediaDevices) {
       try {
         const s = await navigator.mediaDevices.getUserMedia({ audio: true });
-        s.getTracks().forEach((t) => t.stop());
+        s.getTracks().forEach(t => t.stop());
         this.primed = true;
-        this.ui.micErr.textContent = "";
       } catch (e) {
-        this.ui.micErr.textContent = "Mic permission denied (Site settings -> Microphone).";
+        this.ui.micErr.textContent = "Mic permission denied.";
         return;
       }
     }
@@ -1529,7 +1531,7 @@ setupMic() {
     this.ui.mic.classList.add("rec");
     this.ui.mic.textContent = "Stop";
     this.ui.micErr.textContent = "";
-
+    this.speechBuf = "";   // clear buffer for new recording
     try { rec.start(); } catch {}
   });
 
@@ -1537,18 +1539,21 @@ setupMic() {
     let interim = "";
     for (let i = e.resultIndex; i < e.results.length; i++) {
       const t = e.results[i][0].transcript;
-      if (e.results[i].isFinal) queueSpeech(t);
-      else interim += t;
+      if (e.results[i].isFinal) {
+        resetPauseTimer(t);     // final text
+      } else {
+        interim += t;
+      }
     }
-    showInterim(interim);
+    showInterim(interim || "");
   };
 
   rec.onstart = () => showInterim("(listening...)");
   rec.onsoundstart = () => showInterim("(capturing speech...)");
 
   rec.onerror = (ev) => {
-    if (ev.error === "no-speech") this.ui.micErr.textContent = "No speech heard. Try again closer to the mic.";
-    else if (ev.error === "not-allowed" || ev.error === "permission-denied") this.ui.micErr.textContent = "Mic blocked. Allow in browser site settings.";
+    if (ev.error === "no-speech") this.ui.micErr.textContent = "No speech heard.";
+    else if (ev.error === "not-allowed") this.ui.micErr.textContent = "Mic blocked in site settings.";
     else if (ev.error !== "aborted") this.ui.micErr.textContent = "Mic error: " + ev.error;
   };
 
@@ -1557,16 +1562,6 @@ setupMic() {
     this.ui.mic.classList.remove("rec");
     this.ui.mic.textContent = "Mic";
     showInterim("");
-    if (this.restartWanted) {
-      setTimeout(() => {
-        try {
-          rec.start();
-          this.recActive = true;
-          this.ui.mic.classList.add("rec");
-          this.ui.mic.textContent = "Stop";
-        } catch {}
-      }, 300);
-    }
   };
 
   rec.onend = finish;
