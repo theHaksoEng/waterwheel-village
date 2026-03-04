@@ -85,6 +85,7 @@ function fadeOutWWVMusic(duration = 2000) {
       clearInterval(fader);
       audio.pause();
       audio.currentTime = 0;
+      wwvMusicStarted = false;
       wwvMusicFadingOut = false;
     }
   }, stepTime);
@@ -1498,7 +1499,8 @@ setupMic() {
       this.updateLearnedFromText(toSend);
       this.ui.input.value = "";
       this.sendText(toSend, true);
-   // this.stopMic();    }
+      this.stopMic();
+    }
   };
 
   const queueSpeech = (finalChunk) => {
@@ -1576,7 +1578,6 @@ setupMic() {
   rec.onend = finish;
   rec.onaudioend = finish;
 }
-
 downloadTranscript() {
   const nodes = this.ui.chat.querySelectorAll("div");
   let text = "";
@@ -1630,58 +1631,59 @@ function mountWWV() {
   const root = document.getElementById("wwv-root");
   if (!root) return;
 
-  const path = (location.pathname || "").toLowerCase();
-  const isSchoolPage = path.includes("/school"); // <-- change if your slug differs
+  const forcedMode = (root.getAttribute("data-mode") || "").toLowerCase();
 
-  // ===================== SCHOOL PAGE =====================
-  if (isSchoolPage) {
-    // ONLY school, no demo, no gate
+  if (forcedMode === "school") {
+    // ===================== SCHOOL PAGE (full dashboard) =====================
     root.innerHTML = `
-      <waterwheel-chat mode="school" backend="${DEFAULT_BACKEND}" voice="on"></waterwheel-chat>
+      <waterwheel-chat 
+        mode="school" 
+        backend="${DEFAULT_BACKEND}" 
+        voice="on">
+      </waterwheel-chat>
     `;
-    return;
+  } else {
+    // ===================== DEMO PAGE (small widget + sales gate) =====================
+    root.innerHTML = `
+      <div id="wwv-demo-host"></div>
+      <div id="wwv-gate-host"></div>
+    `;
+
+    // DEMO widget
+    document.getElementById("wwv-demo-host").innerHTML = `
+      <waterwheel-chat mode="demo" backend="${DEFAULT_BACKEND}" voice="on"></waterwheel-chat>
+    `;
+
+    // SALES GATE (unchanged)
+    document.getElementById("wwv-gate-host").innerHTML = `
+      <div style="
+        margin:18px 0; padding:18px; border-radius:18px; color:#fff;
+        background:linear-gradient(180deg,#081424 0%,#071b2f 45%,#061125 100%);
+        box-shadow:0 22px 60px rgba(0,0,0,.35);
+        border:1px solid rgba(255,255,255,.10);
+        text-align:center;">
+        <div style="display:inline-flex; gap:10px; align-items:center; padding:10px 14px; border-radius:999px;
+          background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.10); font-weight:900;">
+          🌀 Waterwheel Village Academy
+        </div>
+        <div style="margin:16px 0 8px; font-size:28px; font-weight:900;">Ready to go beyond the demo?</div>
+        <div style="opacity:.85; max-width:60ch; margin:0 auto 16px; line-height:1.6;">
+          Unlock all months, all characters, unlimited speaking, and progress tracking.
+        </div>
+        <button id="enterSchoolBtn" style="
+          border:0; border-radius:14px; padding:14px 18px; font-weight:900; font-size:16px; cursor:pointer; color:#fff;
+          background:linear-gradient(90deg, rgba(0,255,209,.95), rgba(73,171,255,.95), rgba(165,96,255,.95));
+          box-shadow:0 18px 45px rgba(0,0,0,.35), 0 10px 28px rgba(0,255,209,.14);
+        ">Start My English Journey →</button>
+        <div style="margin-top:10px; font-size:13px; opacity:.75;">Secure checkout • Instant access</div>
+      </div>
+    `;
+
+    // Button click -> checkout
+    document.getElementById("enterSchoolBtn")?.addEventListener("click", () => {
+      window.location.href = "/checkout";
+    });
   }
-
-  // ===================== DEMO PAGE =====================
-  root.innerHTML = `
-    <div id="wwv-demo-host"></div>
-    <div id="wwv-gate-host"></div>
-  `;
-
-  // DEMO widget
-  document.getElementById("wwv-demo-host").innerHTML = `
-    <waterwheel-chat mode="demo" backend="${DEFAULT_BACKEND}" voice="on"></waterwheel-chat>
-  `;
-
-  // GATE
-  document.getElementById("wwv-gate-host").innerHTML = `
-    <div style="
-      margin:18px 0; padding:18px; border-radius:18px; color:#fff;
-      background:linear-gradient(180deg,#081424 0%,#071b2f 45%,#061125 100%);
-      box-shadow:0 22px 60px rgba(0,0,0,.35);
-      border:1px solid rgba(255,255,255,.10);
-      text-align:center;">
-      <div style="display:inline-flex; gap:10px; align-items:center; padding:10px 14px; border-radius:999px;
-        background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.10); font-weight:900;">
-        🌀 Waterwheel Village Academy
-      </div>
-      <div style="margin:16px 0 8px; font-size:28px; font-weight:900;">Ready to go beyond the demo?</div>
-      <div style="opacity:.85; max-width:60ch; margin:0 auto 16px; line-height:1.6;">
-        Unlock all months, all characters, unlimited speaking, and progress tracking.
-      </div>
-      <button id="enterSchoolBtn" style="
-        border:0; border-radius:14px; padding:14px 18px; font-weight:900; font-size:16px; cursor:pointer; color:#fff;
-        background:linear-gradient(90deg, rgba(0,255,209,.95), rgba(73,171,255,.95), rgba(165,96,255,.95));
-        box-shadow:0 18px 45px rgba(0,0,0,.35), 0 10px 28px rgba(0,255,209,.14);
-      ">Start My English Journey →</button>
-      <div style="margin-top:10px; font-size:13px; opacity:.75;">Secure checkout • Instant access</div>
-    </div>
-  `;
-
-  // Button click -> checkout
-  document.getElementById("enterSchoolBtn")?.addEventListener("click", () => {
-    window.location.href = "/checkout"; // <-- your payment page
-  });
 }
 
 // Run safely even if script loads before DOM
@@ -1690,5 +1692,4 @@ if (document.readyState === "loading") {
 } else {
   mountWWV();
 }
-
 })(); // ✅ end of IIFE (only if you started the file with an IIFE)
