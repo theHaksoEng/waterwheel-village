@@ -1567,19 +1567,29 @@ setupMic() {
     if (this.ui.chat) this.ui.chat.scrollTop = this.ui.chat.scrollHeight;
   };
 
-  const flushSpeech = () => {
+const flushSpeech = () => {
     clearTimeout(this.holdTimer);
-    const toSend = (this.speechBuf || "").trim();
-    this.speechBuf = ""; 
     
-    if (!toSend) return;
-
-    // Safety Gate
-    if (this.isProcessing) {
-      console.warn("flushSpeech blocked: Chat busy.");
+    // 1. Grab text and IMMEDIATELY wipe the buffer
+    const toSend = (this.speechBuf || "").trim();
+    
+    // 2. STOP if empty OR if it's the exact same thing we just sent
+    if (!toSend || toSend === this.lastSentText) {
+      this.speechBuf = ""; 
       return;
     }
 
+    // 3. Gatekeeper Check
+    if (this.isProcessing) {
+      console.warn("Mic flush blocked: System busy.");
+      return;
+    }
+
+    // 4. Record this text so we don't send it again in a loop
+    this.lastSentText = toSend;
+    this.speechBuf = ""; 
+
+    console.log("Mic sending UNIQUE message:", toSend);
     this.addMsg("user", toSend);
     this.updateLearnedFromText(toSend);
     if (this.ui.input) this.ui.input.value = "";
@@ -1596,10 +1606,14 @@ setupMic() {
     console.log("Mic button clicked. Active:", this.recActive);
     
     if (this.recActive) {
-      flushSpeech();
-      try { rec.stop(); } catch(e) {}
+      this.rec.stop(); 
+      flushSpeech();   
       return;
     }
+    
+    // Reset flags for a fresh start
+    this.lastSentText = ""; 
+    this.speechBuf = "";
 
     if (!this.primed && navigator.mediaDevices) {
       try {
@@ -1615,7 +1629,6 @@ setupMic() {
     this.recActive = true;
     this.ui.mic.classList.add("rec");
     this.ui.mic.textContent = "Stop";
-    this.speechBuf = "";
     try { rec.start(); } catch(e) { console.error("Mic start error:", e); }
   });
 
@@ -1625,8 +1638,11 @@ setupMic() {
     const transcript = latest[0].transcript.trim();
 
     if (transcript) {
-      this.speechBuf = transcript;
-      resetPauseTimer();
+      // 5. Only queue the timer if it's actually NEW words
+      if (transcript !== this.lastSentText) {
+         this.speechBuf = transcript;
+         resetPauseTimer();
+      }
     }
     showInterim(latest.isFinal ? "" : transcript);
   };
