@@ -165,7 +165,7 @@ class WaterwheelChat extends HTMLElement {
     super();
     this.demo = isDemoMode;
     this.activeCharacter = this.activeCharacter || "mcarthur";
-
+    this.isProcessing = false; // The safety lock
     this.starting = false;
 
     // Attributes / backend normalize
@@ -1352,10 +1352,14 @@ for (const p of parts) {
   }
 }
 
-// Chat
+// --- REPLACE FROM HERE ---
 async send() {
+  // 1. GATEKEEPER: Stop if we are already busy
+  if (this.isProcessing) return;
+
   const text = this.ui.input.value.trim();
   if (!text) return;
+
   this.addMsg("user", text);
   this.updateLearnedFromText(text);
   this.ui.input.value = "";
@@ -1363,17 +1367,24 @@ async send() {
 }
 
 async sendText(text, isVoice) {
+  // 2. GATEKEEPER: Prevent the mic from double-firing
+  if (this.isProcessing) {
+    console.warn("Blocked a duplicate sendText call.");
+    return;
+  }
+
   console.log("sendText ENTERED", { text, isVoice, voice: this.voice });
+  
+  this.isProcessing = true; // LOCK the gate
   this.addTyping(true);
 
-  // ✅ demo-safe name (because #name input is hidden on demo page)
   const userName =
     (this.ui && this.ui.name && this.ui.name.value)
       ? this.ui.name.value.trim()
       : "friend";
 
   try {
-const r = await fetchWithRetry(this.backend + "/chat", {
+    const r = await fetchWithRetry(this.backend + "/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1387,11 +1398,8 @@ const r = await fetchWithRetry(this.backend + "/chat", {
     });
 
     console.log("SENDTEXT fetch done. status=", r.status, "ok=", r.ok);
-
     const d = await r.json().catch(() => ({}));
     console.log("SENDTEXT response json:", d);
-
-    this.addTyping(false);
 
     if (!r.ok) {
       console.error("SENDTEXT HTTP error:", r.status, d);
@@ -1411,7 +1419,6 @@ const r = await fetchWithRetry(this.backend + "/chat", {
 
     if (canVoice) {
       const vid = d.voiceId || this.lastVoiceId || MCARTHUR_VOICE;
-
       const parts = String(reply || "")
         .split(/(?<=[.!?])\s+/)
         .map((s) => s.trim())
@@ -1426,23 +1433,25 @@ const r = await fetchWithRetry(this.backend + "/chat", {
       }
     }
 
-   if (d.newlyLearned) this.mergeNewlyLearned(d.newlyLearned);
+    if (d.newlyLearned) this.mergeNewlyLearned(d.newlyLearned);
 
-// ✅ NEW: backend tells us the milestone number (10, 20, 30...)
-if (d.milestone) this.celebrateMilestone(d.milestone);
-
-this.handleMilestones();
+    // ✅ PRESERVED: Milestone logic
+    if (d.milestone) this.celebrateMilestone(d.milestone);
+    this.handleMilestones();
 
     console.log("SENDTEXT done. msg count now =", this.ui.chat?.children?.length);
     return d;
+
   } catch (e) {
     console.error("SENDTEXT error:", e);
-    this.addTyping(false);
     this.addMsg("bot", "Sorry, something went wrong sending your message.");
     throw e;
+  } finally {
+    // 3. UNLOCK the gate and hide typing (no matter what happened)
+    this.addTyping(false);
+    this.isProcessing = false; 
   }
 }
-
 
 // Mic with REAL 6-second pause-to-send — NO MORE DUPLICATION
 setupMic() {
