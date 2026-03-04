@@ -1424,22 +1424,37 @@ async send() {
 
       if (d.newlyLearned) this.mergeNewlyLearned(d.newlyLearned);
 
-      // ✅ MILESTONE LOGIC (Kept exactly as you had it)
-      if (d.milestone) this.celebrateMilestone(d.milestone);
-      if (typeof this.handleMilestones === 'function') this.handleMilestones();
-
-      console.log("SENDTEXT done. msg count =", this.ui.chat?.children?.length);
-      return d;
-
-    } catch (e) {
-      console.error("SENDTEXT error:", e);
-      this.addMsg("bot", "Sorry, I had a little trouble. Can you say that again?");
-    } finally {
-      // 2. IMPORTANT: This opens the gate for the next message (Written or Voice)
-      this.addTyping(false);
-      this.isProcessing = false; 
+  // ✅ SAFER MILESTONE LOGIC
+    try {
+      // Only try to celebrate if the function actually exists
+      if (d.milestone && typeof this.celebrateMilestone === 'function') {
+        this.celebrateMilestone(d.milestone);
+      }
+      
+      if (typeof this.handleMilestones === 'function') {
+        this.handleMilestones();
+      }
+    } catch (milestoneError) {
+      // If milestones fail, don't let it kill the whole chat!
+      console.warn("Milestone display failed, but continuing chat:", milestoneError);
     }
+
+    console.log("SENDTEXT done. msg count =", this.ui.chat?.children?.length);
+    return d; // Success!
+
+  } catch (e) {
+    console.error("SENDTEXT error:", e);
+    // If we hit an error, tell the user so they aren't staring at silence
+    this.addMsg("bot", "I'm sorry, I missed that. Could you try typing it?");
+  } finally {
+    // 2. THE EMERGENCY RELEASE
+    // This runs NO MATTER WHAT (Success or Error). 
+    // It is the only way to make the "Written Text" work again.
+    this.addTyping(false);
+    this.isProcessing = false; 
+    console.log("Gate reset: isProcessing is now false.");
   }
+}
 
 // Mic with REAL 6-second pause-to-send — NO MORE DUPLICATION
 setupMic() {
@@ -1479,17 +1494,26 @@ setupMic() {
     this.ui.chat.scrollTop = this.ui.chat.scrollHeight;
   };
 
-  const flushSpeech = () => {
+ const flushSpeech = () => {
     clearTimeout(this.holdTimer);
+    
     const toSend = this.speechBuf.trim();
-    this.speechBuf = "";
-    if (toSend) {
-      this.addMsg("user", toSend);
-      this.updateLearnedFromText(toSend);
-      this.ui.input.value = "";
-      this.sendText(toSend, true);
+    this.speechBuf = ""; // Clear buffer immediately so it can't be sent twice
+    
+    if (!toSend) return;
+
+    // Safety Gate: If the bot is already thinking/typing, stop here!
+    if (this.isProcessing) {
+      console.warn("flushSpeech blocked: Chat is currently busy.");
+      return;
     }
-    // Mic stays ON after sending (continuous conversation) — click "Stop" only if you want to pause
+
+    this.addMsg("user", toSend);
+    this.updateLearnedFromText(toSend);
+    this.ui.input.value = "";
+    
+    // Send to backend
+    this.sendText(toSend, true);
   };
 
   // Simple timer reset on any speech activity
