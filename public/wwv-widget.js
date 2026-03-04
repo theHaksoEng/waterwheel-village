@@ -1444,7 +1444,7 @@ this.handleMilestones();
 }
 
 
-// Mic with REAL 6-second pause-to-send (fixed for browser quirks)
+// Mic with REAL 6-second pause-to-send — NO MORE DUPLICATION
 setupMic() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   const isHttps = location.protocol === "https:";
@@ -1470,7 +1470,7 @@ setupMic() {
   rec.maxAlternatives = 1;
   this.rec = rec;
 
-  this.ui.micInfo.textContent = "Click mic → speak naturally → wait 6 full seconds of silence = auto-send";
+  this.ui.micInfo.textContent = "Click mic → speak naturally → wait 6 seconds of silence = auto-send";
 
   const showInterim = (t) => {
     if (!this._interimNode) {
@@ -1478,10 +1478,7 @@ setupMic() {
       this.ui.chat.appendChild(this._interimNode);
     }
     this._interimNode.textContent = t || "";
-    if (!t) {
-      this._interimNode.remove();
-      this._interimNode = null;
-    }
+    if (!t) this._interimNode.remove(), this._interimNode = null;
     this.ui.chat.scrollTop = this.ui.chat.scrollHeight;
   };
 
@@ -1495,21 +1492,18 @@ setupMic() {
       this.ui.input.value = "";
       this.sendText(toSend, true);
     }
-    // Do NOT auto-stop mic here — user can keep talking if they want
+    // Mic stays ON after sending (continuous conversation) — click "Stop" only if you want to pause
   };
 
-  // 🔥 KEY FIX: Reset timer on EVERY bit of speech (interim + final)
-  const resetPauseTimer = (newText = "") => {
-    if (newText && newText.trim()) {
-      this.speechBuf += (this.speechBuf ? " " : "") + newText.trim();
-    }
+  // Simple timer reset on any speech activity
+  const resetPauseTimer = () => {
     clearTimeout(this.holdTimer);
     this.holdTimer = setTimeout(flushSpeech, this.PAUSE_GRACE_MS);
   };
 
   this.ui.mic.addEventListener("click", async () => {
     if (this.recActive) {
-      flushSpeech();        // manual stop = send now
+      flushSpeech();
       this.stopMic();
       return;
     }
@@ -1525,40 +1519,35 @@ setupMic() {
       }
     }
 
-    this.restartWanted = true;
     this.recActive = true;
     this.ui.mic.classList.add("rec");
     this.ui.mic.textContent = "Stop";
     this.ui.micErr.textContent = "";
-    this.speechBuf = "";           // fresh buffer
+    this.speechBuf = "";
     try { rec.start(); } catch {}
   });
 
   rec.onresult = (e) => {
-    let interim = "";
-    for (let i = e.resultIndex; i < e.results.length; i++) {
-      const t = e.results[i][0].transcript.trim();
-      if (t) {
-        if (e.results[i].isFinal) {
-          resetPauseTimer(t);        // final → commit + reset
-        } else {
-          interim += t + " ";
-        }
-      }
+    if (!e.results.length) return;
+
+    // 🔥 THE FIX: Take the engine’s latest full transcript (overwrite, never append)
+    const latest = e.results[e.results.length - 1];
+    const transcript = latest[0].transcript.trim();
+
+    if (transcript) {
+      this.speechBuf = transcript;   // ← This single line kills all duplication
+      resetPauseTimer();
     }
-    if (interim) {
-      resetPauseTimer(interim);      // ←←← THIS WAS MISSING: interim also resets timer!
-      showInterim(interim);
-    } else {
-      showInterim("");
-    }
+
+    // Show live interim (gray text)
+    showInterim(latest.isFinal ? "" : transcript);
   };
 
   rec.onstart = () => showInterim("(listening...)");
   rec.onsoundstart = () => showInterim("(capturing speech...)");
 
   rec.onerror = (ev) => {
-    if (ev.error === "no-speech") this.ui.micErr.textContent = "No speech heard. Try again.";
+    if (ev.error === "no-speech") this.ui.micErr.textContent = "No speech heard.";
     else if (ev.error === "not-allowed") this.ui.micErr.textContent = "Mic blocked in site settings.";
     else if (ev.error !== "aborted") this.ui.micErr.textContent = "Mic error: " + ev.error;
   };
