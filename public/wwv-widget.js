@@ -1528,22 +1528,17 @@ async send() {
   }
 }
 
-// Mic with REAL 6-second pause-to-send — NO MORE DUPLICATION
 setupMic() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   const isHttps = location.protocol === "https:";
   const isTop = window.top === window.self;
 
   if (!SR) {
-    this.ui.micInfo.textContent = "Mic not supported in this browser.";
+    if (this.ui.micInfo) this.ui.micInfo.textContent = "Mic not supported.";
     return;
   }
   if (!isHttps) {
-    this.ui.micInfo.textContent = "Mic requires HTTPS.";
-    return;
-  }
-  if (!isTop) {
-    this.ui.micInfo.textContent = "Open the published page (not the editor) to use the mic.";
+    if (this.ui.micInfo) this.ui.micInfo.textContent = "Mic requires HTTPS.";
     return;
   }
 
@@ -1554,67 +1549,90 @@ setupMic() {
   rec.maxAlternatives = 1;
   this.rec = rec;
 
-  this.ui.micInfo.textContent = "Click mic → speak naturally → wait 6 seconds of silence = auto-send";
+  // Ensure this is set (default to 3 seconds if missing)
+  this.PAUSE_GRACE_MS = this.PAUSE_GRACE_MS || 3000;
 
   const showInterim = (t) => {
     if (!this._interimNode) {
-      this._interimNode = ce("div", { className: "interim" });
-      this.ui.chat.appendChild(this._interimNode);
+      // FIX: Use standard document.createElement instead of 'ce'
+      this._interimNode = document.createElement("div");
+      this._interimNode.className = "interim";
+      if (this.ui.chat) this.ui.chat.appendChild(this._interimNode);
     }
     this._interimNode.textContent = t || "";
-    if (!t) this._interimNode.remove(), this._interimNode = null;
-    this.ui.chat.scrollTop = this.ui.chat.scrollHeight;
+    if (!t && this._interimNode) {
+      this._interimNode.remove();
+      this._interimNode = null;
+    }
+    if (this.ui.chat) this.ui.chat.scrollTop = this.ui.chat.scrollHeight;
   };
 
- const flushSpeech = () => {
+  const flushSpeech = () => {
     clearTimeout(this.holdTimer);
-    
-    // 1. Grab the text and IMMEDIATELY wipe the buffer
-    const toSend = this.speechBuf.trim();
+    const toSend = (this.speechBuf || "").trim();
     this.speechBuf = ""; 
     
-    // 2. If the buffer was already empty, stop here.
     if (!toSend) return;
 
-    // 3. Check the gate
+    // Safety Gate
     if (this.isProcessing) {
-      console.warn("flushSpeech blocked: Chat is busy.");
+      console.warn("flushSpeech blocked: Chat busy.");
       return;
     }
 
-    // 4. Send the message
-    console.log("Mic sending unique message:", toSend);
     this.addMsg("user", toSend);
     this.updateLearnedFromText(toSend);
-    this.ui.input.value = "";
+    if (this.ui.input) this.ui.input.value = "";
+    
     this.sendText(toSend, true);
   };
 
+  const resetPauseTimer = () => {
+    clearTimeout(this.holdTimer);
+    this.holdTimer = setTimeout(flushSpeech, this.PAUSE_GRACE_MS);
+  };
+
+  this.ui.mic.addEventListener("click", async () => {
+    console.log("Mic button clicked. Active:", this.recActive);
+    
+    if (this.recActive) {
+      flushSpeech();
+      try { rec.stop(); } catch(e) {}
+      return;
+    }
+
+    if (!this.primed && navigator.mediaDevices) {
+      try {
+        const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+        s.getTracks().forEach(t => t.stop());
+        this.primed = true;
+      } catch (e) {
+        if (this.ui.micErr) this.ui.micErr.textContent = "Mic permission denied.";
+        return;
+      }
+    }
+
+    this.recActive = true;
+    this.ui.mic.classList.add("rec");
+    this.ui.mic.textContent = "Stop";
+    this.speechBuf = "";
+    try { rec.start(); } catch(e) { console.error("Mic start error:", e); }
+  });
+
   rec.onresult = (e) => {
     if (!e.results.length) return;
-
     const latest = e.results[e.results.length - 1];
     const transcript = latest[0].transcript.trim();
 
     if (transcript) {
-      // Only update if it's different to prevent jitter
       this.speechBuf = transcript;
       resetPauseTimer();
     }
-
-    // 5. CRITICAL: Only show interim if it's NOT final. 
-    // If it is final, we let flushSpeech handle the UI.
     showInterim(latest.isFinal ? "" : transcript);
   };
+
   rec.onstart = () => showInterim("(listening...)");
-  rec.onsoundstart = () => showInterim("(capturing speech...)");
-
-  rec.onerror = (ev) => {
-    if (ev.error === "no-speech") this.ui.micErr.textContent = "No speech heard.";
-    else if (ev.error === "not-allowed") this.ui.micErr.textContent = "Mic blocked in site settings.";
-    else if (ev.error !== "aborted") this.ui.micErr.textContent = "Mic error: " + ev.error;
-  };
-
+  
   const finish = () => {
     this.recActive = false;
     this.ui.mic.classList.remove("rec");
@@ -1623,7 +1641,10 @@ setupMic() {
   };
 
   rec.onend = finish;
-  rec.onaudioend = finish;
+  rec.onerror = (ev) => {
+    console.error("Mic Error:", ev.error);
+    finish();
+  };
 }
 downloadTranscript() {
   const nodes = this.ui.chat.querySelectorAll("div");
