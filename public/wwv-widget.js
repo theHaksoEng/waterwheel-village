@@ -32,8 +32,9 @@ console.log("WWV script loaded ✅", new Date().toISOString());
 
   let wwvMusicStarted = false;
 
-  function startWWVMusic() {
-    if (wwvMusicStarted) return;
+function startWWVMusic() {
+  if (wwvMusicStarted) return;   // prevents restarting
+  wwvMusicStarted = true;
 
     const audio = document.getElementById("wwvBgMusic");
     if (!audio) return;
@@ -1316,11 +1317,14 @@ const url = `${this.backend}/lesson/${encodeURIComponent(m)}/${encodeURIComponen
       throw new Error(`Lesson HTTP ${r.status}: ${errText}`);
     }
 
-    const d = await r.json();
-    console.log("Lesson response:", d);
+  const d = await r.json();
+console.log("Lesson response:", d);
 
-    if (d.welcomeText) {
-      this.addMsg("bot", d.welcomeText);
+// Reset background music for new lesson
+wwvMusicStarted = false;
+
+if (d.welcomeText) {
+  this.addMsg("bot", d.welcomeText);
       if (this.voice) {
         await this.unlockAudio();
         this.enqueueSpeak(d.welcomeText, MCARTHUR_VOICE);
