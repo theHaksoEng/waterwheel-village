@@ -221,7 +221,7 @@ this.activeCharacter = "mcarthur";
       this.restartWanted = false;
       this.speechBuf = "";
       this.holdTimer = null;
-      this.PAUSE_GRACE_MS = 8000;
+      this.PAUSE_GRACE_MS = 9000;
 
       // Build shadow DOM
       this.attachShadow({ mode: "open" });
@@ -1656,11 +1656,17 @@ const flushSpeech = () => {
     showInterim("");
   };
 
-  rec.onend = finish;
-  rec.onerror = (ev) => {
-    console.error("Mic Error:", ev.error);
-    finish();
-  };
+ rec.onend = () => {
+  finish();
+  if (this.restartWanted && this.rec) {
+    setTimeout(() => this.rec.start(), 250);
+  }
+};
+
+rec.onerror = (ev) => {
+  console.error("Mic Error:", ev.error);
+  finish();
+};
 }
 downloadTranscript() {
   const nodes = this.ui.chat.querySelectorAll("div");
