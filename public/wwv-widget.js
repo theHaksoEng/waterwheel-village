@@ -870,8 +870,11 @@ connectedCallback() {
     }
 
     try {
-      const userName = (this.ui?.name?.value || "friend").trim();
-      const r = await fetchWithRetry(this.backend + "/chat", {
+     const userName = (this.ui?.name?.value || "friend").trim();
+
+console.log("SENDTEXT outgoing character =", this.activeCharacter);
+
+const r = await fetchWithRetry(this.backend + "/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -885,7 +888,10 @@ connectedCallback() {
       });
 
       const d = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error((d && d.error) || "Chat failed");
+
+console.log("SENDTEXT returned character =", d.character);
+
+if (!r.ok) throw new Error((d && d.error) || "Chat failed");
 
       const reply = d.text || "(no response)";
       if (d.voiceId) this.lastVoiceId = d.voiceId;
