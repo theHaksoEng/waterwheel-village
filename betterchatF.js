@@ -690,6 +690,21 @@ app.post("/chat", async (req, res) => {
     demo,
     character
   } = req.body || {};
+
+  // In /chat POST, after const { ... } = req.body;
+const messageId = req.body.messageId;
+if (!messageId) return res.status(400).json({ error: "Missing messageId" });
+const key = `processed:${sessionId}:${messageId}`;
+if (await redis.exists(key)) {
+  console.log(`Skipping duplicate message: ${messageId}`);
+  // Optionally reload and return last response
+  const messages = await loadHistory(sessionId);
+  const lastReply = messages[messages.length - 1]?.content || "";
+  return res.json({ text: lastReply, /* ... other fields */ });
+}
+await redis.set(key, "1", "EX", 300); // 5min TTL
+
+// Then proceed with normal logic
   const sessionId = providedSessionId || uuidv4();
   const sanitizedText = rawText ? String(rawText).trim() : "";
   console.log("📩 Incoming chat request:", {
