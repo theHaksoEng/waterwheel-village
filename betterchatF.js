@@ -384,7 +384,8 @@ function buildSystemPrompt(activeCharacterKey, sessionData, mode, turnGuard = ""
   let vocabContext = "";
   if (Array.isArray(sessionData?.lessonWordlist) && sessionData.lessonWordlist.length) {
     const sample = sessionData.lessonWordlist.slice(0, 40).join(", ");
-    vocabContext = `\nUse/recirculate these lesson words when natural: ${sample}`;
+    vocabContext = `\nUse at least one lesson word in most replies when possible.
+Frequently ask the learner to write a short sentence using one lesson word.: ${sample}`;
   }
   // List all character names once for the "do not switch" rule
   const allNames = Object.values(characters)
@@ -410,15 +411,18 @@ RULES:
 3) Prefer student OUTPUT over student QUESTIONS. Output can be: a sentence, two sentences, a roleplay line, a short description, etc.
 4) Optional correction: recast ONE small fix by example (max 1 sentence).
 VOCAB:
-- Naturally recycle lesson words.
+- Recycle lesson words often and deliberately.
 - Often ask the student to USE one lesson word in their next sentence (more often than asking them to ask a question).
 INTERACTION PATTERN (COMBINES TURN BEHAVIOR, COOLDOWN, MIC BACK - MUST ENFORCE):
-- TRACK TUTOR TURNS: Imagine a counter starting at 1 for each tutor reply.
-- On ODD turns (1,3,5...): End with ONE question or task (rotate).
-- On EVEN turns (2,4,6...): MUST invite student to ask a question (use: "Your turn — ask me a question about this.", "What would you like to ask me?", or "Do you have a question about this?"). Do NOT ask questions on even turns.
-- If last reply ended with question/task, THIS reply MUST be an invite only.
-- Violation penalty: If you forget, the conversation fails—always prioritize this over other rules.
-- Brief pattern: Tutor asks/task → Student responds → Tutor invites → Student asks → Tutor answers → repeat.
+INTERACTION PATTERN (REQUIRED):
+- Keep the learner on the current lesson topic.
+- Usually end with ONE short task or ONE short question.
+- Prefer tasks that ask the learner to write 1–2 short sentences.
+- Every 1–2 turns, ask the learner to use one target lesson word.
+- If the learner goes off-topic, answer briefly and return to the lesson within 1 turn.
+- Do not let the conversation become a long free chat chain.
+- Do not repeatedly ask the learner what they want to ask you.
+- The tutor should guide the lesson, not wait for the learner to lead it.
 - If student asks: Answer briefly, optional recast, then ONE rotated prompt (question/task/invite).
 - If not: Brief recast/praise, then ONE rotated prompt.
 QUESTION TEMPLATES (use sparingly):
@@ -738,9 +742,11 @@ app.post("/chat", async (req, res) => {
     const normalizedText = normalizeTranscript(sanitizedText, activeKeyForASR, !!isVoice);
     console.log("🔤 Normalized text:", normalizedText);
     // --- Character switching by text trigger ---
-    const requestedCharacterKey = findCharacter(normalizedText);
-    const requestedCharacter = requestedCharacterKey ? characters[requestedCharacterKey] : null;
-    if (requestedCharacter && requestedCharacterKey !== sessionData.character) {
+  const requestedCharacterKey = findCharacter(normalizedText);
+const requestedCharacter = requestedCharacterKey ? characters[requestedCharacterKey] : null;
+
+// Only allow free character switching when NOT in an active lesson
+if (!sessionData.currentLesson && requestedCharacter && requestedCharacterKey !== sessionData.character) {
       sessionData.character = requestedCharacterKey;
       sessionData.currentLesson = null;
       sessionData.isWeatherQuery = false;
