@@ -853,69 +853,6 @@ connectedCallback() {
     // This often maps to the 'Send' button
     await this.handleSendAction();
   }
-
-  async sendText(text, isVoice) {
-    if (this.isProcessing) {
-        console.warn("Blocked duplicate call to sendText");
-        return;
-    }
-    this.isProcessing = true;
-    this.addTyping(true);
-    // Only add user bubble if NOT coming from voice
-    try {
-        const userName = (this.ui?.name?.value || "friend").trim();
-        console.log("SENDTEXT outgoing character =", this.activeCharacter);
-        const messageId = crypto.randomUUID();  // Generate unique messageId here (use crypto for browser-native UUID)
-        const r = await fetchWithRetry(this.backend + "/chat", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                text,
-                sessionId: this.sessionId,
-                isVoice: !!isVoice,
-                name: userName,
-                character: this.activeCharacter,
-                demo: !!this.demo,
-                messageId: messageId  // Add to body here
-            }),
-        });
-        const d = await r.json().catch(() => ({}));
-        console.log("SENDTEXT returned character =", d.character);
-        if (!r.ok) throw new Error((d && d.error) || "Chat failed");
-        const reply = d.text || "(no response)";
-        if (d.voiceId) this.lastVoiceId = d.voiceId;
-        this.addMsg("bot", reply);
-        // --- Voice/TTS Logic ---
-        const charKey = d.character || this.activeCharacter || "mcarthur";
-        const usedByChar = this.demoVoicedByCharacter?.[charKey] || 0;
-        const canVoice = this.voice && (!this.demo || (this.demoVoiceUsed < this.demoVoiceMax && usedByChar < 2));
-        if (canVoice) {
-            const vid = d.voiceId || this.lastVoiceId || (typeof MCARTHUR_VOICE !== 'undefined' ? MCARTHUR_VOICE : null);
-            const parts = String(reply || "").split(/(?<=[.!?])\s+/).map(s => s.trim()).filter(Boolean);
-            for (const p of parts) this.enqueueSpeak(p, vid);
-            if (this.demo) {
-                this.demoVoiceUsed++;
-                this.demoVoicedByCharacter = this.demoVoicedByCharacter || {};
-                this.demoVoicedByCharacter[charKey] = usedByChar + 1;
-            }
-        }
-        if (d.newlyLearned) this.mergeNewlyLearned(d.newlyLearned);
-        // --- Milestone Logic ---
-        if (d.milestone && typeof this.celebrateMilestone === 'function') {
-            this.celebrateMilestone(d.milestone);
-        }
-        if (typeof this.handleMilestones === 'function') {
-            this.handleMilestones();
-        }
-    } catch (e) {
-        console.error("SENDTEXT Error:", e);
-        this.addMsg("bot", "I'm sorry, I missed that. Could you say it again?");
-    } finally {
-        this.addTyping(false);
-        this.isProcessing = false;
-        console.log("Gate open. Ready for next message.");
-    }
-}
     // Chat bubbles
   addMsg(role, text) {
 if (role === "bot" && !wwvMusicStarted) {
@@ -1230,47 +1167,61 @@ async playSpeakQueue() {
   }
 }
 
-    async pronounceWord(word) {
-      if (!word) return;
+ async pronounceWord(word) {
+  if (!word) return;
 
-      const key = String(word || "").toLowerCase().trim();
-      if (key && this.wordsetEn && this.wordsetEn.has(key)) {
-        this.learned.add(key);
-        this.renderWordlist();
-      }
+  const key = String(word || "").toLowerCase().trim();
+  if (key && this.wordsetEn && this.wordsetEn.has(key)) {
+    this.learned.add(key);
+    this.renderWordlist();
+  }
 
-      const voiceId = this.lastVoiceId || MCARTHUR_VOICE;
-      this.stopMic();
-      this.enqueueSpeak(word, voiceId);
+  const voiceId = this.lastVoiceId || MCARTHUR_VOICE;
+  this.stopMic();
+  this.enqueueSpeak(word, voiceId);
 
-      try {
-        this.addTyping(true);
-const r = await fetchWithRetry(this.backend + "/chat", {
+  try {
+    this.addTyping(true);
 
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            text:
-              'Give a one-line pronunciation tip for: "' +
-              word +
-              '". Use simple hyphenation with CAPITAL stress (e.g., to-MAY-to). Respond with ONLY the tip line.',
-            sessionId: this.sessionId,
-            isVoice: false,
-            name: ((this.ui && this.ui.name && this.ui.name.value) ? this.ui.name.value.trim() : "friend"),
-            character: this.activeCharacter,
-            demo: !!this.demo,
-          }),
-        });
+    const messageId =
+      (window.crypto && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : `msg_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 
-        const d = await r.json().catch(() => ({}));
-        this.addTyping(false);
-        if (r.ok && d.text) this.addMsg("bot", d.text);
-        else this.addMsg("bot", "Say: " + word);
-      } catch (e) {
-        this.addTyping(false);
-        this.addMsg("bot", "Say: " + word);
-      }
+    const r = await fetchWithRetry(this.backend + "/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messageId,
+        text:
+          'Give a one-line pronunciation tip for: "' +
+          word +
+          '". Use simple hyphenation with CAPITAL stress (e.g., to-MAY-to). Respond with ONLY the tip line.',
+        sessionId: this.sessionId,
+        isVoice: false,
+        name: ((this.ui && this.ui.name && this.ui.name.value)
+          ? this.ui.name.value.trim()
+          : "friend"),
+        character: this.activeCharacter,
+        demo: !!this.demo,
+      }),
+    });
+
+    const d = await r.json().catch(() => ({}));
+    this.addTyping(false);
+
+    if (!r.ok) {
+      console.error("pronounceWord chat error:", d);
     }
+
+    if (r.ok && d.text) this.addMsg("bot", d.text);
+    else this.addMsg("bot", "Say: " + word);
+  } catch (e) {
+    this.addTyping(false);
+    console.error("pronounceWord failed:", e);
+    this.addMsg("bot", "Say: " + word);
+  }
+}
 async unlockAudio() {
   // Standard pattern to unlock audio on a user gesture (Safari/iOS friendly)
   try {
@@ -1423,93 +1374,98 @@ async send() {
     await this.sendText(text, false);
   }
 
-  async sendText(text, isVoice) {
-    // 1. GATEKEEPER: Prevent the mic from double-firing
-    if (this.isProcessing) {
-      console.warn("Blocked a duplicate sendText call.");
-      return;
+async sendText(text, isVoice) {
+  if (this.isProcessing) {
+    console.warn("Blocked a duplicate sendText call.");
+    return;
+  }
+
+  console.log("sendText ENTERED", { text, isVoice, voice: this.voice });
+
+  this.isProcessing = true;
+  this.addTyping(true);
+
+  const userName = (this.ui?.name?.value || "friend").trim();
+  const messageId =
+    (window.crypto && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : `msg_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+
+  try {
+    const r = await fetchWithRetry(this.backend + "/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messageId,
+        text,
+        sessionId: this.sessionId,
+        isVoice: !!isVoice,
+        name: userName,
+        character: this.activeCharacter,
+        demo: !!this.demo,
+      }),
+    });
+
+    console.log("SENDTEXT fetch done. status=", r.status);
+    const d = await r.json().catch(() => ({}));
+
+    if (!r.ok) {
+      throw new Error((d && d.error) || `HTTP ${r.status}`);
     }
 
-    console.log("sendText ENTERED", { text, isVoice, voice: this.voice });
-    
-    this.isProcessing = true; // LOCK the gate
-    this.addTyping(true);
+    const reply = d.text || "(no response)";
+    if (d.voiceId) this.lastVoiceId = d.voiceId;
 
-    const userName = (this.ui?.name?.value || "friend").trim();
+    this.addMsg("bot", reply);
+
+    const charKey = d.character || this.activeCharacter || "mcarthur";
+    const usedByChar = this.demoVoicedByCharacter?.[charKey] || 0;
+    const canVoice =
+      this.voice &&
+      (!this.demo || (this.demoVoiceUsed < this.demoVoiceMax && usedByChar < 2));
+
+    if (canVoice) {
+      const vid =
+        d.voiceId ||
+        this.lastVoiceId ||
+        (typeof MCARTHUR_VOICE !== "undefined" ? MCARTHUR_VOICE : null);
+
+      const parts = String(reply || "")
+        .split(/(?<=[.!?])\s+/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+
+      for (const p of parts) this.enqueueSpeak(p, vid);
+
+      if (this.demo) {
+        this.demoVoiceUsed++;
+        this.demoVoicedByCharacter = this.demoVoicedByCharacter || {};
+        this.demoVoicedByCharacter[charKey] = usedByChar + 1;
+      }
+    }
+
+    if (d.newlyLearned) this.mergeNewlyLearned(d.newlyLearned);
 
     try {
-      const r = await fetchWithRetry(this.backend + "/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text,
-          sessionId: this.sessionId,
-          isVoice: !!isVoice,
-          name: userName,
-          character: this.activeCharacter,
-          demo: !!this.demo,
-        }),
-      });
-
-      console.log("SENDTEXT fetch done. status=", r.status);
-      const d = await r.json().catch(() => ({}));
-
-      if (!r.ok) {
-        throw new Error((d && d.error) || "Chat failed");
-      }
-
-      const reply = d.text || "(no response)";
-      if (d.voiceId) this.lastVoiceId = d.voiceId;
-
-      this.addMsg("bot", reply);
-
-      // Handle Voice Output
-      const charKey = d.character || this.activeCharacter || "mcarthur";
-      const usedByChar = this.demoVoicedByCharacter?.[charKey] || 0;
-      const canVoice = this.voice && (!this.demo || (this.demoVoiceUsed < this.demoVoiceMax && usedByChar < 2));
-
-      if (canVoice) {
-        const vid = d.voiceId || this.lastVoiceId || (typeof MCARTHUR_VOICE !== 'undefined' ? MCARTHUR_VOICE : null);
-        const parts = String(reply || "").split(/(?<=[.!?])\s+/).map(s => s.trim()).filter(Boolean);
-        for (const p of parts) this.enqueueSpeak(p, vid);
-
-        if (this.demo) {
-          this.demoVoiceUsed++;
-          this.demoVoicedByCharacter = this.demoVoicedByCharacter || {};
-          this.demoVoicedByCharacter[charKey] = usedByChar + 1;
-        }
-      }
-
-      if (d.newlyLearned) this.mergeNewlyLearned(d.newlyLearned);
-
-  // ✅ SAFER MILESTONE LOGIC
-    try {
-      // Only try to celebrate if the function actually exists
-      if (d.milestone && typeof this.celebrateMilestone === 'function') {
+      if (d.milestone && typeof this.celebrateMilestone === "function") {
         this.celebrateMilestone(d.milestone);
       }
-      
-      if (typeof this.handleMilestones === 'function') {
+
+      if (typeof this.handleMilestones === "function") {
         this.handleMilestones();
       }
     } catch (milestoneError) {
-      // If milestones fail, don't let it kill the whole chat!
       console.warn("Milestone display failed, but continuing chat:", milestoneError);
     }
 
     console.log("SENDTEXT done. msg count =", this.ui.chat?.children?.length);
-    return d; // Success!
-
+    return d;
   } catch (e) {
     console.error("SENDTEXT error:", e);
-    // If we hit an error, tell the user so they aren't staring at silence
-    this.addMsg("bot", "I'm sorry, I missed that. Could you try typing it?");
+    this.addMsg("bot", `Server error: ${e.message}`);
   } finally {
-    // 2. THE EMERGENCY RELEASE
-    // This runs NO MATTER WHAT (Success or Error). 
-    // It is the only way to make the "Written Text" work again.
     this.addTyping(false);
-    this.isProcessing = false; 
+    this.isProcessing = false;
     console.log("Gate reset: isProcessing is now false.");
   }
 }
