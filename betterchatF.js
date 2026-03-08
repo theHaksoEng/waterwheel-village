@@ -42,17 +42,23 @@ const app = express();
 console.log("ROUTES will include /debug/static");
 const PORT = process.env.PORT || 3000;
 // 🔒 CORS MUST come before static files (so /app.js works from WordPress)
-const allowed = ["https://www.aaronhakso.com", "https://aaronhakso.com"];
-app.use(
-cors({
-origin: function (origin, cb) {
-if (!origin) return cb(null, true); // allow no-origin requests
-if (allowed.includes(origin)) return cb(null, true);
-return cb(new Error("Not allowed by CORS: " + origin));
-    },
-credentials: false,
-  })
-);
+const allowed = [
+  "https://www.aaronhakso.com",
+  "https://aaronhakso.com"
+];
+
+app.use(cors({
+  origin: function (origin, cb) {
+    if (!origin) return cb(null, true); // allow curl / server calls
+    if (allowed.includes(origin)) return cb(null, true);
+
+    console.warn("Blocked CORS origin:", origin);
+    return cb(null, false); // reject without throwing error
+  },
+  credentials: false,
+}));
+
+app.options("*", cors());
 // Middleware
 app.use(bodyParser.json({ limit: "10mb" }));
 app.use(bodyParser.urlencoded({ extended: false }));
