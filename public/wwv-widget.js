@@ -1471,93 +1471,71 @@ async sendText(text, isVoice) {
 setupMic() {
   if (this._micSetupDone) return;
   this._micSetupDone = true;
-
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   const isHttps = location.protocol === "https:";
-
   if (!SR) {
     if (this.ui.micInfo) this.ui.micInfo.textContent = "Mic not supported.";
     return;
   }
-
   if (!isHttps) {
     if (this.ui.micInfo) this.ui.micInfo.textContent = "Mic requires HTTPS.";
     return;
   }
-
   const rec = new SR();
   rec.lang = "en-US";
   rec.continuous = true;
   rec.interimResults = true;
   rec.maxAlternatives = 1;
   this.rec = rec;
-
   this.PAUSE_GRACE_MS = this.PAUSE_GRACE_MS || 3000;
   this.speechBuf = "";
   this.lastSentText = "";
-
   const showInterim = (t) => {
     if (!this._interimNode) {
       this._interimNode = document.createElement("div");
       this._interimNode.className = "interim";
       if (this.ui.chat) this.ui.chat.appendChild(this._interimNode);
     }
-
     this._interimNode.textContent = t || "";
-
     if (!t && this._interimNode) {
       this._interimNode.remove();
       this._interimNode = null;
     }
-
     if (this.ui.chat) this.ui.chat.scrollTop = this.ui.chat.scrollHeight;
   };
-
   const flushSpeech = () => {
     clearTimeout(this.holdTimer);
-
     const toSend = (this.speechBuf || "").trim();
     this.speechBuf = "";
-
     if (!toSend) return;
-
     if (toSend === this.lastSentText) {
       console.warn("Blocked duplicate mic transcript:", toSend);
       return;
     }
-
     if (this.isProcessing) {
       console.warn("Mic flush blocked: System busy.");
       return;
     }
-
     this.lastSentText = toSend;
-
     console.log("Mic sending UNIQUE message:", toSend);
     this.addMsg("user", toSend);
     this.updateLearnedFromText(toSend);
     if (this.ui.input) this.ui.input.value = "";
-
     this.sendText(toSend, true);
   };
-
   const resetPauseTimer = () => {
     clearTimeout(this.holdTimer);
     this.holdTimer = setTimeout(flushSpeech, this.PAUSE_GRACE_MS);
   };
-
   this.ui.mic.addEventListener("click", async () => {
     console.log("Mic button clicked. Active:", this.recActive);
-
     if (this.recActive) {
       this.rec.stop();
       flushSpeech();
       return;
     }
-
     this.lastSentText = "";
     this.speechBuf = "";
-
     if (!this.primed && navigator.mediaDevices) {
       try {
         const s = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -1568,40 +1546,39 @@ setupMic() {
         return;
       }
     }
-
     this.recActive = true;
     this.ui.mic.classList.add("rec");
     this.ui.mic.textContent = "Stop";
-
     try {
       rec.start();
     } catch (e) {
       console.error("Mic start error:", e);
     }
   });
-
   rec.onresult = (e) => {
     if (!e.results.length) return;
 
+    // Fix: Concatenate ALL results' transcripts for full accumulation
+    let transcript = '';
+    for (let i = 0; i < e.results.length; ++i) {
+      transcript += e.results[i][0].transcript;
+    }
+    transcript = transcript.trim();
+
     const latest = e.results[e.results.length - 1];
-    const transcript = latest[0].transcript.trim();
 
     if (transcript && transcript !== this.lastSentText) {
       this.speechBuf = transcript;
       resetPauseTimer();
     }
+    showInterim(latest.isFinal ? "" : transcript);  // Show full interim transcript
 
-    showInterim(latest.isFinal ? "" : transcript);
-
-    if (latest.isFinal) {
-      rec.stop();
-    }
+    // Fix: Remove this to allow continuous listening
+    // if (latest.isFinal) { rec.stop(); }
   };
-
   rec.onstart = () => {
     showInterim("(listening...)");
   };
-
   const finish = () => {
     this.recActive = false;
     this.ui.mic.classList.remove("rec");
@@ -1609,11 +1586,9 @@ setupMic() {
     showInterim("");
     clearTimeout(this.holdTimer);
   };
-
   rec.onend = () => {
     finish();
   };
-
   rec.onerror = (ev) => {
     console.error("Mic Error:", ev.error);
     finish();
