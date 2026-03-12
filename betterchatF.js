@@ -1437,6 +1437,7 @@ app.post("/chat", async (req, res) => {
 
       await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
       await saveHistory(sessionId, []);
+      await redis.del(`lessonState:${sessionId}`);
 
       console.log("🔄 Switched to new character:", requestedCharacterKey);
 
@@ -1457,6 +1458,30 @@ app.post("/chat", async (req, res) => {
     // --- Load history ---
     let messages = await loadHistory(sessionId);
 
+        // --- Lesson engine state ---
+    let lessonState = JSON.parse(
+      (await redis.get(`lessonState:${sessionId}`)) || "null"
+    );
+
+    if (!lessonState) {
+      lessonState = initLessonState(sessionData);
+    }
+
+    // Process the student turn only if there is actual user text
+if (normalizedText && normalizedText.length > 0) {
+        const lessonResult = processStudentTurn({
+        lessonState,
+        studentText: normalizedText,
+        sessionData,
+      });
+
+      lessonState = lessonResult.lessonState;
+
+      // Record next prompt type for variation control
+      processTutorPromptChoice(lessonState);
+
+      await redis.set(`lessonState:${sessionId}`, JSON.stringify(lessonState));
+    }
     // --- Demo mode chat limit ---
     const DEMO_MAX_MESSAGES = 11;
     if (demo && messages.length >= DEMO_MAX_MESSAGES - 1) {
@@ -1623,6 +1648,7 @@ app.post("/chat", async (req, res) => {
       activeCharacterKey,
       sessionData,
       isVoice ? "voice" : "text",
+      lessonState,
       combinedGuard
     );
     console.log("🛠 Using systemPrompt:", systemPrompt);
