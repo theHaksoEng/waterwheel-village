@@ -281,21 +281,6 @@ text = text[0].toUpperCase() + text.slice(1);
   }
 return text;
 }
-// === Canon Version + Lore (aligns with your story) ===
-const WWV_VERSION = "2025.11.12";
-const VILLAGE_CORE = `
-Waterwheel Village is a small learning community in northern Finland where people from many cultures live, work, and study together.
-
-English is used as a shared bridge language in daily life, education, and cooperation.
-
-The village believes:
-• Everyone can learn.
-• Everyone can teach something.
-• Mistakes help growth.
-• Kindness and steady effort matter.
-
-Life here is practical, peaceful, and community-centered.
-`.trim();
 // Validate characters early (fail fast in boot)
 (function validateCharacters() {
 const ids = Object.keys(characters);
@@ -345,100 +330,696 @@ function findCharacter(text) {
   return null;
 }
 
-function buildCoachMode(sessionData) {
+// =====================================================
+// WATERWHEEL LESSON ENGINE + PROMPT BUILDER
+// Paste this below your characters / aliases section
+// =====================================================
+
+const WWV_VERSION = "2026.03.12";
+
+// --- Short core lore only (keep long lore elsewhere if needed) ---
+const VILLAGE_CORE = `
+Waterwheel Village is a small learning community in northern Finland where people from many cultures live, work, and study together.
+
+English is the shared bridge language for daily life, work, and learning.
+
+The village believes:
+• Everyone can learn.
+• Everyone can teach something.
+• Mistakes help growth.
+• Kindness and steady effort matter.
+
+Life here is practical, peaceful, and community-centered.
+`.trim();
+
+// --- Lesson stages ---
+const LESSON_STAGES = {
+  WARMUP: "warmup",
+  INTRO: "intro",
+  ACTIVATE: "activate",
+  GUIDED: "guided",
+  SCENARIO: "scenario",
+  CONSOLIDATE: "consolidate",
+  CLOSE: "close",
+  DONE: "done",
+};
+
+// --- Prompt types ---
+const PROMPT_TYPES = [
+  "question",
+  "description",
+  "completion",
+  "comparison",
+  "roleplay",
+  "choice",
+  "reflection",
+];
+
+// =====================================================
+// STATE HELPERS
+// =====================================================
+
+function initLessonState(sessionData = {}) {
+  const wordlist = Array.isArray(sessionData?.lessonWordlist)
+    ? sessionData.lessonWordlist
+    : [];
+
+  return {
+    chapterId: sessionData?.currentLesson?.id || "chapter-unknown",
+    stage: sessionData?.isFirstChapter ? LESSON_STAGES.WARMUP : LESSON_STAGES.INTRO,
+    turnsInStage: 0,
+    totalTurns: 0,
+
+    vocab: wordlist.map((word) => ({
+      word: String(word).trim(),
+      status: "unused", // unused | recognized | produced | mastered
+      producedCount: 0,
+    })),
+
+    recentPromptTypes: [],
+    turnsSinceVocabPush: 99,
+    turnsSinceVillageMention: 99,
+    turnsSincePraise: 99,
+
+    driftCount: 0,
+    unsafeCount: 0,
+    nonsenseCount: 0,
+
+    studentRichTurn: false,
+    studentAskedQuestion: false,
+    completionReady: false,
+    chapterComplete: false,
+  };
+}
+
+function bumpLessonCounters(state) {
+  state.totalTurns += 1;
+  state.turnsInStage += 1;
+  state.turnsSinceVocabPush += 1;
+  state.turnsSinceVillageMention += 1;
+  state.turnsSincePraise += 1;
+  return state;
+}
+
+function setStage(state, nextStage) {
+  if (state.stage !== nextStage) {
+    state.stage = nextStage;
+    state.turnsInStage = 0;
+  }
+  return state;
+}
+
+// =====================================================
+// TEXT ANALYSIS HELPERS
+// =====================================================
+
+function normalizeWordForMatch(word) {
+  return String(word || "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s-]/gu, "")
+    .trim();
+}
+
+function textContainsWord(text, word) {
+  const t = normalizeWordForMatch(text);
+  const w = normalizeWordForMatch(word);
+  if (!w) return false;
+
+  // Exact-ish word boundary match first
+  const escaped = w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const regex = new RegExp(`(^|\\s)${escaped}(\\s|$)`, "i");
+  if (regex.test(t)) return true;
+
+  // Fallback for simple plural/punctuation cases
+  return t.includes(w);
+}
+
+function updateVocabStatusesFromStudentText(state, studentText) {
+  const text = String(studentText || "");
+  if (!text.trim()) return state;
+
+  for (const item of state.vocab) {
+    if (textContainsWord(text, item.word)) {
+      item.producedCount += 1;
+      if (item.producedCount >= 2) {
+        item.status = "mastered";
+      } else if (item.producedCount >= 1) {
+        item.status = "produced";
+      }
+    }
+  }
+
+  return state;
+}
+
+function getVocabProgress(state) {
+  const total = state.vocab.length || 1;
+  const produced = state.vocab.filter(
+    (v) => v.status === "produced" || v.status === "mastered"
+  ).length;
+  const mastered = state.vocab.filter((v) => v.status === "mastered").length;
+
+  return {
+    total,
+    produced,
+    mastered,
+    ratio: produced / total,
+  };
+}
+
+function getMissingWords(state, limit = 8) {
+  return state.vocab
+    .filter((v) => v.status === "unused" || v.status === "recognized")
+    .slice(0, limit)
+    .map((v) => v.word);
+}
+
+function detectRichStudentTurn(text) {
+  const t = String(text || "").trim();
+  if (!t) return false;
+
+  const sentenceCount = (t.match(/[.!?]/g) || []).length + (t.length > 80 ? 1 : 0);
+  const wordCount = t.split(/\s+/).filter(Boolean).length;
+
+  return wordCount >= 18 || sentenceCount >= 3;
+}
+
+function detectStudentQuestion(text) {
+  const t = String(text || "").trim().toLowerCase();
+  return t.includes("?") || /^(what|why|how|when|where|who|can|do|does|is|are)\b/.test(t);
+}
+
+function classifyStudentAnswer(text) {
+  const t = String(text || "").toLowerCase();
+
+  // Unsafe / violent
+  if (/(kill|shoot|stab|smack|beat|fire towards|hurt people|attack)/i.test(t)) {
+    return "unsafe";
+  }
+
+  // Unrealistic / silly examples
+  const unrealisticPatterns = [
+    /comb.*milk.*cow/i,
+    /spoon.*fix.*car/i,
+    /pillow.*cut.*wood/i,
+    /toothbrush.*build.*house/i,
+  ];
+
+  if (unrealisticPatterns.some((rx) => rx.test(t))) {
+    return "unrealistic";
+  }
+
+  // Weak-but-plausible answer
+  if (/(coffee mug|cup of coffee)/i.test(t)) {
+    return "weak-but-acceptable";
+  }
+
+  return "normal";
+}
+
+function detectDrift(studentText, sessionData, state) {
+  const text = String(studentText || "").toLowerCase();
+  const chapter = String(sessionData?.currentLesson?.chapter || "").toLowerCase();
+  const lessonWords = Array.isArray(sessionData?.lessonWordlist)
+    ? sessionData.lessonWordlist.map((w) => String(w).toLowerCase())
+    : [];
+
+  const chapterTerms = chapter.split(/\s+/).filter(Boolean);
+  const importantTerms = [...chapterTerms, ...lessonWords.slice(0, 20)];
+
+  const matched = importantTerms.some((term) => term && text.includes(term));
+
+  // If the student mentions none of the topic terms and gives a long unrelated answer,
+  // count it as drift.
+  const longish = text.split(/\s+/).filter(Boolean).length >= 8;
+
+  if (!matched && longish) {
+    state.driftCount += 1;
+  } else {
+    state.driftCount = 0;
+  }
+
+  return state;
+}
+
+// =====================================================
+// PROMPT-TYPE ROTATION
+// =====================================================
+
+function chooseNextPromptType(recentPromptTypes = [], stage = LESSON_STAGES.ACTIVATE) {
+  const stagePreferred = {
+    [LESSON_STAGES.WARMUP]: ["question", "reflection"],
+    [LESSON_STAGES.INTRO]: ["question", "description"],
+    [LESSON_STAGES.ACTIVATE]: ["description", "completion", "choice"],
+    [LESSON_STAGES.GUIDED]: ["description", "comparison", "completion"],
+    [LESSON_STAGES.SCENARIO]: ["roleplay", "comparison", "description"],
+    [LESSON_STAGES.CONSOLIDATE]: ["choice", "reflection", "completion", "comparison"],
+    [LESSON_STAGES.CLOSE]: ["reflection"],
+    [LESSON_STAGES.DONE]: ["reflection"],
+  };
+
+  const preferred = stagePreferred[stage] || PROMPT_TYPES;
+  const lastTwo = recentPromptTypes.slice(-2);
+
+  const blocked = lastTwo.length === 2 && lastTwo[0] === lastTwo[1]
+    ? new Set([lastTwo[0]])
+    : new Set();
+
+  const candidate = preferred.find((p) => !blocked.has(p)) || preferred[0] || "question";
+  return candidate;
+}
+
+function recordPromptType(state, promptType) {
+  state.recentPromptTypes.push(promptType);
+  if (state.recentPromptTypes.length > 6) {
+    state.recentPromptTypes = state.recentPromptTypes.slice(-6);
+  }
+  return state;
+}
+
+// =====================================================
+// STAGE TRANSITIONS
+// =====================================================
+
+function shouldOfferWarmup(sessionData) {
+  return !!sessionData?.isFirstChapter;
+}
+
+function getNextStage(state) {
+  const progress = getVocabProgress(state);
+
+  if (state.chapterComplete) return LESSON_STAGES.DONE;
+
+  switch (state.stage) {
+    case LESSON_STAGES.WARMUP:
+      if (state.turnsInStage >= 2) return LESSON_STAGES.INTRO;
+      return LESSON_STAGES.WARMUP;
+
+    case LESSON_STAGES.INTRO:
+      if (state.turnsInStage >= 1) return LESSON_STAGES.ACTIVATE;
+      return LESSON_STAGES.INTRO;
+
+    case LESSON_STAGES.ACTIVATE:
+      if (state.totalTurns >= 4 || progress.ratio >= 0.2) return LESSON_STAGES.GUIDED;
+      return LESSON_STAGES.ACTIVATE;
+
+    case LESSON_STAGES.GUIDED:
+      if (progress.ratio >= 0.4 || state.totalTurns >= 8) return LESSON_STAGES.SCENARIO;
+      return LESSON_STAGES.GUIDED;
+
+    case LESSON_STAGES.SCENARIO:
+      if (progress.ratio >= 0.65 || state.totalTurns >= 12) return LESSON_STAGES.CONSOLIDATE;
+      return LESSON_STAGES.SCENARIO;
+
+    case LESSON_STAGES.CONSOLIDATE:
+      if (progress.ratio >= 0.8 && state.totalTurns >= 10) return LESSON_STAGES.CLOSE;
+      return LESSON_STAGES.CONSOLIDATE;
+
+    case LESSON_STAGES.CLOSE:
+      return LESSON_STAGES.DONE;
+
+    default:
+      return LESSON_STAGES.DONE;
+  }
+}
+
+function maybeMarkChapterComplete(state) {
+  const progress = getVocabProgress(state);
+  if (state.stage === LESSON_STAGES.CLOSE && progress.ratio >= 0.8 && state.totalTurns >= 10) {
+    state.chapterComplete = true;
+  }
+  return state;
+}
+
+// =====================================================
+// STAGE PROMPTS
+// =====================================================
+
+function buildWarmupMode(sessionData) {
+  const chapter = sessionData?.currentLesson?.chapter || "today's lesson";
+  return `
+WARMUP MODE — ACTIVE
+
+Purpose:
+Keep conversation brief, warm, and simple before the lesson begins.
+
+Rules:
+- Use only 1 short question or invitation.
+- Talk casually for 2–3 turns maximum.
+- Do not begin full vocabulary practice yet.
+- After the short warmup, bridge clearly to the lesson topic "${chapter}".
+- Do not mention Waterwheel Village more than once in warmup.
+- End with exactly ONE question, task, or invitation.
+`.trim();
+}
+
+function buildIntroMode(sessionData) {
+  const chapter = sessionData?.currentLesson?.chapter || "daily life";
+  return `
+INTRO MODE — ACTIVE
+
+Purpose:
+Give a short, focused introduction to the lesson topic "${chapter}".
+
+Rules:
+- 1 short intro only.
+- Keep it practical, not poetic.
+- Introduce the topic clearly.
+- End with exactly ONE easy production prompt.
+- Do not overuse village storytelling.
+`.trim();
+}
+
+function buildActivateMode(sessionData) {
+  const chapter = sessionData?.currentLesson?.chapter || "daily life";
+  return `
+ACTIVATE MODE — ACTIVE
+
+Purpose:
+Get the student producing English quickly about "${chapter}".
+
+Rules:
+- Use easy naming, one-sentence, or simple description tasks.
+- Keep replies short.
+- Every 2–3 tutor turns, require a lesson word in student output.
+- End with exactly ONE question, task, or invitation.
+`.trim();
+}
+
+function buildGuidedMode(sessionData, state) {
+  const chapter = sessionData?.currentLesson?.chapter || "daily life";
+  const missingWords = getMissingWords(state, 6).join(", ");
+  return `
+GUIDED PRACTICE MODE — ACTIVE
+
+Lesson topic: "${chapter}"
+
+Purpose:
+Develop stronger controlled production.
+
+Rules:
+- Use short description, comparison, completion, or explanation tasks.
+- Keep teaching progression stronger than free conversation.
+- If the student drifts, acknowledge briefly and return to the lesson in the same reply.
+- Recycle missing lesson words naturally.
+- Prioritize these not-yet-green words when helpful: ${missingWords || "use remaining target words"}.
+- End with exactly ONE question, task, or invitation.
+`.trim();
+}
+
+function buildScenarioMode(sessionData, state) {
+  const chapter = sessionData?.currentLesson?.chapter || "daily life";
+  const missingWords = getMissingWords(state, 6).join(", ");
+  return `
+SCENARIO MODE — ACTIVE
+
+Lesson topic: "${chapter}"
+
+Purpose:
+Practice realistic communication.
+
+Rules:
+- Prefer mini roleplay or practical scenarios.
+- Keep the scenario directly related to the lesson topic.
+- Do not allow long unrelated topic chains.
+- If a student answer is unrealistic, gently correct it, give a real example, and ask for one better answer.
+- If a student answer becomes unsafe or violent, redirect calmly and return to professional/everyday language.
+- Try to bring in these remaining words if possible: ${missingWords || "remaining target words"}.
+- End with exactly ONE question, task, or invitation.
+`.trim();
+}
+
+function buildConsolidateMode(sessionData, state) {
+  const chapter = sessionData?.currentLesson?.chapter || "daily life";
+  const missingWords = getMissingWords(state, 8);
+  return `
+CONSOLIDATE MODE — ACTIVE
+
+Lesson topic: "${chapter}"
+
+Purpose:
+Review and strengthen memory.
+
+Rules:
+- Revisit missing words and mix them into short practical tasks.
+- Use comparison, choice, matching, or summary tasks.
+- Do not open new unrelated topics.
+- Focus especially on these words: ${missingWords.length ? missingWords.join(", ") : "the full lesson vocabulary"}.
+- End with exactly ONE question, task, or invitation.
+`.trim();
+}
+
+function buildCloseMode(sessionData, state) {
+  const chapter = sessionData?.currentLesson?.chapter || "daily life";
+  const progress = getVocabProgress(state);
+  const greenWords = state.vocab
+    .filter((v) => v.status === "produced" || v.status === "mastered")
+    .slice(0, 8)
+    .map((v) => v.word)
+    .join(", ");
+
+  return `
+CLOSE MODE — ACTIVE
+
+Lesson topic: "${chapter}"
+
+Purpose:
+Close the chapter clearly.
+
+Rules:
+- Briefly praise the student's progress.
+- Mention that the student used important lesson words.
+- Mention a few completed words naturally: ${greenWords || "lesson vocabulary"}.
+- If most words are now green (${progress.produced}/${progress.total}), guide the student to the next chapter.
+- Do not continue open-ended chatting.
+- End with exactly ONE invitation to continue to the next chapter.
+`.trim();
+}
+
+function buildStageMode(sessionData, state) {
+  switch (state.stage) {
+    case LESSON_STAGES.WARMUP:
+      return buildWarmupMode(sessionData);
+    case LESSON_STAGES.INTRO:
+      return buildIntroMode(sessionData);
+    case LESSON_STAGES.ACTIVATE:
+      return buildActivateMode(sessionData);
+    case LESSON_STAGES.GUIDED:
+      return buildGuidedMode(sessionData, state);
+    case LESSON_STAGES.SCENARIO:
+      return buildScenarioMode(sessionData, state);
+    case LESSON_STAGES.CONSOLIDATE:
+      return buildConsolidateMode(sessionData, state);
+    case LESSON_STAGES.CLOSE:
+    case LESSON_STAGES.DONE:
+      return buildCloseMode(sessionData, state);
+    default:
+      return buildActivateMode(sessionData);
+  }
+}
+
+// =====================================================
+// UNIVERSAL TEACHING POLICY
+// =====================================================
+
+function buildUniversalTeachingPolicy(sessionData, state, promptType) {
   const chapter = sessionData?.currentLesson?.chapter || "daily life";
 
   return `
-LESSON COACH MODE — ACTIVE
+UNIVERSAL LESSON POLICY — REQUIRED
 
-You are guiding a structured ESL lesson about: "${chapter}".
-
-PRIMARY GOAL:
-Help the student actively produce English using lesson vocabulary in natural context.
-LESSON AUTHORITY RULE:
-During lessons, teaching progression has priority over conversation flow.
+Lesson authority:
+During lessons, teaching progression has priority over free conversation.
 Warmth supports learning but does not replace structured guidance.
 
-BEHAVIOR PRIORITIES:
+Topic priority:
+The current lesson topic is "${chapter}".
+Stay connected to it.
+Do not allow unrelated topic chains to continue.
 
-1. LESSON ANCHOR
-Stay connected to lesson topic.
-DRIFT CONTROL:
-If conversation moves away from lesson topic:
-• acknowledge briefly
-• redirect within same reply
-• do not allow topic chains to form outside lesson
+Student output:
+The student should produce most of the language.
+Prefer short tasks that make the student speak or write.
 
-2. STUDENT OUTPUT FIRST
-Prefer tasks that make the student speak or write.
-Avoid long explanations.
+Correction:
+Correct gently by modeling.
+Use no more than one correction sentence.
 
-3. NATURAL PROMPT VARIATION
-Rotate task types:
-• description
-• continuation
-• comparison
-• mini roleplay
-• personal connection
-• completion
+Personality balance:
+Character warmth supports teaching but must not dominate lesson content.
+Avoid repeated village references during active lessons.
 
-Never repeat the same task pattern more than twice.
+Village rule:
+Do NOT mention Waterwheel Village unless:
+- opening warmup or intro
+- the student asks about it
+- a short cultural example clearly helps
+- chapter closure
 
-4. GENTLE CORRECTION
-Correct by modeling only.
-Max one correction sentence.
+Wrong or silly answers:
+- If answer is weak but acceptable, accept lightly and redirect to a stronger lesson example.
+- If answer is unrealistic, gently correct it, give one real example, and ask for one better answer.
+- If answer is unsafe or violent, redirect calmly and return to professional or everyday language.
 
-5. RESPONSE LENGTH
-Default: 2–4 sentences.
-If student shares rich personal content: up to 5 sentences.
+Prompt variation:
+Use this prompt type next if possible: "${promptType}".
+Do not repeat the same prompt pattern more than twice in a row.
 
-6. PROGRESS FEEDBACK
-Praise occasionally and naturally.
-Never use mechanical counters.
-
-7. VILLAGE CURIOSITY
-Sometimes invite:
-"You can ask how we do this in Waterwheel Village."
-
-If student asks:
-• tell short village story (4–6 sentences)
-• connect back to lesson
-• give ONE task.
-VOCABULARY CADENCE:
-Every 2–3 tutor turns must include:
-• lesson word usage
-OR
-• vocabulary production task
-
-PERSONALITY BALANCE:
-Character warmth enhances teaching but must not dominate lesson content.
-Avoid extended storytelling or cultural descriptions during active lessons.
-
-8. SAFETY
-If topic becomes disturbing or unsafe:
-• gently redirect
-• move to simple everyday topic
-• continue lesson.
-
-SCENARIO LEARNING:
-Prefer practical communication scenarios related to lesson topic.
-Example types:
-• describing
-• requesting
-• explaining
-• roleplay
-• comparison
-
-STUDENT LEADERSHIP LIMIT:
-Allow student initiative, but tutor maintains lesson direction.
-Student topics must be reframed into lesson context.
-
-END RULE (CRITICAL):
+One-prompt rule:
 Every reply must end with EXACTLY ONE:
 (A) question
 (B) task
 (C) invitation
 `.trim();
+}
+
+function buildVocabContext(sessionData, state) {
+  if (!Array.isArray(sessionData?.lessonWordlist) || !sessionData.lessonWordlist.length) {
+    return "";
+  }
+
+  const words = sessionData.lessonWordlist.slice(0, 40).join(", ");
+  const missingWords = getMissingWords(state, 8).join(", ");
+
+  return `
+LESSON VOCABULARY
+
+Target words:
+${words}
+
+Vocabulary guidance:
+- Recycle lesson words naturally.
+- Every 2–3 tutor turns, guide the student to use a lesson word.
+- Prioritize not-yet-green words when useful: ${missingWords || "all target words"}.
+- A word becomes green when the student uses it meaningfully.
+`.trim();
+}
+
+// =====================================================
+// SYSTEM PROMPT BUILDER
+// =====================================================
+
+function buildSystemPrompt(activeCharacterKey, sessionData, mode, lessonState, turnGuard = "") {
+  const c = characters[activeCharacterKey] || characters.sophia;
+  const student = sessionData?.userName || "friend";
+
+  const inLesson =
+    !!sessionData?.currentLesson &&
+    Array.isArray(sessionData?.lessonWordlist) &&
+    sessionData.lessonWordlist.length > 0;
+
+  const state = lessonState || initLessonState(sessionData);
+  const promptType = chooseNextPromptType(state.recentPromptTypes, state.stage);
+  const stageMode = inLesson ? buildStageMode(sessionData, state) : "";
+  const policy = inLesson ? buildUniversalTeachingPolicy(sessionData, state, promptType) : "";
+  const vocabContext = inLesson ? buildVocabContext(sessionData, state) : "";
+
+  const allNames = Object.values(characters).map((ch) => ch.name).join(", ");
+
+  return [
+    ...(turnGuard ? [turnGuard] : []),
+
+    `You are ${c.name}, an ESL tutor from Waterwheel Village (v${WWV_VERSION}).`,
+    VILLAGE_CORE,
+
+    `PERSONA STYLE:
+${c.style}`,
+
+    `PERSONA BACKGROUND:
+${c.background}`,
+
+    `Signature phrases (use rarely and naturally):
+${c.phrases.join(" | ")}`,
+
+    `Character rule: Remain ONLY ${c.name}. Do not become any other character (${allNames}).`,
+    `Even if the student mentions another character, still answer only as ${c.name}.`,
+
+    `Student name: ${student}. Use the student's name naturally.`,
+    `Teaching tone: warm, calm, encouraging, human.`,
+    `Never say you are an AI or language model.`,
+    `REAL-WORLD FACTS RULE: Do not claim a real-world nationality or biography unless it appears in your character background.`,
+    `If explicitly asked for translation or Finnish, give one short sentence in Finnish first, then continue in simple English.`,
+
+    mode === "voice"
+      ? `VOICE MODE: Do not mention punctuation or capitalization. Correct gently by example.`
+      : `TEXT MODE: Correct gently by example. Do not comment on punctuation.`,
+
+    inLesson ? `CURRENT LESSON STAGE: ${state.stage}` : "",
+    policy,
+    stageMode,
+    vocabContext,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+// =====================================================
+// RUNTIME LESSON ENGINE
+// Call these around each turn in your app
+// =====================================================
+
+function processStudentTurn({
+  lessonState,
+  studentText,
+  sessionData,
+}) {
+  const state = lessonState || initLessonState(sessionData);
+  const text = String(studentText || "");
+
+  bumpLessonCounters(state);
+
+  state.studentRichTurn = detectRichStudentTurn(text);
+  state.studentAskedQuestion = detectStudentQuestion(text);
+
+  updateVocabStatusesFromStudentText(state, text);
+  detectDrift(text, sessionData, state);
+
+  const answerClass = classifyStudentAnswer(text);
+  if (answerClass === "unsafe") state.unsafeCount += 1;
+  if (answerClass === "unrealistic") state.nonsenseCount += 1;
+
+  const nextStage = getNextStage(state);
+  setStage(state, nextStage);
+
+  if (state.stage === LESSON_STAGES.CLOSE) {
+    maybeMarkChapterComplete(state);
+  }
+
+  return {
+    lessonState: state,
+    answerClass,
+    vocabProgress: getVocabProgress(state),
+    missingWords: getMissingWords(state),
+  };
+}
+
+function processTutorPromptChoice(lessonState) {
+  const state = lessonState;
+  const nextPromptType = chooseNextPromptType(state.recentPromptTypes, state.stage);
+  recordPromptType(state, nextPromptType);
+  return nextPromptType;
+}
+
+// =====================================================
+// OPTIONAL: small helper for intro handoff
+// Use this if chapter 1 should start with elder chat
+// =====================================================
+
+function buildChapterWarmupStarter(studentName = "friend") {
+  return `Good day, ${studentName}. The village feels calm today. How has your day begun so far?`;
+}
+
+function buildLessonHandoff(elderName, teacherName, chapterTitle, studentName = "friend") {
+  return `${studentName}, thank you. ${elderName} will now let ${teacherName} guide you into our lesson about ${chapterTitle}.`;
+}
+
+// =====================================================
+// OPTIONAL: detect if lesson is ready to finish
+// =====================================================
+
+function shouldCloseChapter(lessonState) {
+  const progress = getVocabProgress(lessonState);
+  return progress.ratio >= 0.8 && lessonState.totalTurns >= 10;
 }
 
 function buildVocabContext(sessionData) {
