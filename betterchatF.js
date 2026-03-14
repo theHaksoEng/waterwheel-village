@@ -1315,17 +1315,38 @@ app.post("/chat", async (req, res) => {
   console.log("Body:", req.body);
 
   try {
-    const {
-      text: rawText,
-      sessionId: providedSessionId,
-      isVoice,
-      name: userNameFromFrontend,
-      demo,
-      character
-    } = req.body || {};
+    const body = req.body || {};
 
-    const sessionId = providedSessionId || uuidv4();
-    const messageId = req.body?.messageId;
+const userMessage =
+  body.text ||
+  body.message ||
+  body.userMessage ||
+  "";
+
+const sessionId =
+  body.sessionId ||
+  body.session_id ||
+  uuidv4();
+
+const messageId =
+  body.messageId ||
+  body.message_id ||
+  "";
+
+const mode = body.mode || "text";
+const isVoice = body.isVoice || mode === "voice";
+const userNameFromFrontend =
+  body.name ||
+  body.sessionData?.userName ||
+  null;
+const demo = body.demo;
+
+const activeCharacterKey =
+  body.activeCharacterKey ||
+  body.character ||
+  "mcarthur";
+
+const incomingSessionData = body.sessionData || {};
 
     if (!messageId) {
       console.error("❌ Missing messageId");
@@ -1346,60 +1367,77 @@ app.post("/chat", async (req, res) => {
 
       return res.json({
         text: lastReply,
-        character: character || "mcarthur",
+        character: activeCharacterKey,
         version: WWV_VERSION,
       });
     }
 
     await redis.set(dedupeKey, "1", "EX", 300); // 5 min TTL
 
-    const sanitizedText = rawText ? String(rawText).trim() : "";
+const sanitizedText = userMessage ? String(userMessage).trim() : "";
 
     console.log("📩 Incoming chat request:", {
-      text: sanitizedText,
-      sessionId,
-      isVoice,
-      name: userNameFromFrontend,
-      demo,
-      character,
-      messageId
-    });
+  text: sanitizedText,
+  sessionId,
+  isVoice,
+  mode,
+  name: userNameFromFrontend,
+  demo,
+  activeCharacterKey,
+  messageId,
+  chapter: incomingSessionData?.currentLesson?.chapter,
+  wordlistLength: incomingSessionData?.lessonWordlist?.length,
+});
 
     // --- Load session data ---
     let sessionData;
     try {
       const sessionRaw = await redis.get(`session:${sessionId}`);
-      sessionData = sessionRaw
-        ? JSON.parse(sessionRaw)
-        : {
-            character: "mcarthur",
-            studentLevel: null,
-            currentLesson: null,
-            isWeatherQuery: false,
-            learnedWords: [],
-            userName: null,
-            lessonWordlist: [],
-            tutorAskedLastTurn: false,
-          };
+     const storedSessionData = sessionRaw
+  ? JSON.parse(sessionRaw)
+  : {
+      character: "mcarthur",
+      studentLevel: null,
+      currentLesson: null,
+      isWeatherQuery: false,
+      learnedWords: [],
+      userName: null,
+      lessonWordlist: [],
+      tutorAskedLastTurn: false,
+    };
 
-      console.log("📦 Loaded sessionData:", sessionData);
+sessionData = {
+  ...storedSessionData,
+  ...incomingSessionData,
+  character: activeCharacterKey,
+  userName:
+    userNameFromFrontend ||
+    incomingSessionData.userName ||
+    storedSessionData.userName ||
+    null,
+  currentLesson:
+    incomingSessionData.currentLesson ||
+    storedSessionData.currentLesson ||
+    null,
+  lessonWordlist:
+    incomingSessionData.lessonWordlist ||
+    storedSessionData.lessonWordlist ||
+    [],
+};
 
-      if (character && character !== sessionData.character) {
-        sessionData.character = character;
-        console.log("🎭 Character updated from frontend:", character);
-      }
+console.log("📦 Loaded sessionData:", sessionData);
     } catch (err) {
       console.error(`❌ Redis error for session:${sessionId}:`, err.message);
-      sessionData = {
-        character: "mcarthur",
-        studentLevel: null,
-        currentLesson: null,
-        isWeatherQuery: false,
-        learnedWords: [],
-        userName: null,
-        lessonWordlist: [],
-        tutorAskedLastTurn: false,
-      };
+     sessionData = {
+  character: activeCharacterKey,
+  studentLevel: null,
+  currentLesson: incomingSessionData.currentLesson || null,
+  isWeatherQuery: false,
+  learnedWords: [],
+  userName: userNameFromFrontend || incomingSessionData.userName || null,
+  lessonWordlist: incomingSessionData.lessonWordlist || [],
+  tutorAskedLastTurn: false,
+};
     }
 
     // --- Username sync ---
@@ -1605,9 +1643,9 @@ if (normalizedText && normalizedText.length > 0) {
 
     const { wantsEnd, wantsNext } = detectEndOrNextIntent(normalizedText);
 
-    if (isCompleteNow && (wantsEnd || wantsNext)) {
-      const activeCharacterKey = sessionData.character || "mcarthur";
-      const voiceId = characters[activeCharacterKey].voiceId;
+  if (isCompleteNow && (wantsEnd || wantsNext)) {
+  const characterKeyForCompletion = sessionData.character || activeCharacterKey;
+  const voiceId = characters[characterKeyForCompletion].voiceId;
 
       const closing = wantsNext
         ? "Great! Lesson complete — moving to the next chapter."
@@ -1621,11 +1659,10 @@ if (normalizedText && normalizedText.length > 0) {
       await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
 
       res.setHeader("X-WWV-Version", WWV_VERSION);
-      res.setHeader("X-WWV-Character", activeCharacterKey);
-
+      res.setHeader("X-WWV-Character", characterKeyForCompletion);
       return res.json({
         text: closing,
-        character: activeCharacterKey,
+      character: characterKeyForCompletion,
         voiceId,
         learnedCount: sessionData.learnedWords.length,
         newlyLearned,
@@ -1642,15 +1679,16 @@ if (normalizedText && normalizedText.length > 0) {
     await saveHistory(sessionId, messages);
 
     // --- System prompt ---
-    const activeCharacterKey = sessionData.character || "mcarthur";
-    const combinedGuard = "";
-    const systemPrompt = buildSystemPrompt(
-      activeCharacterKey,
-      sessionData,
-      isVoice ? "voice" : "text",
-      lessonState,
-      combinedGuard
-    );
+    // --- System prompt ---
+const characterKeyForPrompt = sessionData.character || activeCharacterKey;
+const combinedGuard = "";
+const systemPrompt = buildSystemPrompt(
+  characterKeyForPrompt,
+  sessionData,
+  isVoice ? "voice" : "text",
+  lessonState,
+  combinedGuard
+);
     console.log("🛠 Using systemPrompt:", systemPrompt);
 
     // --- OpenAI request ---
