@@ -1348,21 +1348,16 @@ const sanitizedText = userMessage ? String(userMessage).trim() : "";
       lessonState = initLessonState(sessionData);
     }
 
-    // Process the student turn only if there is actual user text
-if (normalizedText && normalizedText.length > 0) {
-        const lessonResult = processStudentTurn({
-        lessonState,
-        studentText: normalizedText,
-        sessionData,
-      });
+   if (normalizedText && normalizedText.length > 0) {
+  // TEMP: skip lesson engine until processStudentTurn is fixed
+  console.log("Skipping processStudentTurn — function not available yet");
 
-      lessonState = lessonResult.lessonState;
+  // Optional: fake a minimal update so other logic doesn't break
+  // lessonState = { ...lessonState, someFlag: true }; // if needed
 
-      // Record next prompt type for variation control
-      processTutorPromptChoice(lessonState);
-
-      await redis.set(`lessonState:${sessionId}`, JSON.stringify(lessonState));
-    }
+  // Still save whatever state you have
+  await redis.set(`lessonState:${sessionId}`, JSON.stringify(lessonState));
+}
     // --- Demo mode chat limit ---
     const DEMO_MAX_MESSAGES = 11;
     if (demo && messages.length >= DEMO_MAX_MESSAGES - 1) {
