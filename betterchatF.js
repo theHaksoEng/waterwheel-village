@@ -873,173 +873,13 @@ Every reply must end with EXACTLY ONE:
 `.trim();
 }
 
-function buildVocabContext(sessionData, state) {
-  if (!Array.isArray(sessionData?.lessonWordlist) || !sessionData.lessonWordlist.length) {
-    return "";
-  }
-
-  const words = sessionData.lessonWordlist.slice(0, 40).join(", ");
-  const missingWords = getMissingWords(state, 8).join(", ");
-
-  return `
-LESSON VOCABULARY
-
-Target words:
-${words}
-
-Vocabulary guidance:
-- Recycle lesson words naturally.
-- Every 2–3 tutor turns, guide the student to use a lesson word.
-- Prioritize not-yet-green words when useful: ${missingWords || "all target words"}.
-- A word becomes green when the student uses it meaningfully.
-`.trim();
-}
-
-// =====================================================
-// SYSTEM PROMPT BUILDER
-// =====================================================
-
-function buildSystemPrompt(activeCharacterKey, sessionData, mode, lessonState, turnGuard = "") {
-  const c = characters[activeCharacterKey] || characters.sophia;
-  const student = sessionData?.userName || "friend";
-
-  const inLesson =
-    !!sessionData?.currentLesson &&
-    Array.isArray(sessionData?.lessonWordlist) &&
-    sessionData.lessonWordlist.length > 0;
-
-  const state = lessonState || initLessonState(sessionData);
-  const promptType = chooseNextPromptType(state.recentPromptTypes, state.stage);
-  const stageMode = inLesson ? buildStageMode(sessionData, state) : "";
-  const policy = inLesson ? buildUniversalTeachingPolicy(sessionData, state, promptType) : "";
-  const vocabContext = inLesson ? buildVocabContext(sessionData, state) : "";
-
-  const allNames = Object.values(characters).map((ch) => ch.name).join(", ");
-
-  return [
-    ...(turnGuard ? [turnGuard] : []),
-
-    `You are ${c.name}, an ESL tutor from Waterwheel Village (v${WWV_VERSION}).`,
-    VILLAGE_CORE,
-
-    `PERSONA STYLE:
-${c.style}`,
-
-    `PERSONA BACKGROUND:
-${c.background}`,
-
-    `Signature phrases (use rarely and naturally):
-${c.phrases.join(" | ")}`,
-
-    `Character rule: Remain ONLY ${c.name}. Do not become any other character (${allNames}).`,
-    `Even if the student mentions another character, still answer only as ${c.name}.`,
-
-    `Student name: ${student}. Use the student's name naturally.`,
-    `Teaching tone: warm, calm, encouraging, human.`,
-    `Never say you are an AI or language model.`,
-    `REAL-WORLD FACTS RULE: Do not claim a real-world nationality or biography unless it appears in your character background.`,
-    `If explicitly asked for translation or Finnish, give one short sentence in Finnish first, then continue in simple English.`,
-
-    mode === "voice"
-      ? `VOICE MODE: Do not mention punctuation or capitalization. Correct gently by example.`
-      : `TEXT MODE: Correct gently by example. Do not comment on punctuation.`,
-
-    inLesson ? `CURRENT LESSON STAGE: ${state.stage}` : "",
-    policy,
-    stageMode,
-    vocabContext,
-  ]
-    .filter(Boolean)
-    .join("\n\n");
-}
-
-// =====================================================
-// RUNTIME LESSON ENGINE
-// Call these around each turn in your app
-// =====================================================
-
-function processStudentTurn({
-  lessonState,
-  studentText,
+function buildSystemPrompt(
+  activeCharacterKey,
   sessionData,
-}) {
-  const state = lessonState || initLessonState(sessionData);
-  const text = String(studentText || "");
-
-  bumpLessonCounters(state);
-
-  state.studentRichTurn = detectRichStudentTurn(text);
-  state.studentAskedQuestion = detectStudentQuestion(text);
-
-  updateVocabStatusesFromStudentText(state, text);
-  detectDrift(text, sessionData, state);
-
-  const answerClass = classifyStudentAnswer(text);
-  if (answerClass === "unsafe") state.unsafeCount += 1;
-  if (answerClass === "unrealistic") state.nonsenseCount += 1;
-
-  const nextStage = getNextStage(state);
-  setStage(state, nextStage);
-
-  if (state.stage === LESSON_STAGES.CLOSE) {
-    maybeMarkChapterComplete(state);
-  }
-
-  return {
-    lessonState: state,
-    answerClass,
-    vocabProgress: getVocabProgress(state),
-    missingWords: getMissingWords(state),
-  };
-}
-
-function processTutorPromptChoice(lessonState) {
-  const state = lessonState;
-  const nextPromptType = chooseNextPromptType(state.recentPromptTypes, state.stage);
-  recordPromptType(state, nextPromptType);
-  return nextPromptType;
-}
-
-// =====================================================
-// OPTIONAL: small helper for intro handoff
-// Use this if chapter 1 should start with elder chat
-// =====================================================
-
-function buildChapterWarmupStarter(studentName = "friend") {
-  return `Good day, ${studentName}. The village feels calm today. How has your day begun so far?`;
-}
-
-function buildLessonHandoff(elderName, teacherName, chapterTitle, studentName = "friend") {
-  return `${studentName}, thank you. ${elderName} will now let ${teacherName} guide you into our lesson about ${chapterTitle}.`;
-}
-
-// =====================================================
-// OPTIONAL: detect if lesson is ready to finish
-// =====================================================
-
-function shouldCloseChapter(lessonState) {
-  const progress = getVocabProgress(lessonState);
-  return progress.ratio >= 0.8 && lessonState.totalTurns >= 10;
-}
-
-function buildVocabContext(sessionData) {
-  if (!Array.isArray(sessionData?.lessonWordlist) || !sessionData.lessonWordlist.length) {
-    return "";
-  }
-
-  const words = sessionData.lessonWordlist.slice(0, 40).join(", ");
-
-  return `
-LESSON VOCABULARY:
-Use lesson words naturally in conversation.
-Encourage the student to use them in meaningful personal context.
-
-Target words:
-${words}
-`.trim();
-}
-// System prompt builder (lore + persona + lesson vocab context)
-function buildSystemPrompt(activeCharacterKey, sessionData, mode, turnGuard = "") {
+  mode,
+  lessonState = null,
+  turnGuard = ""
+) {
   const c = characters[activeCharacterKey] || characters.sophia;
   const student = sessionData?.userName || "friend";
 
@@ -1051,14 +891,16 @@ function buildSystemPrompt(activeCharacterKey, sessionData, mode, turnGuard = ""
   const isDemo = !!sessionData?.demo;
 
   const topicAnchor = inLesson
-    ? `TOPIC: Current lesson topic is "${sessionData.currentLesson.chapter}". Stay connected.`
+    ? `TOPIC: Current lesson topic is "${sessionData.currentLesson.chapter}". Stay connected to this topic.`
     : "";
 
   const coachMode = inLesson && !isDemo
-    ? buildCoachMode(sessionData)
+    ? buildCoachMode(sessionData, lessonState)
     : "";
 
-  const vocabContext = inLesson ? buildVocabContext(sessionData) : "";
+  const vocabContext = inLesson
+    ? buildVocabContext(sessionData, lessonState)
+    : "";
 
   const allNames = Object.values(characters).map((ch) => ch.name).join(", ");
 
@@ -1389,57 +1231,58 @@ const sanitizedText = userMessage ? String(userMessage).trim() : "";
   wordlistLength: incomingSessionData?.lessonWordlist?.length,
 });
 
-    // --- Load session data ---
+       // --- Load session data ---
     let sessionData;
     try {
       const sessionRaw = await redis.get(`session:${sessionId}`);
-     const storedSessionData = sessionRaw
-  ? JSON.parse(sessionRaw)
-  : {
-      character: "mcarthur",
-      studentLevel: null,
-      currentLesson: null,
-      isWeatherQuery: false,
-      learnedWords: [],
-      userName: null,
-      lessonWordlist: [],
-      tutorAskedLastTurn: false,
-    };
+      const storedSessionData = sessionRaw
+        ? JSON.parse(sessionRaw)
+        : {
+            character: activeCharacterKey,
+            studentLevel: null,
+            currentLesson: null,
+            isWeatherQuery: false,
+            learnedWords: [],
+            userName: null,
+            lessonWordlist: [],
+            tutorAskedLastTurn: false,
+          };
 
-sessionData = {
-  ...storedSessionData,
-  ...incomingSessionData,
-  character: activeCharacterKey,
-  userName:
-    userNameFromFrontend ||
-    incomingSessionData.userName ||
-    storedSessionData.userName ||
-    null,
-  currentLesson:
-    incomingSessionData.currentLesson ||
-    storedSessionData.currentLesson ||
-    null,
-  lessonWordlist:
-    incomingSessionData.lessonWordlist ||
-    storedSessionData.lessonWordlist ||
-    [],
-};
+      // Merge incoming (frontend) data on top of stored data
+      sessionData = {
+        ...storedSessionData,
+        ...incomingSessionData,
+        character: activeCharacterKey,
+        userName:
+          userNameFromFrontend ||
+          incomingSessionData.userName ||
+          storedSessionData.userName ||
+          null,
+        currentLesson:
+          incomingSessionData.currentLesson ||
+          storedSessionData.currentLesson ||
+          null,
+        lessonWordlist:
+          incomingSessionData.lessonWordlist ||
+          storedSessionData.lessonWordlist ||
+          [],
+      };
 
-console.log("📦 Loaded sessionData:", sessionData);
+      console.log("📦 Loaded sessionData:", sessionData);
     } catch (err) {
       console.error(`❌ Redis error for session:${sessionId}:`, err.message);
-     sessionData = {
-  character: activeCharacterKey,
-  studentLevel: null,
-  currentLesson: incomingSessionData.currentLesson || null,
-  isWeatherQuery: false,
-  learnedWords: [],
-  userName: userNameFromFrontend || incomingSessionData.userName || null,
-  lessonWordlist: incomingSessionData.lessonWordlist || [],
-  tutorAskedLastTurn: false,
-};
+      // Fallback in case of Redis failure
+      sessionData = {
+        character: activeCharacterKey,
+        studentLevel: null,
+        currentLesson: incomingSessionData.currentLesson || null,
+        isWeatherQuery: false,
+        learnedWords: [],
+        userName: userNameFromFrontend || incomingSessionData.userName || null,
+        lessonWordlist: incomingSessionData.lessonWordlist || [],
+        tutorAskedLastTurn: false,
+      };
     }
-
     // --- Username sync ---
     if (userNameFromFrontend && userNameFromFrontend !== sessionData.userName) {
       sessionData.userName = decodeURIComponent(userNameFromFrontend);
@@ -1679,14 +1522,12 @@ if (normalizedText && normalizedText.length > 0) {
     await saveHistory(sessionId, messages);
 
     // --- System prompt ---
-    // --- System prompt ---
 const characterKeyForPrompt = sessionData.character || activeCharacterKey;
 const combinedGuard = "";
 const systemPrompt = buildSystemPrompt(
   characterKeyForPrompt,
   sessionData,
   isVoice ? "voice" : "text",
-  lessonState,
   combinedGuard
 );
     console.log("🛠 Using systemPrompt:", systemPrompt);
@@ -1756,7 +1597,7 @@ function cleanTextForSpeech(input) {
     .replace(/\s{2,}/g, " ")
     .trim();
 }
-
+console.log("Reached end of /chat route definition");
 app.post("/speakbase", async (req, res) => {
 const { text, voiceId } = req.body || {};
 if (!process.env.ELEVENLABS_API_KEY) {
