@@ -86,29 +86,7 @@ try {
 const { File } = require("undici");
 if (!global.File) global.File = File;
 } catch (_) {}
-// ✅ Debug + hard static serving (prevents HTML/nosniff issues)
-app.get("/debug/static", (_req, res) => {
-const widgetPath = path.join(__dirname, "public", "wwv-widget.js");
-const audioDir = path.join(__dirname, "audio_lessons");
-res.json({
-ok: true,
-running: __filename,
-widgetPath,
-widgetExists: fs.existsSync(widgetPath),
-widgetSize: fs.existsSync(widgetPath) ? fs.statSync(widgetPath).size : 0,
-audioDir,
-audioLessonsDirExists: fs.existsSync(audioDir),
-  });
-});
-// Force correct MIME for widget JS (prevents "nosniff" when HTML is returned)
-app.get("/wwv-widget.js", (req, res) => {
-const f = path.join(__dirname, "public", "wwv-widget.js");
-if (!fs.existsSync(f)) {
-return res.status(404).type("text/plain").send("wwv-widget.js not found in /public");
-  }
-res.type("application/javascript");
-return res.sendFile(f);
-});
+
 // Serve widget JS with correct MIME (prevents "nosniff" HTML issues)
 app.get("/wwv-widget.js", (req, res) => {
 const f = path.join(__dirname, "public", "wwv-widget.js");
@@ -883,10 +861,9 @@ function buildSystemPrompt(
   const c = characters[activeCharacterKey] || characters.sophia;
   const student = sessionData?.userName || "friend";
 
-  const inLesson =
-    !!sessionData?.currentLesson &&
-    Array.isArray(sessionData?.lessonWordlist) &&
-    sessionData.lessonWordlist.length > 0;
+  const inLesson = !!sessionData?.currentLesson && 
+                   Array.isArray(sessionData?.lessonWordlist) && 
+                   sessionData.lessonWordlist.length > 0;
 
   const isDemo = !!sessionData?.demo;
 
@@ -894,13 +871,9 @@ function buildSystemPrompt(
     ? `TOPIC: Current lesson topic is "${sessionData.currentLesson.chapter}". Stay connected to this topic.`
     : "";
 
-  const coachMode = inLesson && !isDemo
-    ? buildCoachMode(sessionData, lessonState)
-    : "";
-
-  const vocabContext = inLesson
-    ? buildVocabContext(sessionData, lessonState)
-    : "";
+  // ←←← SIMPLIFIED (you removed the full engine, so we stub these)
+  const coachMode = "";
+  const vocabContext = "";
 
   const allNames = Object.values(characters).map((ch) => ch.name).join(", ");
 
@@ -910,14 +883,11 @@ function buildSystemPrompt(
     `You are ${c.name}, an ESL tutor from Waterwheel Village (v${WWV_VERSION}).`,
     VILLAGE_CORE,
 
-    `PERSONA STYLE:
-${c.style}`,
+    `PERSONA STYLE:\n${c.style}`,
 
-    `PERSONA BACKGROUND:
-${c.background}`,
+    `PERSONA BACKGROUND:\n${c.background}`,
 
-    `Signature phrases (use rarely and naturally):
-${c.phrases.join(" | ")}`,
+    `Signature phrases (use rarely and naturally):\n${c.phrases.join(" | ")}`,
 
     `Character rule: Remain ONLY ${c.name}. Do not become any other character (${allNames}).`,
     `Even if the student mentions another character, still answer only as ${c.name}.`,
@@ -1523,6 +1493,7 @@ const systemPrompt = buildSystemPrompt(
   characterKeyForPrompt,
   sessionData,
   isVoice ? "voice" : "text",
+  lessonState,      // ← now passes real state
   combinedGuard
 );
     console.log("🛠 Using systemPrompt:", systemPrompt);
