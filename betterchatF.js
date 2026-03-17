@@ -797,57 +797,27 @@ function buildStageMode(sessionData, state) {
 }
 
 // =====================================================
-// UNIVERSAL TEACHING POLICY
+// UNIVERSAL TEACHING POLICY (Version 2.0 - Optimized)
 // =====================================================
 
 function buildUniversalTeachingPolicy(sessionData, state, promptType) {
   const chapter = sessionData?.currentLesson?.chapter || "daily life";
 
   return `
-UNIVERSAL LESSON POLICY — REQUIRED
+UNIVERSAL LESSON POLICY — STRICT EXECUTION
 
-Lesson authority:
-During lessons, teaching progression has priority over free conversation.
-Warmth supports learning but does not replace structured guidance.
-
-Topic priority:
-The current lesson topic is "${chapter}".
-Stay connected to it.
-Do not allow unrelated topic chains to continue.
-
-Student output:
-The student should produce most of the language.
-Prefer short tasks that make the student speak or write.
-
-Correction:
-Correct gently by modeling.
-Use no more than one correction sentence.
-
-Personality balance:
-Character warmth supports teaching but must not dominate lesson content.
-Avoid repeated village references during active lessons.
-
-Village rule:
-Do NOT mention Waterwheel Village unless:
-- opening warmup or intro
-- the student asks about it
-- a short cultural example clearly helps
-- chapter closure
-
-Wrong or silly answers:
-- If answer is weak but acceptable, accept lightly and redirect to a stronger lesson example.
-- If answer is unrealistic, gently correct it, give one real example, and ask for one better answer.
-- If answer is unsafe or violent, redirect calmly and return to professional or everyday language.
-
-Prompt variation:
-Use this prompt type next if possible: "${promptType}".
-Do not repeat the same prompt pattern more than twice in a row.
-
-One-prompt rule:
-Every reply must end with EXACTLY ONE:
-(A) question
-(B) task
-(C) invitation
+1. PRIORITY: Teaching progression > Free conversation. 
+2. TOPIC: Stay strictly on "${chapter}". Redirect side-chats within 1 turn.
+3. OUTPUT: The student must do 70% of the talking. Use short, actionable tasks.
+4. CORRECTION: Model the correct version naturally in your response. 
+   - Example: Student: "I go store." -> You: "That's right, you went to the store! What did you buy?"
+5. VILLAGE RULE (The "Flavor" Constraint):
+   - Use "Waterwheel Village" references ONLY in warmups, closures, or if the student asks.
+   - During active vocabulary drilling, keep the focus on the target words.
+6. RESPONSE STRUCTURE:
+   - Max 3 sentences total.
+   - MUST end with EXACTLY ONE: (A) Question, (B) Task, or (C) Invitation.
+7. DRIFT CONTROL: If the student ignores a task, acknowledge their comment briefly, then restate the task.
 `.trim();
 }
 
@@ -860,76 +830,60 @@ function buildSystemPrompt(
 ) {
   const c = characters[activeCharacterKey] || characters.sophia;
   const student = sessionData?.userName || "friend";
-
-  const inLesson = !!sessionData?.currentLesson && 
-                   Array.isArray(sessionData?.lessonWordlist) && 
-                   sessionData.lessonWordlist.length > 0;
-
-  const topic = sessionData?.currentLesson?.chapter 
-    ? humanizeChapter(sessionData.currentLesson.chapter) 
-    : "daily life";
+  const chapter = sessionData?.currentLesson?.chapter || "daily life";
+  
+  // Logic to prevent repeating words already used in this session
+  const mastered = sessionData?.masteredWords || [];
+  const activeWords = (sessionData?.lessonWordlist || [])
+    .filter(word => !mastered.includes(word))
+    .slice(0, 5); // Focus on a smaller "working set" for better retention
 
   let vocabSection = "";
-  if (inLesson && sessionData.lessonWordlist.length > 0) {
-    const missingWords = sessionData.lessonWordlist.slice(0, 12).join(", ");
-    vocabSection = `CURRENT TARGET VOCABULARY (must be practiced):\n${missingWords}\n\n` +
-      `VOCABULARY RULES — FOLLOW STRICTLY:\n` +
-      `- Actively push remaining target words every 1–2 turns.\n` +
-      `- Ask direct questions like: "Can you use the word 'ticket' or 'bus stop' in a sentence?"\n` +
-      `- If the student avoids them, say "Try to include the word 'platform' or 'fare'."\n` +
-      `- Praise specifically: "Great! You used 'ticket' correctly!"`;
+  if (activeWords.length > 0) {
+    vocabSection = `
+CURRENT TARGET VOCABULARY: ${activeWords.join(", ")}
+VOCABULARY GOAL: 
+- Pick ONE word from the list above.
+- Ask ${student} to use it in a sentence or answer a question using it.
+- Once they use it correctly, praise them.
+`;
   }
 
   return [
-    `You are ${c.name}, an ESL tutor from Waterwheel Village — a small peaceful community in northern Finland where people from many cultures live and learn English together.`,
+    `ROLE: You are ${c.name}, an ESL tutor from Waterwheel Village, Finland.`,
+    
+    `PERSONALITY: ${c.style} ${c.background}`,
+    
+    `TONE: Warm, professional, and encouraging. Use "${student}" occasionally (30% of turns).`,
 
-    `Village context (30-40% of replies only):`,
-    `- Occasionally link to "here in our village", the village café, or honest market when natural.`,
-    `- Do not mention the village every turn.`,
+    `VILLAGE CONTEXT: Use village life (the honest market, the frozen lake, the community cafe) as the SETTING for your examples, but do not let the lore distract from the English lesson.`,
 
-    `PERSONA STYLE:\n${c.style}`,
+    `ACTIVE CHAPTER: "${chapter}".`,
 
-    `PERSONA BACKGROUND:\n${c.background}`,
+    vocabSection,
 
-    `Signature phrases (use very rarely):\n${c.phrases.join(" | ")}`,
+    `STRICT INTERACTION RULES:
+1. NEVER mention you are an AI.
+2. Keep all replies under 3 sentences.
+3. If ${student} makes a mistake, provide the correct model in your first sentence.
+4. ALWAYS end with a single, clear English-learning task or question.`,
 
-    `Student name: ${student}. Use the name only 30-40% of the time. Do not start every reply with the name.`,
-
-    `Teaching tone: warm, calm, encouraging, patient.`,
-
-    `TOPIC: "${topic}". Stay focused on transportation and travel.`,
-
-    vocabSection || "",
-
-    `ANTI-DRIFT & STEERING RULES — VERY IMPORTANT:`,
-    `- Do NOT follow long personal stories (Egypt, school memories, taxi getting lost, etc.).`,
-    `- Gently steer back to the lesson vocabulary in the same reply.`,
-    `- Example: "That sounds like quite an adventure! Speaking of travel here in our village, can you tell me about buying a ticket or waiting at the bus stop?"`,
-    `- Keep the conversation on rooms/furniture or transportation words from the lesson.`,
-
-    `GENERAL TEACHING RULES:`,
-    `- Keep every reply short: maximum 3 sentences.`,
-    `- Always end with exactly ONE clear question or task focused on a target word.`,
-    `- Correct gently by modeling the full correct sentence.`,
-    `- Never mention you are an AI.`,
-
-    mode === "voice" 
-      ? `VOICE MODE: Speak naturally.` 
-      : `TEXT MODE: Correct gently by example.`,
+    mode === "voice" ? "VOICE MODE: Keep sentences simple and rhythmic." : "TEXT MODE: Use standard punctuation.",
 
     turnGuard
   ].filter(Boolean).join("\n\n");
 }
 
-// History helper: keep last 40 messages
+// History helper: 20 messages is usually the "sweet spot" for context vs speed
 async function loadHistory(sessionId) {
-return JSON.parse((await redis.get(`history:${sessionId}`)) || "[]");
+  return JSON.parse((await redis.get(`history:${sessionId}`)) || "[]");
 }
+
 async function saveHistory(sessionId, arr) {
-const MAX = 40;
-const trimmed = arr.length > MAX ? arr.slice(arr.length - MAX) : arr;
-await redis.set(`history:${sessionId}`, JSON.stringify(trimmed));
-return trimmed;
+  const MAX = 20; 
+  const trimmed = arr.length > MAX ? arr.slice(-MAX) : arr;
+  await redis.set(`history:${sessionId}`, JSON.stringify(trimmed));
+  return trimmed;
 }
 // === Lessons ===
 const lessonIntros = require("./lessonIntros");
