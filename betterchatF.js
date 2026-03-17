@@ -1129,36 +1129,16 @@ app.post("/chat", async (req, res) => {
   try {
     const body = req.body || {};
 
-const userMessage =
-  body.text ||
-  body.message ||
-  body.userMessage ||
-  "";
+    const userMessage = body.text || body.message || body.userMessage || "";
+    const sessionId = body.sessionId || body.session_id || uuidv4();
+    const messageId = body.messageId || body.message_id || "";
 
-const sessionId =
-  body.sessionId ||
-  body.session_id ||
-  uuidv4();
+    const mode = body.mode || "text";
+    const isVoice = body.isVoice || mode === "voice";
+    const userNameFromFrontend = body.name || body.sessionData?.userName || null;
+    const demo = body.demo;
 
-const messageId =
-  body.messageId ||
-  body.message_id ||
-  "";
-
-const mode = body.mode || "text";
-const isVoice = body.isVoice || mode === "voice";
-const userNameFromFrontend =
-  body.name ||
-  body.sessionData?.userName ||
-  null;
-const demo = body.demo;
-
-const activeCharacterKey =
-  body.activeCharacterKey ||
-  body.character ||
-  "mcarthur";
-
-const incomingSessionData = body.sessionData || {};
+    const incomingSessionData = body.sessionData || {};
 
     if (!messageId) {
       console.error("❌ Missing messageId");
@@ -1169,46 +1149,39 @@ const incomingSessionData = body.sessionData || {};
     const dedupeKey = `processed:${sessionId}:${messageId}`;
     if (await redis.exists(dedupeKey)) {
       console.log(`⚠️ Skipping duplicate message: ${messageId}`);
-
       const messages = await loadHistory(sessionId);
-      const lastReply =
-        messages
-          .slice()
-          .reverse()
-          .find((m) => m.role === "assistant")?.content || "";
+      const lastReply = messages.slice().reverse().find((m) => m.role === "assistant")?.content || "";
 
       return res.json({
         text: lastReply,
-        character: activeCharacterKey,
+        character: "mcarthur",
         version: WWV_VERSION,
       });
     }
 
-    await redis.set(dedupeKey, "1", "EX", 300); // 5 min TTL
+    await redis.set(dedupeKey, "1", "EX", 300);
 
-const sanitizedText = userMessage ? String(userMessage).trim() : "";
+    const sanitizedText = userMessage ? String(userMessage).trim() : "";
 
     console.log("📩 Incoming chat request:", {
-  text: sanitizedText,
-  sessionId,
-  isVoice,
-  mode,
-  name: userNameFromFrontend,
-  demo,
-  activeCharacterKey,
-  messageId,
-  chapter: incomingSessionData?.currentLesson?.chapter,
-  wordlistLength: incomingSessionData?.lessonWordlist?.length,
-});
+      text: sanitizedText,
+      sessionId,
+      isVoice,
+      mode,
+      name: userNameFromFrontend,
+      demo,
+      messageId,
+      chapter: incomingSessionData?.currentLesson?.chapter,
+    });
 
-       // --- Load session data ---
+    // --- Load session data ---
     let sessionData;
     try {
       const sessionRaw = await redis.get(`session:${sessionId}`);
       const storedSessionData = sessionRaw
         ? JSON.parse(sessionRaw)
         : {
-            character: activeCharacterKey,
+            character: "mcarthur",
             studentLevel: null,
             currentLesson: null,
             isWeatherQuery: false,
@@ -1218,32 +1191,26 @@ const sanitizedText = userMessage ? String(userMessage).trim() : "";
             tutorAskedLastTurn: false,
           };
 
-      // Merge incoming (frontend) data on top of stored data
       sessionData = {
         ...storedSessionData,
         ...incomingSessionData,
-        character: activeCharacterKey,
-        userName:
-          userNameFromFrontend ||
-          incomingSessionData.userName ||
-          storedSessionData.userName ||
-          null,
-        currentLesson:
-          incomingSessionData.currentLesson ||
-          storedSessionData.currentLesson ||
-          null,
-        lessonWordlist:
-          incomingSessionData.lessonWordlist ||
-          storedSessionData.lessonWordlist ||
-          [],
+        userName: userNameFromFrontend ||
+                  incomingSessionData.userName ||
+                  storedSessionData.userName ||
+                  null,
+        currentLesson: incomingSessionData.currentLesson ||
+                       storedSessionData.currentLesson ||
+                       null,
+        lessonWordlist: incomingSessionData.lessonWordlist ||
+                        storedSessionData.lessonWordlist ||
+                        [],
       };
 
       console.log("📦 Loaded sessionData:", sessionData);
     } catch (err) {
       console.error(`❌ Redis error for session:${sessionId}:`, err.message);
-      // Fallback in case of Redis failure
       sessionData = {
-        character: activeCharacterKey,
+        character: "mcarthur",
         studentLevel: null,
         currentLesson: incomingSessionData.currentLesson || null,
         isWeatherQuery: false,
@@ -1253,16 +1220,19 @@ const sanitizedText = userMessage ? String(userMessage).trim() : "";
         tutorAskedLastTurn: false,
       };
     }
+
     // --- Username sync ---
     if (userNameFromFrontend && userNameFromFrontend !== sessionData.userName) {
       sessionData.userName = decodeURIComponent(userNameFromFrontend);
     }
 
-    // --- Lesson sync: auto-select correct teacher ---
+    // === CRITICAL FIX: Lesson character always wins ===
     if (sessionData.currentLesson) {
-      const lesson =
-        lessonIntros[sessionData.currentLesson.month]?.[sessionData.currentLesson.chapter];
-      if (lesson) sessionData.character = lesson.teacher;
+      const lesson = lessonIntros[sessionData.currentLesson.month]?.[sessionData.currentLesson.chapter];
+      if (lesson && lesson.teacher && characters[lesson.teacher]) {
+        sessionData.character = lesson.teacher;
+        console.log(`✅ Lesson mode → forced character to ${sessionData.character}`);
+      }
     }
 
     // --- ASR Normalization ---
@@ -1270,7 +1240,7 @@ const sanitizedText = userMessage ? String(userMessage).trim() : "";
     const normalizedText = normalizeTranscript(sanitizedText, activeKeyForASR, !!isVoice);
     console.log("🔤 Normalized text:", normalizedText);
 
-    // --- Character switching by text trigger ---
+    // --- Character switching by text trigger (only in free chat) ---
     const requestedCharacterKey = findCharacter(normalizedText);
     const requestedCharacter = requestedCharacterKey ? characters[requestedCharacterKey] : null;
 
@@ -1295,9 +1265,6 @@ const sanitizedText = userMessage ? String(userMessage).trim() : "";
       const introText = `Hello, I am ${requestedCharacter.name}. What would you like to talk about today?`;
       await saveHistory(sessionId, [{ role: "assistant", content: introText }]);
 
-      res.setHeader("X-WWV-Version", WWV_VERSION);
-      res.setHeader("X-WWV-Character", requestedCharacterKey);
-
       return res.json({
         text: introText,
         character: requestedCharacterKey,
@@ -1309,31 +1276,21 @@ const sanitizedText = userMessage ? String(userMessage).trim() : "";
     // --- Load history ---
     let messages = await loadHistory(sessionId);
 
-        // --- Lesson engine state ---
-    let lessonState = JSON.parse(
-      (await redis.get(`lessonState:${sessionId}`)) || "null"
-    );
-
+    // --- Lesson engine state ---
+    let lessonState = JSON.parse((await redis.get(`lessonState:${sessionId}`)) || "null");
     if (!lessonState) {
       lessonState = initLessonState(sessionData);
     }
 
-   if (normalizedText && normalizedText.length > 0) {
-  // TEMP: skip lesson engine until processStudentTurn is fixed
-  console.log("Skipping processStudentTurn — function not available yet");
+    if (normalizedText && normalizedText.length > 0) {
+      console.log("Skipping processStudentTurn — function not available yet");
+      await redis.set(`lessonState:${sessionId}`, JSON.stringify(lessonState));
+    }
 
-  // Optional: fake a minimal update so other logic doesn't break
-  // lessonState = { ...lessonState, someFlag: true }; // if needed
-
-  // Still save whatever state you have
-  await redis.set(`lessonState:${sessionId}`, JSON.stringify(lessonState));
-}
-    // --- Demo mode chat limit ---
+    // --- Demo mode ---
     const DEMO_MAX_MESSAGES = 11;
     if (demo && messages.length >= DEMO_MAX_MESSAGES - 1) {
-      const goodbye =
-        "It was a pleasure sharing with you, friend. This concludes our demo conversation. Feel free to start a new session!";
-
+      const goodbye = "It was a pleasure sharing with you, friend. This concludes our demo conversation. Feel free to start a new session!";
       messages.push({ role: "assistant", content: goodbye });
       await saveHistory(sessionId, messages);
 
@@ -1451,9 +1408,9 @@ const sanitizedText = userMessage ? String(userMessage).trim() : "";
 
     const { wantsEnd, wantsNext } = detectEndOrNextIntent(normalizedText);
 
-  if (isCompleteNow && (wantsEnd || wantsNext)) {
-  const characterKeyForCompletion = sessionData.character || activeCharacterKey;
-  const voiceId = characters[characterKeyForCompletion].voiceId;
+    if (isCompleteNow && (wantsEnd || wantsNext)) {
+      const characterKeyForCompletion = sessionData.character || "mcarthur";
+      const voiceId = characters[characterKeyForCompletion].voiceId;
 
       const closing = wantsNext
         ? "Great! Lesson complete — moving to the next chapter."
@@ -1466,11 +1423,9 @@ const sanitizedText = userMessage ? String(userMessage).trim() : "";
       sessionData.tutorAskedLastTurn = false;
       await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
 
-      res.setHeader("X-WWV-Version", WWV_VERSION);
-      res.setHeader("X-WWV-Character", characterKeyForCompletion);
       return res.json({
         text: closing,
-      character: characterKeyForCompletion,
+        character: characterKeyForCompletion,
         voiceId,
         learnedCount: sessionData.learnedWords.length,
         newlyLearned,
@@ -1487,16 +1442,16 @@ const sanitizedText = userMessage ? String(userMessage).trim() : "";
     await saveHistory(sessionId, messages);
 
     // --- System prompt ---
-const characterKeyForPrompt = sessionData.character || activeCharacterKey;
-const combinedGuard = "";
-const systemPrompt = buildSystemPrompt(
-  characterKeyForPrompt,
-  sessionData,
-  isVoice ? "voice" : "text",
-  lessonState,      // ← now passes real state
-  combinedGuard
-);
-    console.log("🛠 Using systemPrompt:", systemPrompt);
+    const characterKeyForPrompt = sessionData.character || "mcarthur";
+    const combinedGuard = "";
+    const systemPrompt = buildSystemPrompt(
+      characterKeyForPrompt,
+      sessionData,
+      isVoice ? "voice" : "text",
+      lessonState,
+      combinedGuard
+    );
+    console.log("🛠 Using systemPrompt for character:", characterKeyForPrompt);
 
     // --- OpenAI request ---
     const completion = await openai.chat.completions.create({
@@ -1505,8 +1460,7 @@ const systemPrompt = buildSystemPrompt(
       temperature: 0.5,
     });
 
-    const reply =
-      (completion.choices?.[0]?.message?.content || "").trim() || "Okay.";
+    const reply = (completion.choices?.[0]?.message?.content || "").trim() || "Okay.";
 
     sessionData.tutorAskedLastTurn = /\?\s*$/.test(reply);
     console.log("💬 OpenAI reply:", reply);
@@ -1518,13 +1472,16 @@ const systemPrompt = buildSystemPrompt(
 
     await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
 
-    const voiceId = characters[activeCharacterKey].voiceId;
+    // === FINAL RESPONSE — always use the correct session character ===
+    const finalCharacter = sessionData.character || "mcarthur";
+    const voiceId = characters[finalCharacter].voiceId;
+
     res.setHeader("X-WWV-Version", WWV_VERSION);
-    res.setHeader("X-WWV-Character", activeCharacterKey);
+    res.setHeader("X-WWV-Character", finalCharacter);
 
     return res.json({
       text: reply,
-      character: activeCharacterKey,
+      character: finalCharacter,
       voiceId,
       learnedCount: sessionData.learnedWords.length,
       newlyLearned,
@@ -1533,6 +1490,7 @@ const systemPrompt = buildSystemPrompt(
       badgeTitle,
       version: WWV_VERSION,
     });
+
   } catch (err) {
     console.error("=== /chat CRASHED ===");
     console.error(err?.stack || err);
