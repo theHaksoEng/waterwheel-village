@@ -825,50 +825,42 @@ function buildSystemPrompt(
   activeCharacterKey,
   sessionData,
   mode,
-  lessonState = null,
+  state = null, 
   turnGuard = ""
 ) {
   const c = characters[activeCharacterKey] || characters.sophia;
   const student = sessionData?.userName || "friend";
   const chapter = sessionData?.currentLesson?.chapter || "daily life";
   
-  // Logic to prevent repeating words already used in this session
-  const mastered = sessionData?.masteredWords || [];
-  const activeWords = (sessionData?.lessonWordlist || [])
-    .filter(word => !mastered.includes(word))
-    .slice(0, 5); // Focus on a smaller "working set" for better retention
+  // 1. DYNAMIC STAGE LOGIC: This pulls from your buildStageMode function
+  const stageInstructions = state ? buildStageMode(sessionData, state) : "";
+  
+  // 2. DYNAMIC VOCAB LOGIC: This pulls only the "missing" words from your state
+  const missingWords = state ? getMissingWords(state, 5) : (sessionData?.lessonWordlist?.slice(0, 5) || []);
 
-  let vocabSection = "";
-  if (activeWords.length > 0) {
-    vocabSection = `
-CURRENT TARGET VOCABULARY: ${activeWords.join(", ")}
-VOCABULARY GOAL: 
-- Pick ONE word from the list above.
-- Ask ${student} to use it in a sentence or answer a question using it.
-- Once they use it correctly, praise them.
-`;
-  }
+  // 3. DRIFT LOGIC: A "Red Alert" for the AI if it gets distracted by ice cream
+  const driftWarning = (state && state.driftCount > 0) 
+    ? `!!! DRIFT ALERT: The student is off-topic. Acknowledge briefly and RE-DIRECT them back to the lesson topic "${chapter}" immediately.` 
+    : "";
 
   return [
     `ROLE: You are ${c.name}, an ESL tutor from Waterwheel Village, Finland.`,
     
-    `PERSONALITY: ${c.style} ${c.background}`,
-    
-    `TONE: Warm, professional, and encouraging. Use "${student}" occasionally (30% of turns).`,
+    `PERSONALITY & STYLE:\n${c.style}\n${c.background}`,
 
-    `VILLAGE CONTEXT: Use village life (the honest market, the frozen lake, the community cafe) as the SETTING for your examples, but do not let the lore distract from the English lesson.`,
+    `CURRENT LESSON FOCUS:\n${stageInstructions}`,
 
-    `ACTIVE CHAPTER: "${chapter}".`,
+    `TARGET VOCABULARY TO USE NOW: ${missingWords.join(", ")}`,
 
-    vocabSection,
+    driftWarning,
 
-    `STRICT INTERACTION RULES:
+    `STRICT RULES:
 1. NEVER mention you are an AI.
-2. Keep all replies under 3 sentences.
-3. If ${student} makes a mistake, provide the correct model in your first sentence.
-4. ALWAYS end with a single, clear English-learning task or question.`,
+2. MAX 3 SENTENCES per reply. 
+3. MODEL MISTAKES: Use the first sentence to model the correct version of what the student said.
+4. ONE TASK: End with exactly ONE question or task using a target word.`,
 
-    mode === "voice" ? "VOICE MODE: Keep sentences simple and rhythmic." : "TEXT MODE: Use standard punctuation.",
+    mode === "voice" ? "VOICE MODE: Keep it rhythmic." : "TEXT MODE: Standard grammar.",
 
     turnGuard
   ].filter(Boolean).join("\n\n");
@@ -1245,10 +1237,22 @@ app.post("/chat", async (req, res) => {
       lessonState = initLessonState(sessionData);
     }
 
-    if (normalizedText && normalizedText.length > 0) {
-      console.log("Skipping processStudentTurn — function not available yet");
-      await redis.set(`lessonState:${sessionId}`, JSON.stringify(lessonState));
-    }
+   // --- UPDATED INTELLIGENCE LOGIC ---
+if (normalizedText && normalizedText.length > 0) {
+  // 1. Check for vocabulary usage
+  lessonState = updateVocabStatusesFromStudentText(lessonState, normalizedText);
+  
+  // 2. Check for "Ice Cream" drift
+  lessonState = detectDrift(normalizedText, sessionData, lessonState);
+  
+  // 3. Update turn counters and calculate the next stage (Warmup -> Activate, etc.)
+  lessonState = bumpLessonCounters(lessonState);
+  lessonState.stage = getNextStage(lessonState);
+  lessonState = maybeMarkChapterComplete(lessonState);
+
+  // 4. Save this "thinking" back to Redis
+  await redis.set(`lessonState:${sessionId}`, JSON.stringify(lessonState));
+}
 
     // --- Demo mode ---
     const DEMO_MAX_MESSAGES = 11;
