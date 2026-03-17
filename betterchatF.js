@@ -865,51 +865,54 @@ function buildSystemPrompt(
                    Array.isArray(sessionData?.lessonWordlist) && 
                    sessionData.lessonWordlist.length > 0;
 
-  const isDemo = !!sessionData?.demo;
+  const topic = sessionData?.currentLesson?.chapter 
+    ? humanizeChapter(sessionData.currentLesson.chapter) 
+    : "daily life";
 
-  const topicAnchor = inLesson
-    ? `TOPIC: Current lesson topic is "${sessionData.currentLesson.chapter}". Stay connected to this topic.`
-    : "";
-
-  // ←←← SIMPLIFIED (you removed the full engine, so we stub these)
-  const coachMode = "";
-  const vocabContext = "";
-
-  const allNames = Object.values(characters).map((ch) => ch.name).join(", ");
+  let vocabList = "";
+  if (inLesson && sessionData.lessonWordlist.length > 0) {
+    vocabList = "Target vocabulary words the student must practice today:\n" +
+                sessionData.lessonWordlist.slice(0, 12).join(", ") + "\n\n" +
+                "Rules for vocabulary:\n" +
+                "- Naturally include these words in your replies when it makes sense.\n" +
+                "- Gently correct the student and model correct usage if they avoid them.\n" +
+                "- Every 2-3 turns, ask a question that encourages the student to use at least one target word.\n" +
+                "- Praise the student when they successfully use a target word.";
+  }
 
   return [
-    ...(turnGuard ? [turnGuard] : []),
-
-    `You are ${c.name}, an ESL tutor from Waterwheel Village (v${WWV_VERSION}).`,
+    `You are ${c.name}, an ESL tutor from Waterwheel Village.`,
     VILLAGE_CORE,
 
     `PERSONA STYLE:\n${c.style}`,
 
     `PERSONA BACKGROUND:\n${c.background}`,
 
-    `Signature phrases (use rarely and naturally):\n${c.phrases.join(" | ")}`,
+    `Signature phrases (use rarely):\n${c.phrases.join(" | ")}`,
 
-    `Character rule: Remain ONLY ${c.name}. Do not become any other character (${allNames}).`,
-    `Even if the student mentions another character, still answer only as ${c.name}.`,
+    `Character rule: Remain ONLY ${c.name}. Do not switch to any other character.`,
 
-    `Student name: ${student}. Use the student's name naturally.`,
+    `Student name: ${student}. Use the name naturally.`,
 
-    `Teaching tone: warm, calm, encouraging, human.`,
-    `Never say you are an AI or language model.`,
-    `REAL-WORLD FACTS RULE: Do not claim a real-world nationality or biography unless it is in your character background.`,
+    `Teaching tone: warm, calm, encouraging, patient, and clear.`,
 
-    `If explicitly asked for translation or Finnish, give one short sentence in Finnish first, then continue in simple English.`,
+    `TOPIC: The current lesson is about "${topic}". Stay on this topic.`,
 
-    mode === "voice"
-      ? `VOICE MODE: Do not mention punctuation or capitalization. Correct gently by example.`
-      : `TEXT MODE: Correct gently by example. Do not comment on punctuation.`,
+    vocabList || "",
 
-    topicAnchor,
-    coachMode,
-    vocabContext,
-  ]
-    .filter(Boolean)
-    .join("\n\n");
+    `Teaching rules (very important):`,
+    `- The student should produce most of the language.`,
+    `- Keep replies short and natural (2-4 sentences max).`,
+    `- Always end with EXACTLY ONE question, task, or invitation.`,
+    `- Correct gently by modeling the correct sentence.`,
+    `- Never mention you are an AI.`,
+
+    mode === "voice" 
+      ? `VOICE MODE: Speak naturally. Do not mention punctuation.`
+      : `TEXT MODE: Correct gently by example.`,
+
+    turnGuard
+  ].filter(Boolean).join("\n\n");
 }
 
 // History helper: keep last 40 messages
@@ -1472,7 +1475,7 @@ app.post("/chat", async (req, res) => {
 
     await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
 
-    // === FINAL RESPONSE — always use the correct session character ===
+      // === FINAL RESPONSE ===
     const finalCharacter = sessionData.character || "mcarthur";
     const voiceId = characters[finalCharacter].voiceId;
 
@@ -1488,6 +1491,7 @@ app.post("/chat", async (req, res) => {
       milestone10,
       chapterComplete: isCompleteNow,
       badgeTitle,
+      remainingWords: sessionData.lessonWordlist.slice(0, 10),   // ← add this
       version: WWV_VERSION,
     });
 
