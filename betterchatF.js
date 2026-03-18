@@ -1115,8 +1115,17 @@ app.post("/chat", async (req, res) => {
 
     const normalizedText = normalizeTranscript(userMessage, sessionData.character || "mcarthur", isVoice);
 
-    // 3. THE BRAIN: UPDATE LESSON STATE
+    // --- 3. THE BRAIN: UPDATE LESSON STATE ---
     let lessonState = JSON.parse((await redis.get(`lessonState:${sessionId}`)) || "null");
+
+    // NEW: EMERGENCY RESET LOGIC
+    const currentChapter = sessionData.currentLesson?.chapter || "unknown";
+    if (lessonState && lessonState.chapterId !== currentChapter) {
+      console.log(`♻️ CHAPTER MISMATCH: Resetting brain from ${lessonState.chapterId} to ${currentChapter}`);
+      lessonState = initLessonState(sessionData); 
+      // This wipes the "Directions" memory if we are now in "Body & Health"
+    }
+
     if (!lessonState) lessonState = initLessonState(sessionData);
 
     let newlyLearned = [];
