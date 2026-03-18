@@ -1077,398 +1077,108 @@ console.log(`Lesson response:`, response);
 res.json(response);
 });
 app.post("/chat", async (req, res) => {
-  console.log("=== /chat HIT ===");
-  console.log("Origin:", req.headers.origin || "(none)");
-  console.log("Body:", req.body);
-
   try {
     const body = req.body || {};
-
     const userMessage = body.text || body.message || body.userMessage || "";
     const sessionId = body.sessionId || body.session_id || uuidv4();
     const messageId = body.messageId || body.message_id || "";
-
     const mode = body.mode || "text";
     const isVoice = body.isVoice || mode === "voice";
     const userNameFromFrontend = body.name || body.sessionData?.userName || null;
-    const demo = body.demo;
-
     const incomingSessionData = body.sessionData || {};
 
-    if (!messageId) {
-      console.error("❌ Missing messageId");
-      return res.status(400).json({ error: "Missing messageId" });
-    }
+    if (!messageId) return res.status(400).json({ error: "Missing messageId" });
 
-    // Duplicate protection
+    // 1. DUPLICATE PROTECTION
     const dedupeKey = `processed:${sessionId}:${messageId}`;
     if (await redis.exists(dedupeKey)) {
-      console.log(`⚠️ Skipping duplicate message: ${messageId}`);
       const messages = await loadHistory(sessionId);
-      const lastReply = messages.slice().reverse().find((m) => m.role === "assistant")?.content || "";
-
-      return res.json({
-        text: lastReply,
-        character: "mcarthur",
-        version: WWV_VERSION,
-      });
+      return res.json({ text: messages.reverse().find(m => m.role === "assistant")?.content || "", version: WWV_VERSION });
     }
-
     await redis.set(dedupeKey, "1", "EX", 300);
 
-    const sanitizedText = userMessage ? String(userMessage).trim() : "";
+    // 2. LOAD DATA
+    const sessionRaw = await redis.get(`session:${sessionId}`);
+    let sessionData = sessionRaw ? JSON.parse(sessionRaw) : { character: "mcarthur", learnedWords: [], lessonWordlist: [] };
+    
+    // Sync incoming data
+    sessionData = { ...sessionData, ...incomingSessionData };
+    if (userNameFromFrontend) sessionData.userName = decodeURIComponent(userNameFromFrontend);
 
-    console.log("📩 Incoming chat request:", {
-      text: sanitizedText,
-      sessionId,
-      isVoice,
-      mode,
-      name: userNameFromFrontend,
-      demo,
-      messageId,
-      chapter: incomingSessionData?.currentLesson?.chapter,
-    });
-
-    // --- Load session data ---
-    let sessionData;
-    try {
-      const sessionRaw = await redis.get(`session:${sessionId}`);
-      const storedSessionData = sessionRaw
-        ? JSON.parse(sessionRaw)
-        : {
-            character: "mcarthur",
-            studentLevel: null,
-            currentLesson: null,
-            isWeatherQuery: false,
-            learnedWords: [],
-            userName: null,
-            lessonWordlist: [],
-            tutorAskedLastTurn: false,
-          };
-
-      sessionData = {
-        ...storedSessionData,
-        ...incomingSessionData,
-        userName: userNameFromFrontend ||
-                  incomingSessionData.userName ||
-                  storedSessionData.userName ||
-                  null,
-        currentLesson: incomingSessionData.currentLesson ||
-                       storedSessionData.currentLesson ||
-                       null,
-        lessonWordlist: incomingSessionData.lessonWordlist ||
-                        storedSessionData.lessonWordlist ||
-                        [],
-      };
-
-      console.log("📦 Loaded sessionData:", sessionData);
-    } catch (err) {
-      console.error(`❌ Redis error for session:${sessionId}:`, err.message);
-      sessionData = {
-        character: "mcarthur",
-        studentLevel: null,
-        currentLesson: incomingSessionData.currentLesson || null,
-        isWeatherQuery: false,
-        learnedWords: [],
-        userName: userNameFromFrontend || incomingSessionData.userName || null,
-        lessonWordlist: incomingSessionData.lessonWordlist || [],
-        tutorAskedLastTurn: false,
-      };
-    }
-
-    // --- Username sync ---
-    if (userNameFromFrontend && userNameFromFrontend !== sessionData.userName) {
-      sessionData.userName = decodeURIComponent(userNameFromFrontend);
-    }
-
-    // === CRITICAL FIX: Lesson character always wins ===
+    // Forced character for lessons
     if (sessionData.currentLesson) {
       const lesson = lessonIntros[sessionData.currentLesson.month]?.[sessionData.currentLesson.chapter];
-      if (lesson && lesson.teacher && characters[lesson.teacher]) {
-        sessionData.character = lesson.teacher;
-        console.log(`✅ Lesson mode → forced character to ${sessionData.character}`);
-      }
+      if (lesson?.teacher) sessionData.character = lesson.teacher;
     }
 
-    // --- ASR Normalization ---
-    const activeKeyForASR = sessionData.character || "mcarthur";
-    const normalizedText = normalizeTranscript(sanitizedText, activeKeyForASR, !!isVoice);
-    console.log("🔤 Normalized text:", normalizedText);
+    const normalizedText = normalizeTranscript(userMessage, sessionData.character || "mcarthur", isVoice);
 
-    // --- Character switching by text trigger (only in free chat) ---
-    const requestedCharacterKey = findCharacter(normalizedText);
-    const requestedCharacter = requestedCharacterKey ? characters[requestedCharacterKey] : null;
-
-    if (
-      !sessionData.currentLesson &&
-      requestedCharacter &&
-      requestedCharacterKey !== sessionData.character
-    ) {
-      sessionData.character = requestedCharacterKey;
-      sessionData.currentLesson = null;
-      sessionData.isWeatherQuery = false;
-      sessionData.learnedWords = [];
-      sessionData.lessonWordlist = [];
-      sessionData.tutorAskedLastTurn = false;
-
-      await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
-      await saveHistory(sessionId, []);
-      await redis.del(`lessonState:${sessionId}`);
-
-      console.log("🔄 Switched to new character:", requestedCharacterKey);
-
-      const introText = `Hello, I am ${requestedCharacter.name}. What would you like to talk about today?`;
-      await saveHistory(sessionId, [{ role: "assistant", content: introText }]);
-
-      return res.json({
-        text: introText,
-        character: requestedCharacterKey,
-        voiceId: requestedCharacter.voiceId,
-        version: WWV_VERSION,
-      });
-    }
-
-    // --- Load history ---
-    let messages = await loadHistory(sessionId);
-
-    // --- Lesson engine state ---
+    // 3. THE BRAIN: UPDATE LESSON STATE
     let lessonState = JSON.parse((await redis.get(`lessonState:${sessionId}`)) || "null");
-    if (!lessonState) {
-      lessonState = initLessonState(sessionData);
-    }
+    if (!lessonState) lessonState = initLessonState(sessionData);
 
-   // --- UPDATED INTELLIGENCE LOGIC ---
-if (normalizedText && normalizedText.length > 0) {
-  // 1. Check for vocabulary usage
-  lessonState = updateVocabStatusesFromStudentText(lessonState, normalizedText);
-  
-  // 2. Check for "Ice Cream" drift
-  lessonState = detectDrift(normalizedText, sessionData, lessonState);
-  
-  // 3. Update turn counters and calculate the next stage (Warmup -> Activate, etc.)
-  lessonState = bumpLessonCounters(lessonState);
-  lessonState.stage = getNextStage(lessonState);
-  lessonState = maybeMarkChapterComplete(lessonState);
-
-  // 4. Save this "thinking" back to Redis
-  await redis.set(`lessonState:${sessionId}`, JSON.stringify(lessonState));
-}
-
-    // --- Demo mode ---
-    const DEMO_MAX_MESSAGES = 11;
-    if (demo && messages.length >= DEMO_MAX_MESSAGES - 1) {
-      const goodbye = "It was a pleasure sharing with you, friend. This concludes our demo conversation. Feel free to start a new session!";
-      messages.push({ role: "assistant", content: goodbye });
-      await saveHistory(sessionId, messages);
-
-      return res.json({
-        text: goodbye,
-        character: sessionData.character,
-        voiceId: characters[sessionData.character].voiceId,
-        demoEnded: true,
-      });
-    }
-
-    // --- Word Counting Logic ---
-    function normalizeToken(t) {
-      t = String(t || "").toLowerCase().trim();
-      t = t.replace(/[^\w\s-]/g, "");
-      if (!t) return t;
-      if (t.length <= 2) return t;
-      if (t.endsWith("ies") && t.length > 3) return t.slice(0, -3) + "y";
-      if (t.endsWith("es") && t.length > 3) {
-        const base = t.slice(0, -2);
-        if (/(s|x|z|ch|sh|o)$/.test(base)) return base;
-      }
-      if (t.endsWith("s") && t.length > 3) return t.slice(0, -1);
-      return t;
-    }
-
-    const userWords = normalizedText
-      .toLowerCase()
-      .replace(/[^\w\s-]/g, "")
-      .split(/\s+/)
-      .filter((w) => w.length > 0);
-
-    const userSet = new Set();
-    for (const w of userWords) {
-      userSet.add(w);
-      userSet.add(normalizeToken(w));
-    }
-
-    const userNorm = normalizedText.toLowerCase().replace(/[^\w\s-]/g, "").trim();
-
-    // --- Word tracking + milestones ---
     let newlyLearned = [];
-    let milestone10 = false;
-    let chapterComplete = false;
-    let badgeTitle = null;
-
-    const previousLearnedCount = sessionData.learnedWords.length;
-    const previousWordsRemaining = sessionData.lessonWordlist.length;
-
-    if (sessionData.lessonWordlist.length > 0) {
-      const wordsRemaining = [];
-
-      for (const rawWord of sessionData.lessonWordlist) {
-        const lessonWord = String(rawWord || "").toLowerCase().trim();
-        const normLesson = normalizeToken(lessonWord);
-
-        let isMatch = userSet.has(lessonWord) || userSet.has(normLesson);
-
-        if (!isMatch && lessonWord.includes(" ")) {
-          const phraseNorm = lessonWord.replace(/[^\w\s-]/g, "").trim();
-          if (userNorm.includes(phraseNorm)) isMatch = true;
-        }
-
-        if (isMatch && !sessionData.learnedWords.includes(lessonWord)) {
-          sessionData.learnedWords.push(lessonWord);
-          newlyLearned.push(lessonWord);
-        } else {
-          wordsRemaining.push(lessonWord);
-        }
-      }
-
-      sessionData.lessonWordlist = wordsRemaining;
-
-      const previousCount = previousLearnedCount || 0;
-      const currentCount = sessionData.learnedWords.length || 0;
-      const prevLevel = Math.floor(previousCount / 10);
-      const currentLevel = Math.floor(currentCount / 10);
-
-      if (currentLevel > prevLevel && currentLevel > 0) {
-        milestone10 = true;
-        const studentName = sessionData.userName || "friend";
-        const wordsLearned = currentLevel * 10;
-        newlyLearned.push(
-          `\n\n${studentName}, you’ve already used ${wordsLearned} new words from this unit! 🎉`
-        );
-      }
-
-      if (
-        sessionData.lessonWordlist.length === 0 &&
-        previousWordsRemaining > 0 &&
-        sessionData.learnedWords.length > 0
-      ) {
-        chapterComplete = true;
-
-        const chapterName = sessionData.currentLesson
-          ? humanizeChapter(sessionData.currentLesson.chapter)
-          : "this lesson";
-
-        badgeTitle = `${chapterName} Explorer`;
-
-        newlyLearned.push(
-          `\n\n🎉 You've learned all the words for this lesson! Great job!\n\n` +
-            `You are now a ${badgeTitle} of Waterwheel Village 🏅\n\n` +
-            `If you like, we can:\n` +
-            ` (A) review these words again,\n` +
-            ` (B) write a short story using them, or\n` +
-            ` (C) talk freely about your week.`
-        );
-      }
+    if (normalizedText) {
+      // Analyze the text
+      lessonState = updateVocabStatusesFromStudentText(lessonState, normalizedText);
+      lessonState = detectDrift(normalizedText, sessionData, lessonState);
+      lessonState = bumpLessonCounters(lessonState);
+      lessonState.stage = getNextStage(lessonState);
+      
+      // Sync words back to sessionData for UI milestones
+      const currentProduced = lessonState.vocab.filter(v => v.status === "produced" || v.status === "mastered").map(v => v.word);
+      newlyLearned = currentProduced.filter(w => !sessionData.learnedWords.includes(w));
+      sessionData.learnedWords = [...new Set([...sessionData.learnedWords, ...currentProduced])];
+      
+      // Update remaining list
+      sessionData.lessonWordlist = lessonState.vocab.filter(v => v.status === "unused").map(v => v.word);
+      
+      await redis.set(`lessonState:${sessionId}`, JSON.stringify(lessonState));
     }
 
-    const isCompleteNow =
-      chapterComplete ||
-      (sessionData.lessonWordlist.length === 0 && sessionData.learnedWords.length > 0);
-
+    // 4. CHECK COMPLETION
     const { wantsEnd, wantsNext } = detectEndOrNextIntent(normalizedText);
+    const isChapterDone = (sessionData.lessonWordlist.length === 0 && sessionData.learnedWords.length > 0);
 
-    if (isCompleteNow && (wantsEnd || wantsNext)) {
-      const characterKeyForCompletion = sessionData.character || "mcarthur";
-      const voiceId = characters[characterKeyForCompletion].voiceId;
-
-      const closing = wantsNext
-        ? "Great! Lesson complete — moving to the next chapter."
-        : "Great! Lesson complete — goodbye!";
-
-      messages.push({ role: "assistant", content: closing });
-      await saveHistory(sessionId, messages);
-
-      sessionData.conversationState = wantsNext ? "ADVANCE_CHAPTER" : "ENDED";
-      sessionData.tutorAskedLastTurn = false;
-      await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
-
-      return res.json({
-        text: closing,
-        character: characterKeyForCompletion,
-        voiceId,
-        learnedCount: sessionData.learnedWords.length,
-        newlyLearned,
-        milestone10,
-        chapterComplete: isCompleteNow,
-        badgeTitle,
-        action: wantsNext ? "NEXT_CHAPTER" : "END_LESSON",
-        version: WWV_VERSION,
-      });
+    if (isChapterDone && (wantsEnd || wantsNext)) {
+      const closing = wantsNext ? "Wonderful! Moving to the next chapter." : "Great job today! Goodbye!";
+      return res.json({ text: closing, action: wantsNext ? "NEXT_CHAPTER" : "END_LESSON", chapterComplete: true });
     }
 
-    // --- Build message history for OpenAI ---
+    // 5. TALK TO AI
+    let messages = await loadHistory(sessionId);
     messages.push({ role: "user", content: normalizedText });
-    await saveHistory(sessionId, messages);
 
-    // --- System prompt ---
-    const characterKeyForPrompt = sessionData.character || "mcarthur";
-    const combinedGuard = "";
-    const systemPrompt = buildSystemPrompt(
-      characterKeyForPrompt,
-      sessionData,
-      isVoice ? "voice" : "text",
-      lessonState,
-      combinedGuard
-    );
-    console.log("🛠 Using systemPrompt for character:", characterKeyForPrompt);
+    const systemPrompt = buildSystemPrompt(sessionData.character, sessionData, mode, lessonState);
 
-    // --- OpenAI request ---
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [{ role: "system", content: systemPrompt }, ...messages],
       temperature: 0.5,
     });
 
-    const reply = (completion.choices?.[0]?.message?.content || "").trim() || "Okay.";
-
-    sessionData.tutorAskedLastTurn = /\?\s*$/.test(reply);
-    console.log("💬 OpenAI reply:", reply);
-
-    // --- Save response ---
-    messages = await loadHistory(sessionId);
+    const reply = completion.choices[0].message.content;
     messages.push({ role: "assistant", content: reply });
+    
+    // 6. SAVE & RESPOND
     await saveHistory(sessionId, messages);
-
     await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
-
-      // === FINAL RESPONSE ===
-    const finalCharacter = sessionData.character || "mcarthur";
-    const voiceId = characters[finalCharacter].voiceId;
-
-    res.setHeader("X-WWV-Version", WWV_VERSION);
-    res.setHeader("X-WWV-Character", finalCharacter);
 
     return res.json({
       text: reply,
-      character: finalCharacter,
-      voiceId,
-      learnedCount: sessionData.learnedWords.length,
+      character: sessionData.character,
+      voiceId: characters[sessionData.character].voiceId,
       newlyLearned,
-      milestone10,
-      chapterComplete: isCompleteNow,
-      badgeTitle,
-      remainingWords: sessionData.lessonWordlist.slice(0, 10),   // ← add this
-      version: WWV_VERSION,
+      remainingWords: sessionData.lessonWordlist.slice(0, 5),
+      chapterComplete: isChapterDone,
+      version: WWV_VERSION
     });
 
   } catch (err) {
-    console.error("=== /chat CRASHED ===");
-    console.error(err?.stack || err);
-    return res.status(500).json({
-      error: "Chat failed",
-      details: err?.message || "Unknown error",
-    });
+    console.error("CRASH:", err);
+    res.status(500).send("Error");
   }
 });
-
 // === Speakbase endpoint (ElevenLabs with disk cache) ===
 function cleanTextForSpeech(input) {
   if (!input || typeof input !== "string") return "";
