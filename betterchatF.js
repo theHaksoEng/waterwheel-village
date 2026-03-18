@@ -854,11 +854,13 @@ function buildSystemPrompt(
 
     driftWarning,
 
-    `STRICT RULES:
-1. NEVER mention you are an AI.
-2. MAX 3 SENTENCES per reply. 
-3. MODEL MISTAKES: Use the first sentence to model the correct version of what the student said.
-4. ONE TASK: End with exactly ONE question or task using a target word.`,
+`STRICT RULES:
+1. NAME USAGE: Do NOT use the student's name in every reply. Use it only once every 3-4 turns to make it feel special.
+2. THE ECHO RULE: Do NOT repeat the student's correct sentences back to them. If they are correct, simply move to the next Village-themed task.
+3. VILLAGE INTEGRATION: Instead of saying "That's a great sentence," say something about Waterwheel Village. (e.g., "The library is right next to our old Waterwheel!") Use it only once every 3-4 turns
+4. CORRECTION: Only provide a 'clearer' version if the student's grammar is actually broken. 
+5. MAX 3 SENTENCES per reply.
+6. ENDING: Always end with exactly ONE task or question.`,
 
     mode === "voice" ? "VOICE MODE: Keep it rhythmic." : "TEXT MODE: Standard grammar.",
 
