@@ -686,44 +686,37 @@ Rules:
 
 function buildGuidedMode(sessionData, state) {
   const chapter = sessionData?.currentLesson?.chapter || "daily life";
-  const missingWords = getMissingWords(state, 6).join(", ");
+  const missing = (state?.vocab || [])
+    .filter(v => v.status === "unused")
+    .slice(0, 5)
+    .map(v => v.word)
+    .join(", ");
+
   return `
 GUIDED PRACTICE MODE — ACTIVE
+Topic: ${chapter}
 
-Lesson topic: "${chapter}"
-
-Purpose:
-Develop stronger controlled production.
-
-Rules:
-- Use short description, comparison, completion, or explanation tasks.
-- Keep teaching progression stronger than free conversation.
-- If the student drifts, acknowledge briefly and return to the lesson in the same reply.
-- Recycle missing lesson words naturally.
-- Prioritize these not-yet-green words when helpful: ${missingWords || "use remaining target words"}.
-- End with exactly ONE question, task, or invitation.
+STRICT INSTRUCTION: The student is high-level, but they MUST use the target vocabulary. 
+Do NOT ask open-ended life questions. Instead, use a "Pivot":
+1. Acknowledge their last comment in 1 short sentence.
+2. Immediately ask a question that requires one of these words: [${missing}].
 `.trim();
 }
 
 function buildScenarioMode(sessionData, state) {
   const chapter = sessionData?.currentLesson?.chapter || "daily life";
-  const missingWords = getMissingWords(state, 6).join(", ");
+  const missing = (state?.vocab || [])
+    .filter(v => v.status === "unused")
+    .slice(0, 5)
+    .map(v => v.word)
+    .join(", ");
+
   return `
 SCENARIO MODE — ACTIVE
+Roleplay Topic: ${chapter}
 
-Lesson topic: "${chapter}"
-
-Purpose:
-Practice realistic communication.
-
-Rules:
-- Prefer mini roleplay or practical scenarios.
-- Keep the scenario directly related to the lesson topic.
-- Do not allow long unrelated topic chains.
-- If a student answer is unrealistic, gently correct it, give a real example, and ask for one better answer.
-- If a student answer becomes unsafe or violent, redirect calmly and return to professional/everyday language.
-- Try to bring in these remaining words if possible: ${missingWords || "remaining target words"}.
-- End with exactly ONE question, task, or invitation.
+Goal: The student must use these words in context: ${missing}.
+If the student drifts into "Free Chat," politely pull them back to the ${chapter} scenario.
 `.trim();
 }
 
