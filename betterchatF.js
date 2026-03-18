@@ -846,14 +846,16 @@ function buildSystemPrompt(
     `TARGET VOCABULARY TO USE NOW: ${missingWords.join(", ")}`,
 
     driftWarning,
-
 `STRICT RULES:
-1. NAME USAGE: Do NOT use the student's name in every reply. Use it only once every 3-4 turns to make it feel special.
-2. THE ECHO RULE: Do NOT repeat the student's correct sentences back to them. If they are correct, simply move to the next Village-themed task.
-3. VILLAGE INTEGRATION: Instead of saying "That's a great sentence," say something about Waterwheel Village. (e.g., "The library is right next to our old Waterwheel!") Use it only once every 3-4 turns
-4. CORRECTION: Only provide a 'clearer' version if the student's grammar is actually broken. 
-5. MAX 3 SENTENCES per reply.
-6. ENDING: Always end with exactly ONE task or question.`,
+1. NAME USAGE: Use the student's name only once every 4 turns.
+2. NO ECHOING: Never repeat the student's correct sentences. If they are right, acknowledge it with a Village detail (e.g., "The carpenter's saw is loud today!") and move on.
+3. VILLAGE LORE: Connect every task to a landmark (The Stone Bridge, Blue Cafe, Blacksmith Forge).
+4. CORRECTION: Only offer a "Clearer version" if the grammar is broken. Otherwise, stay in character.
+5. BREVITY: Max 3 sentences per reply.
+6. THE REDIRECT: If a student repeats the same tool (like "tape measure") or word too often, you MUST say: "We have used that enough! Tell me about a DIFFERENT tool."
+7. NO TRANSLATION: Never ask the student to translate or ask "What does this mean?" 
+8. THE PIVOT: Do not just jump to new topics. Ask the student to describe the ACTION of a tool (e.g., "What does the plumber DO with that wrench?").
+9. ENDING: Always end with exactly ONE specific task or question.`,
 
     mode === "voice" ? "VOICE MODE: Keep it rhythmic." : "TEXT MODE: Standard grammar.",
 
@@ -1108,35 +1110,64 @@ app.post("/chat", async (req, res) => {
 
     const normalizedText = normalizeTranscript(userMessage, sessionData.character || "mcarthur", isVoice);
 
-    // --- 3. THE BRAIN: UPDATE LESSON STATE ---
+   // --- 3. THE BRAIN: UPDATE LESSON STATE ---
     let lessonState = JSON.parse((await redis.get(`lessonState:${sessionId}`)) || "null");
 
-    // NEW: EMERGENCY RESET LOGIC
+    // EMERGENCY RESET: Wipes old "Directions" memory if we switched chapters
     const currentChapter = sessionData.currentLesson?.chapter || "unknown";
     if (lessonState && lessonState.chapterId !== currentChapter) {
-      console.log(`♻️ CHAPTER MISMATCH: Resetting brain from ${lessonState.chapterId} to ${currentChapter}`);
+      console.log(`♻️ CHAPTER MISMATCH: Resetting brain to ${currentChapter}`);
       lessonState = initLessonState(sessionData); 
-      // This wipes the "Directions" memory if we are now in "Body & Health"
     }
-
     if (!lessonState) lessonState = initLessonState(sessionData);
 
     let newlyLearned = [];
     if (normalizedText) {
-      // Analyze the text
-      lessonState = updateVocabStatusesFromStudentText(lessonState, normalizedText);
+      // A: Analyze the text for drift and counters
       lessonState = detectDrift(normalizedText, sessionData, lessonState);
       lessonState = bumpLessonCounters(lessonState);
       lessonState.stage = getNextStage(lessonState);
+
+      // B: PHRASE-FIRST WORD MATCHING (Fixes "police officer" and "tape measure")
+      const userNorm = normalizedText.toLowerCase().replace(/[^\w\s-]/g, "").trim();
+      const userWords = userNorm.split(/\s+/).filter(Boolean);
+      const userSet = new Set(userWords);
+
+      const wordsRemaining = [];
+      const currentList = sessionData.lessonWordlist || [];
+
+      for (const rawWord of currentList) {
+        const lessonWord = String(rawWord || "").toLowerCase().trim();
+        let isMatch = false;
+
+        // 1. Check for PHRASES (e.g., "police officer")
+        if (lessonWord.includes(" ")) {
+          if (userNorm.includes(lessonWord)) isMatch = true;
+        } 
+        // 2. Check for SINGLE WORDS
+        else {
+          const normLesson = normalizeToken(lessonWord);
+          isMatch = userSet.has(lessonWord) || userSet.has(normLesson);
+        }
+
+        if (isMatch && !sessionData.learnedWords.includes(lessonWord)) {
+          sessionData.learnedWords.push(lessonWord);
+          newlyLearned.push(lessonWord);
+          
+          // Sync with Ibrahim's "Missing Words" list
+          if (lessonState) {
+            const vIndex = lessonState.vocab.findIndex(v => v.word.toLowerCase() === lessonWord);
+            if (vIndex !== -1) lessonState.vocab[vIndex].status = "produced";
+          }
+        } else if (!isMatch) {
+          wordsRemaining.push(lessonWord);
+        }
+      }
+
+      // Update session with cleaned-up list
+      sessionData.lessonWordlist = wordsRemaining;
       
-      // Sync words back to sessionData for UI milestones
-      const currentProduced = lessonState.vocab.filter(v => v.status === "produced" || v.status === "mastered").map(v => v.word);
-      newlyLearned = currentProduced.filter(w => !sessionData.learnedWords.includes(w));
-      sessionData.learnedWords = [...new Set([...sessionData.learnedWords, ...currentProduced])];
-      
-      // Update remaining list
-      sessionData.lessonWordlist = lessonState.vocab.filter(v => v.status === "unused").map(v => v.word);
-      
+      // Save the brain state back to Redis
       await redis.set(`lessonState:${sessionId}`, JSON.stringify(lessonState));
     }
 
@@ -1307,6 +1338,26 @@ index[k] = ch;
 res.json({ months: index });
 });
 app.get("/health", (_req, res) => res.json({ ok: true, status: "Waterwheel backend alive", version: WWV_VERSION }));
+// --- UTILITY HELPERS ---
+
+function normalizeToken(t) {
+  if (!t) return "";
+  // 1. Lowercase and trim
+  t = String(t).toLowerCase().trim();
+  
+  // 2. Remove punctuation but KEEP spaces (crucial for "police officer")
+  // This regex allows letters, numbers, spaces, and hyphens.
+  t = t.replace(/[^\w\s-]/g, "");
+
+  // 3. Basic Plural/Suffix stripping (so "buses" matches "bus")
+  if (t.length > 4) {
+    if (t.endsWith("ies")) return t.slice(0, -3) + "y";
+    if (t.endsWith("es")) return t.slice(0, -2);
+    if (t.endsWith("s") && !t.endsWith("ss")) return t.slice(0, -1);
+  }
+  return t;
+}
+
 // Boot-time load of monthly wordlists
 loadMonthlyWordlists();
 // === Start server ===
