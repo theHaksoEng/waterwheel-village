@@ -1136,14 +1136,14 @@ app.post("/chat", async (req, res) => {
       lessonState = bumpLessonCounters(lessonState);
       lessonState.stage = getNextStage(lessonState);
 
-    // B: PHRASE-FIRST WORD MATCHING — improved version (handles extra spaces, plurals better)
+ // B: PHRASE-FIRST WORD MATCHING — robust against punctuation & voice artifacts
 const userNorm = normalizedText
   .toLowerCase()
-  .replace(/[^\w\s-]/g, "")     // remove punctuation
-  .replace(/\s+/g, " ")         // collapse multiple spaces → very important for phrases
+  .replace(/[^\w\s]/g, ' ')      // ← KEY CHANGE: ALL punctuation → space (comma, !, ?, ., etc.)
+  .replace(/\s+/g, ' ')          // collapse multiple spaces
   .trim();
 
-const userWords = userNorm.split(" ").filter(Boolean);
+const userWords = userNorm.split(' ').filter(Boolean);
 const userSet = new Set(userWords);
 
 const wordsRemaining = [];
@@ -1153,20 +1153,27 @@ for (const rawWord of currentList) {
   let lessonWord = String(rawWord || "").toLowerCase().trim();
   let isMatch = false;
 
-  if (lessonWord.includes(" ")) {
-    // Normalize the target phrase the same way
-    const lessonPhraseNorm = lessonWord.replace(/\s+/g, " ").trim();
+  // Normalize target phrase the same aggressive way
+  const lessonPhraseNorm = lessonWord
+    .replace(/[^\w\s]/g, ' ')    // same treatment for target
+    .replace(/\s+/g, ' ')
+    .trim();
 
-    // Check if the full normalized phrase appears anywhere
+  if (lessonWord.includes(" ")) {
+    // 1. Simple substring match (most common case)
     if (userNorm.includes(lessonPhraseNorm)) {
       isMatch = true;
     }
-    // Optional extra tolerance: allow hyphenated version
-    else if (userNorm.includes(lessonPhraseNorm.replace(/ /g, "-"))) {
+    // 2. Hyphenated variant (police-officer, ice-cream, etc.)
+    else if (userNorm.includes(lessonPhraseNorm.replace(/ /g, '-'))) {
+      isMatch = true;
+    }
+    // 3. Loose word-boundary match (extra tolerance for voice noise)
+    else if (new RegExp(`\\b${lessonPhraseNorm.split(' ').join('\\s+')}\\b`).test(userNorm)) {
       isMatch = true;
     }
   } else {
-    // single word — keep the existing normalization logic
+    // single word — keep your existing logic
     const normLesson = normalizeToken(lessonWord);
     isMatch = userSet.has(lessonWord) || userSet.has(normLesson);
   }
@@ -1175,14 +1182,14 @@ for (const rawWord of currentList) {
     sessionData.learnedWords.push(lessonWord);
     newlyLearned.push(lessonWord);
 
-    // Sync vocab status (green highlighting)
+    // Sync with vocab status → turns green
     if (lessonState) {
       const vIndex = lessonState.vocab.findIndex(
         v => v.word.toLowerCase() === lessonWord
       );
       if (vIndex !== -1) {
         lessonState.vocab[vIndex].status = "produced";
-        // Optional: if you later want to count multiple uses → lessonState.vocab[vIndex].producedCount += 1;
+        // If you want mastery after 2+ uses: lessonState.vocab[vIndex].producedCount += 1;
       }
     }
   } else if (!isMatch) {
@@ -1190,7 +1197,6 @@ for (const rawWord of currentList) {
   }
 }
 
-// Update the remaining words list
 sessionData.lessonWordlist = wordsRemaining;
       
       // Save the brain state back to Redis
