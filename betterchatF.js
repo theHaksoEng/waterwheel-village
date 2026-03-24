@@ -1086,37 +1086,25 @@ app.post("/chat", async (req, res) => {
   try {
     const body = req.body || {};
 
-    // === DEMO ISOLATION — prevents demo from leaking into school sessions ===
+    // === DEMO ISOLATION + TURN LIMIT ===
+    const sessionIdFromBody = body.sessionId || body.session_id || null;
     const isDemo = (body.mode === "demo") || 
-                   (body.sessionId && body.sessionId.startsWith("demo-"));
+                   (sessionIdFromBody && sessionIdFromBody.startsWith("demo-"));
+
+    let sessionId = sessionIdFromBody || uuidv4();   // fallback
 
     if (isDemo) {
-      console.log(`[DEMO ISOLATION] Fresh session: ${body.sessionId || "new-demo"}`);
-      // Clear any leftover data so demo always starts completely fresh
-      await redis.del(`session:${body.sessionId}`);
-      await redis.del(`lessonState:${body.sessionId}`);
-      await redis.del(`history:${body.sessionId}`);
+      console.log(`[DEMO ISOLATION] Fresh session: ${sessionId}`);
+      // Clear old data
+      await redis.del(`session:${sessionId}`);
+      await redis.del(`lessonState:${sessionId}`);
+      await redis.del(`history:${sessionId}`);
+      await redis.del(`demoTurns:${sessionId}`);
     }
-    // =====================================================================
-    // === DEMO TURN LIMIT (6-8 turns max) ===
-    if (isDemo) {
-      let demoTurnCount = parseInt(await redis.get(`demoTurns:${sessionId}`) || "0");
-      demoTurnCount += 1;
-      await redis.set(`demoTurns:${sessionId}`, demoTurnCount.toString(), "EX", 1800); // expire in 30 min
+    // ===================================
 
-      if (demoTurnCount > 8) {
-        console.log(`[DEMO LIMIT] Reached ${demoTurnCount} turns for ${sessionId}`);
-        return res.json({
-          text: "You've reached the demo limit. Great practice! Ready to unlock the full lessons? Click the button below to continue.",
-          action: "DEMO_LIMIT_REACHED",
-          limitReached: true
-        });
-      }
-    }
-    // =======================================
     const userMessage = body.text || body.message || body.userMessage || "";
-    const sessionId = body.sessionId || body.session_id || uuidv4();
-    const messageId = body.messageId || body.message_id || "";
+    const messageId = body.messageId || body.message_id || Date.now().toString();
     const mode = body.mode || "text";
     const isVoice = body.isVoice || mode === "voice";
     const userNameFromFrontend = body.name || body.sessionData?.userName || null;
@@ -1125,6 +1113,23 @@ app.post("/chat", async (req, res) => {
     if (!messageId) {
       return res.status(400).json({ error: "Missing messageId" });
     }
+
+    // === DEMO TURN LIMIT (max 8 turns) ===
+    if (isDemo) {
+      let demoTurnCount = parseInt((await redis.get(`demoTurns:${sessionId}`)) || "0", 10);
+      demoTurnCount += 1;
+      await redis.set(`demoTurns:${sessionId}`, demoTurnCount.toString(), "EX", 1800); // 30 min
+
+      if (demoTurnCount > 8) {
+        console.log(`[DEMO LIMIT] Reached ${demoTurnCount} turns`);
+        return res.json({
+          text: "You've reached the free demo limit (8 turns). Great job practicing! Click below to unlock the full Waterwheel Village school.",
+          action: "DEMO_LIMIT_REACHED",
+          limitReached: true
+        });
+      }
+    }
+    // ===================================
 
     // 1. DUPLICATE PROTECTION
     const dedupeKey = `processed:${sessionId}:${messageId}`;
@@ -1136,11 +1141,20 @@ app.post("/chat", async (req, res) => {
 
     // 2. LOAD DATA
     const sessionRaw = await redis.get(`session:${sessionId}`);
-    let sessionData = sessionRaw ? JSON.parse(sessionRaw) : { character: "mcarthur", learnedWords: [], lessonWordlist: [] };
+    let sessionData = sessionRaw ? JSON.parse(sessionRaw) : { 
+      character: "mcarthur", 
+      learnedWords: [], 
+      lessonWordlist: [] 
+    };
     
     // Sync incoming data
     sessionData = { ...sessionData, ...incomingSessionData };
     if (userNameFromFrontend) sessionData.userName = decodeURIComponent(userNameFromFrontend);
+
+    // Force character for demo when user clicks "Speak to Nadia"
+    if (isDemo && body.character) {
+      sessionData.character = body.character;
+    }
 
     // Forced character for lessons
     if (sessionData.currentLesson) {
@@ -1152,6 +1166,7 @@ app.post("/chat", async (req, res) => {
 
     // --- 3. THE BRAIN: UPDATE LESSON STATE ---
     let lessonState = JSON.parse((await redis.get(`lessonState:${sessionId}`)) || "null");
+
     // EMERGENCY RESET: Wipes old "Directions" memory if we switched chapters
     const currentChapter = sessionData.currentLesson?.chapter || "unknown";
     if (lessonState && lessonState.chapterId !== currentChapter) {
