@@ -1098,7 +1098,22 @@ app.post("/chat", async (req, res) => {
       await redis.del(`history:${body.sessionId}`);
     }
     // =====================================================================
+    // === DEMO TURN LIMIT (6-8 turns max) ===
+    if (isDemo) {
+      let demoTurnCount = parseInt(await redis.get(`demoTurns:${sessionId}`) || "0");
+      demoTurnCount += 1;
+      await redis.set(`demoTurns:${sessionId}`, demoTurnCount.toString(), "EX", 1800); // expire in 30 min
 
+      if (demoTurnCount > 8) {
+        console.log(`[DEMO LIMIT] Reached ${demoTurnCount} turns for ${sessionId}`);
+        return res.json({
+          text: "You've reached the demo limit. Great practice! Ready to unlock the full lessons? Click the button below to continue.",
+          action: "DEMO_LIMIT_REACHED",
+          limitReached: true
+        });
+      }
+    }
+    // =======================================
     const userMessage = body.text || body.message || body.userMessage || "";
     const sessionId = body.sessionId || body.session_id || uuidv4();
     const messageId = body.messageId || body.message_id || "";
