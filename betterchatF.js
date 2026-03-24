@@ -1084,24 +1084,23 @@ res.json(response);
 });
 app.post("/chat", async (req, res) => {
   try {
-    const body = req.body || {};
+      const body = req.body || {};
 
-    // === DEMO ISOLATION + TURN LIMIT ===
-    const sessionIdFromBody = body.sessionId || body.session_id || null;
+    // === STRONG DEMO ISOLATION + TURN LIMIT ===
+    const sessionId = body.sessionId || body.session_id || uuidv4();
     const isDemo = (body.mode === "demo") || 
-                   (sessionIdFromBody && sessionIdFromBody.startsWith("demo-"));
-
-    let sessionId = sessionIdFromBody || uuidv4();   // fallback
+                   (body.demo === true) || 
+                   (sessionId && sessionId.startsWith("demo-"));
 
     if (isDemo) {
-      console.log(`[DEMO ISOLATION] Fresh session: ${sessionId}`);
-      // Clear old data
+      console.log(`[DEMO] Starting fresh session ${sessionId} with character ${body.character || 'default'}`);
+
       await redis.del(`session:${sessionId}`);
       await redis.del(`lessonState:${sessionId}`);
       await redis.del(`history:${sessionId}`);
       await redis.del(`demoTurns:${sessionId}`);
     }
-    // ===================================
+    // ===========================================
 
     const userMessage = body.text || body.message || body.userMessage || "";
     const messageId = body.messageId || body.message_id || Date.now().toString();
@@ -1114,11 +1113,11 @@ app.post("/chat", async (req, res) => {
       return res.status(400).json({ error: "Missing messageId" });
     }
 
-    // === DEMO TURN LIMIT (max 8 turns) ===
+    // === DEMO TURN LIMIT (max 6 turns) ===
     if (isDemo) {
       let demoTurnCount = parseInt((await redis.get(`demoTurns:${sessionId}`)) || "0", 10);
       demoTurnCount += 1;
-      await redis.set(`demoTurns:${sessionId}`, demoTurnCount.toString(), "EX", 1800); // 30 min
+      await redis.set(`demoTurns:${sessionId}`, demoTurnCount.toString(), "EX", 1800);
 
       if (demoTurnCount > 8) {
         console.log(`[DEMO LIMIT] Reached ${demoTurnCount} turns`);
@@ -1129,7 +1128,7 @@ app.post("/chat", async (req, res) => {
         });
       }
     }
-    // ===================================
+    // =======================================
 
     // 1. DUPLICATE PROTECTION
     const dedupeKey = `processed:${sessionId}:${messageId}`;
@@ -1151,9 +1150,9 @@ app.post("/chat", async (req, res) => {
     sessionData = { ...sessionData, ...incomingSessionData };
     if (userNameFromFrontend) sessionData.userName = decodeURIComponent(userNameFromFrontend);
 
-    // Force character for demo when user clicks "Speak to Nadia"
+        // Force character for demo
     if (isDemo && body.character) {
-      sessionData.character = body.character;
+      sessionData.character = body.character.toLowerCase();
     }
 
     // Forced character for lessons

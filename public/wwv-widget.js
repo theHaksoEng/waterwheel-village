@@ -604,24 +604,23 @@ _updateDashCourseLine() {
 }
 
 initSession() {
-  // === DEMO MODE: completely isolated session (never saved to localStorage) ===
-  if (this.getAttribute("mode") === "demo") {
-    // Always generate a fresh session for demo - never reuse
-    this.sessionId = "demo-" + (crypto?.randomUUID 
-      ? crypto.randomUUID() 
-      : String(Date.now()) + "-" + Math.random().toString(36).slice(2));
+  const isDemo = this.getAttribute("mode") === "demo";
+
+  if (isDemo) {
+    // FORCE fresh session + reset any cached data every time demo loads
+    this.sessionId = "demo-" + Date.now() + "-" + Math.random().toString(36).slice(2, 11);
     
-    console.log("WWV DEMO sessionId =", this.sessionId);
+    // Optional: clear localStorage for demo to be extra safe
+    localStorage.removeItem("wwv-sessionId");
+    
+    console.log("🚀 WWV DEMO forced fresh sessionId =", this.sessionId);
     return;
   }
 
-  // === MAIN SCHOOL MODE: normal persistent session ===
+  // Main school - normal persistent session
   let sid = localStorage.getItem("wwv-sessionId");
-
   if (!sid) {
-    sid = (crypto?.randomUUID
-      ? crypto.randomUUID()
-      : String(Date.now()) + "-" + Math.random().toString(36).slice(2));
+    sid = crypto?.randomUUID ? crypto.randomUUID() : String(Date.now()) + "-" + Math.random().toString(36).slice(2);
     localStorage.setItem("wwv-sessionId", sid);
   }
 
@@ -1390,7 +1389,7 @@ async sendText(text, isVoice) {
     return;
   }
 
-  console.log("sendText ENTERED", { text, isVoice, voice: this.voice });
+  console.log("sendText ENTERED", { text, isVoice, voice: this.voice, demo: this.demo, character: this.activeCharacter });
 
   this.isProcessing = true;
   this.addTyping(true);
@@ -1411,8 +1410,9 @@ async sendText(text, isVoice) {
         sessionId: this.sessionId,
         isVoice: !!isVoice,
         name: userName,
-        character: this.activeCharacter,
-        demo: !!this.demo,
+        character: this.activeCharacter,           // already good
+        mode: this.demo ? "demo" : "text",         // ← CHANGED: now sends mode: "demo"
+        demo: !!this.demo,                         // keep for backward compatibility
       }),
     });
 
