@@ -1085,6 +1085,20 @@ res.json(response);
 app.post("/chat", async (req, res) => {
   try {
     const body = req.body || {};
+
+    // === DEMO ISOLATION — prevents demo from leaking into school sessions ===
+    const isDemo = (body.mode === "demo") || 
+                   (body.sessionId && body.sessionId.startsWith("demo-"));
+
+    if (isDemo) {
+      console.log(`[DEMO ISOLATION] Fresh session: ${body.sessionId || "new-demo"}`);
+      // Clear any leftover data so demo always starts completely fresh
+      await redis.del(`session:${body.sessionId}`);
+      await redis.del(`lessonState:${body.sessionId}`);
+      await redis.del(`history:${body.sessionId}`);
+    }
+    // =====================================================================
+
     const userMessage = body.text || body.message || body.userMessage || "";
     const sessionId = body.sessionId || body.session_id || uuidv4();
     const messageId = body.messageId || body.message_id || "";
@@ -1093,7 +1107,9 @@ app.post("/chat", async (req, res) => {
     const userNameFromFrontend = body.name || body.sessionData?.userName || null;
     const incomingSessionData = body.sessionData || {};
 
-    if (!messageId) return res.status(400).json({ error: "Missing messageId" });
+    if (!messageId) {
+      return res.status(400).json({ error: "Missing messageId" });
+    }
 
     // 1. DUPLICATE PROTECTION
     const dedupeKey = `processed:${sessionId}:${messageId}`;
@@ -1119,9 +1135,8 @@ app.post("/chat", async (req, res) => {
 
     const normalizedText = normalizeTranscript(userMessage, sessionData.character || "mcarthur", isVoice);
 
-   // --- 3. THE BRAIN: UPDATE LESSON STATE ---
+    // --- 3. THE BRAIN: UPDATE LESSON STATE ---
     let lessonState = JSON.parse((await redis.get(`lessonState:${sessionId}`)) || "null");
-
     // EMERGENCY RESET: Wipes old "Directions" memory if we switched chapters
     const currentChapter = sessionData.currentLesson?.chapter || "unknown";
     if (lessonState && lessonState.chapterId !== currentChapter) {
