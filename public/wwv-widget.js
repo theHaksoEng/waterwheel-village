@@ -604,17 +604,29 @@ _updateDashCourseLine() {
 }
 
 initSession() {
+  // === DEMO MODE: completely isolated session (never saved to localStorage) ===
+  if (this.getAttribute("mode") === "demo") {
+    // Always generate a fresh session for demo - never reuse
+    this.sessionId = "demo-" + (crypto?.randomUUID 
+      ? crypto.randomUUID() 
+      : String(Date.now()) + "-" + Math.random().toString(36).slice(2));
+    
+    console.log("WWV DEMO sessionId =", this.sessionId);
+    return;
+  }
+
+  // === MAIN SCHOOL MODE: normal persistent session ===
   let sid = localStorage.getItem("wwv-sessionId");
 
   if (!sid) {
     sid = (crypto?.randomUUID
       ? crypto.randomUUID()
-      : String(Date.now()) + "-" + Math.random());
+      : String(Date.now()) + "-" + Math.random().toString(36).slice(2));
     localStorage.setItem("wwv-sessionId", sid);
   }
 
   this.sessionId = sid;
-  console.log("WWV sessionId =", this.sessionId);
+  console.log("WWV MAIN sessionId =", this.sessionId);
 }
 
 avatarUrl(name) {

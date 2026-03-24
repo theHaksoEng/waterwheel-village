@@ -2,7 +2,8 @@
 // ✅ Load env first
 require("dotenv").config({ override: true });
 console.log("BOOT FILE:", __filename);
-console.log("BOOT BUILD:", "2025-12-31-DEBUG1");
+console.log("BOOT BUILD:", "2026-03-24-MAIN-FIXED");
+
 const crypto = require("crypto");
 // === OpenAI Setup ===
 const OpenAI = require("openai");
@@ -1136,14 +1137,14 @@ app.post("/chat", async (req, res) => {
       lessonState = bumpLessonCounters(lessonState);
       lessonState.stage = getNextStage(lessonState);
 
- // B: PHRASE-FIRST WORD MATCHING — robust against punctuation & voice artifacts
+    // B: PHRASE-FIRST WORD MATCHING — improved version (handles extra spaces, plurals better)
 const userNorm = normalizedText
   .toLowerCase()
-  .replace(/[^\w\s]/g, ' ')      // ← KEY CHANGE: ALL punctuation → space (comma, !, ?, ., etc.)
-  .replace(/\s+/g, ' ')          // collapse multiple spaces
+  .replace(/[^\w\s-]/g, "")     // remove punctuation
+  .replace(/\s+/g, " ")         // collapse multiple spaces → very important for phrases
   .trim();
 
-const userWords = userNorm.split(' ').filter(Boolean);
+const userWords = userNorm.split(" ").filter(Boolean);
 const userSet = new Set(userWords);
 
 const wordsRemaining = [];
@@ -1153,27 +1154,20 @@ for (const rawWord of currentList) {
   let lessonWord = String(rawWord || "").toLowerCase().trim();
   let isMatch = false;
 
-  // Normalize target phrase the same aggressive way
-  const lessonPhraseNorm = lessonWord
-    .replace(/[^\w\s]/g, ' ')    // same treatment for target
-    .replace(/\s+/g, ' ')
-    .trim();
-
   if (lessonWord.includes(" ")) {
-    // 1. Simple substring match (most common case)
+    // Normalize the target phrase the same way
+    const lessonPhraseNorm = lessonWord.replace(/\s+/g, " ").trim();
+
+    // Check if the full normalized phrase appears anywhere
     if (userNorm.includes(lessonPhraseNorm)) {
       isMatch = true;
     }
-    // 2. Hyphenated variant (police-officer, ice-cream, etc.)
-    else if (userNorm.includes(lessonPhraseNorm.replace(/ /g, '-'))) {
-      isMatch = true;
-    }
-    // 3. Loose word-boundary match (extra tolerance for voice noise)
-    else if (new RegExp(`\\b${lessonPhraseNorm.split(' ').join('\\s+')}\\b`).test(userNorm)) {
+    // Optional extra tolerance: allow hyphenated version
+    else if (userNorm.includes(lessonPhraseNorm.replace(/ /g, "-"))) {
       isMatch = true;
     }
   } else {
-    // single word — keep your existing logic
+    // single word — keep the existing normalization logic
     const normLesson = normalizeToken(lessonWord);
     isMatch = userSet.has(lessonWord) || userSet.has(normLesson);
   }
@@ -1182,14 +1176,14 @@ for (const rawWord of currentList) {
     sessionData.learnedWords.push(lessonWord);
     newlyLearned.push(lessonWord);
 
-    // Sync with vocab status → turns green
+    // Sync vocab status (green highlighting)
     if (lessonState) {
       const vIndex = lessonState.vocab.findIndex(
         v => v.word.toLowerCase() === lessonWord
       );
       if (vIndex !== -1) {
         lessonState.vocab[vIndex].status = "produced";
-        // If you want mastery after 2+ uses: lessonState.vocab[vIndex].producedCount += 1;
+        // Optional: if you later want to count multiple uses → lessonState.vocab[vIndex].producedCount += 1;
       }
     }
   } else if (!isMatch) {
@@ -1197,6 +1191,7 @@ for (const rawWord of currentList) {
   }
 }
 
+// Update the remaining words list
 sessionData.lessonWordlist = wordsRemaining;
       
       // Save the brain state back to Redis
