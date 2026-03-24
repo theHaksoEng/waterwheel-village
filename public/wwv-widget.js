@@ -618,8 +618,10 @@ initSession() {
   }
 
   // Main school - normal persistent session
-  let sid = localStorage.getItem("wwv-sessionId");
-  if (!sid) {
+    localStorage.removeItem("wwv-sessionId");   // already there — good
+    this.demoVoiceUsed = 0;                     // reset voice counter
+    this.demoVoicedByCharacter = {};
+      if (!sid) {
     sid = crypto?.randomUUID ? crypto.randomUUID() : String(Date.now()) + "-" + Math.random().toString(36).slice(2);
     localStorage.setItem("wwv-sessionId", sid);
   }
@@ -1389,16 +1391,21 @@ async sendText(text, isVoice) {
     return;
   }
 
-  console.log("sendText ENTERED", { text, isVoice, voice: this.voice, demo: this.demo, character: this.activeCharacter });
+  console.log("sendText ENTERED", { 
+    text, 
+    isVoice, 
+    demo: this.demo, 
+    character: this.activeCharacter,
+    sessionId: this.sessionId 
+  });
 
   this.isProcessing = true;
   this.addTyping(true);
 
   const userName = (this.ui?.name?.value || "friend").trim();
-  const messageId =
-    (window.crypto && crypto.randomUUID)
-      ? crypto.randomUUID()
-      : `msg_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  const messageId = (window.crypto && crypto.randomUUID)
+    ? crypto.randomUUID()
+    : `msg_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 
   try {
     const r = await fetchWithRetry(this.backend + "/chat", {
@@ -1410,9 +1417,9 @@ async sendText(text, isVoice) {
         sessionId: this.sessionId,
         isVoice: !!isVoice,
         name: userName,
-        character: this.activeCharacter,           // already good
-        mode: this.demo ? "demo" : "text",         // ← CHANGED: now sends mode: "demo"
-        demo: !!this.demo,                         // keep for backward compatibility
+        character: this.activeCharacter,
+        mode: this.demo ? "demo" : "text",     // ← Critical for isolation
+        demo: !!this.demo,
       }),
     });
 
@@ -1428,21 +1435,17 @@ async sendText(text, isVoice) {
 
     this.addMsg("bot", reply);
 
+    // Voice handling (demo limited)
     const charKey = d.character || this.activeCharacter || "mcarthur";
     const usedByChar = this.demoVoicedByCharacter?.[charKey] || 0;
-    const canVoice =
-      this.voice &&
+    const canVoice = this.voice &&
       (!this.demo || (this.demoVoiceUsed < this.demoVoiceMax && usedByChar < 2));
 
     if (canVoice) {
-      const vid =
-        d.voiceId ||
-        this.lastVoiceId ||
-        (typeof MCARTHUR_VOICE !== "undefined" ? MCARTHUR_VOICE : null);
-
+      const vid = d.voiceId || this.lastVoiceId || MCARTHUR_VOICE;
       const parts = String(reply || "")
         .split(/(?<=[.!?])\s+/)
-        .map((s) => s.trim())
+        .map(s => s.trim())
         .filter(Boolean);
 
       for (const p of parts) this.enqueueSpeak(p, vid);
@@ -1456,20 +1459,16 @@ async sendText(text, isVoice) {
 
     if (d.newlyLearned) this.mergeNewlyLearned(d.newlyLearned);
 
-    try {
-      if (d.milestone && typeof this.celebrateMilestone === "function") {
-        this.celebrateMilestone(d.milestone);
-      }
-
-      if (typeof this.handleMilestones === "function") {
-        this.handleMilestones();
-      }
-    } catch (milestoneError) {
-      console.warn("Milestone display failed, but continuing chat:", milestoneError);
+    // Handle demo limit response
+    if (d.limitReached || d.action === "DEMO_LIMIT_REACHED") {
+      this.addMsg("bot", d.text);
+      // Optional: disable input
+      if (this.ui.input) this.ui.input.disabled = true;
     }
 
     console.log("SENDTEXT done. msg count =", this.ui.chat?.children?.length);
     return d;
+
   } catch (e) {
     console.error("SENDTEXT error:", e);
     this.addMsg("bot", `Server error: ${e.message}`);

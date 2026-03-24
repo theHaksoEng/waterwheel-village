@@ -1084,36 +1084,27 @@ res.json(response);
 });
 app.post("/chat", async (req, res) => {
   try {
-      const body = req.body || {};
+    const body = req.body || {};
 
-    // === STRONG DEMO ISOLATION + TURN LIMIT ===
+    // === DEMO ISOLATION + TURN LIMIT (Cadillac version) ===
     const sessionId = body.sessionId || body.session_id || uuidv4();
-    const isDemo = (body.mode === "demo") || 
-                   (body.demo === true) || 
-                   (sessionId && sessionId.startsWith("demo-"));
+    const isDemo = !!(body.mode === "demo" || body.demo === true || 
+                     (sessionId && sessionId.startsWith("demo-")));
+
+    console.log(`[DEMO CHECK] isDemo=${isDemo} | mode=${body.mode} | demoFlag=${body.demo} | char=${body.character} | session=${sessionId}`);
 
     if (isDemo) {
       console.log(`[DEMO] Starting fresh session ${sessionId} with character ${body.character || 'default'}`);
 
+      // Clear all old data
       await redis.del(`session:${sessionId}`);
       await redis.del(`lessonState:${sessionId}`);
       await redis.del(`history:${sessionId}`);
       await redis.del(`demoTurns:${sessionId}`);
     }
-    // ===========================================
+    // =======================================================
 
-    const userMessage = body.text || body.message || body.userMessage || "";
-    const messageId = body.messageId || body.message_id || Date.now().toString();
-    const mode = body.mode || "text";
-    const isVoice = body.isVoice || mode === "voice";
-    const userNameFromFrontend = body.name || body.sessionData?.userName || null;
-    const incomingSessionData = body.sessionData || {};
-
-    if (!messageId) {
-      return res.status(400).json({ error: "Missing messageId" });
-    }
-
-    // === DEMO TURN LIMIT (max 6 turns) ===
+    // === DEMO TURN LIMIT (max 8 turns) ===
     if (isDemo) {
       let demoTurnCount = parseInt((await redis.get(`demoTurns:${sessionId}`)) || "0", 10);
       demoTurnCount += 1;
@@ -1128,7 +1119,18 @@ app.post("/chat", async (req, res) => {
         });
       }
     }
-    // =======================================
+    // =======================================================
+
+    const userMessage = body.text || body.message || body.userMessage || "";
+    const messageId = body.messageId || body.message_id || Date.now().toString();
+    const mode = body.mode || "text";
+    const isVoice = body.isVoice || mode === "voice";
+    const userNameFromFrontend = body.name || body.sessionData?.userName || null;
+    const incomingSessionData = body.sessionData || {};
+
+    if (!messageId) {
+      return res.status(400).json({ error: "Missing messageId" });
+    }
 
     // 1. DUPLICATE PROTECTION
     const dedupeKey = `processed:${sessionId}:${messageId}`;
@@ -1146,11 +1148,10 @@ app.post("/chat", async (req, res) => {
       lessonWordlist: [] 
     };
     
-    // Sync incoming data
     sessionData = { ...sessionData, ...incomingSessionData };
     if (userNameFromFrontend) sessionData.userName = decodeURIComponent(userNameFromFrontend);
 
-        // Force character for demo
+    // Force character when user switches on demo
     if (isDemo && body.character) {
       sessionData.character = body.character.toLowerCase();
     }
@@ -1165,6 +1166,8 @@ app.post("/chat", async (req, res) => {
 
     // --- 3. THE BRAIN: UPDATE LESSON STATE ---
     let lessonState = JSON.parse((await redis.get(`lessonState:${sessionId}`)) || "null");
+
+    // ... (rest of your existing code stays the same from here)
 
     // EMERGENCY RESET: Wipes old "Directions" memory if we switched chapters
     const currentChapter = sessionData.currentLesson?.chapter || "unknown";
