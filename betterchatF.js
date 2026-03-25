@@ -1084,25 +1084,31 @@ app.post("/chat", async (req, res) => {
   try {
     const body = req.body || {};
 
-    // === ROCK-SOLID DEMO DETECTION ===
+    // === STRONG DIAGNOSTIC BLOCK ===
     const sessionId = body.sessionId || body.session_id || uuidv4();
     const isDemo = !!(body.mode === "demo" || 
                      body.demo === true || 
                      body.demo === "true" ||
                      (sessionId && sessionId.startsWith("demo-")));
 
-    console.log(`[DEMO CHECK] isDemo=${isDemo} | mode=${body.mode} | demo=${body.demo} | session=${sessionId}`);
+    console.log("=== DEMO DEBUG ===");
+    console.log("Body keys:", Object.keys(body));
+    console.log("mode:", body.mode);
+    console.log("demo flag:", body.demo);
+    console.log("sessionId:", sessionId);
+    console.log("isDemo result:", isDemo);
+    console.log("character requested:", body.character);
+    console.log("==================");
 
     if (isDemo) {
-      console.log(`[DEMO] Fresh session ${sessionId} | character=${body.character || 'default'}`);
-
+      console.log(`[DEMO] Clearing old data for session ${sessionId}`);
       await redis.del(`session:${sessionId}`);
       await redis.del(`lessonState:${sessionId}`);
       await redis.del(`history:${sessionId}`);
       await redis.del(`demoTurns:${sessionId}`);
     }
 
-    // === DEMO TURN LIMIT (8 turns max) ===
+    // === DEMO TURN LIMIT ===
     if (isDemo) {
       let demoTurnCount = parseInt((await redis.get(`demoTurns:${sessionId}`)) || "0", 10);
       demoTurnCount += 1;
@@ -1119,6 +1125,7 @@ app.post("/chat", async (req, res) => {
     }
     // ===================================
 
+    // ←←← YOUR ORIGINAL CODE CONTINUES HERE (do NOT delete this)
     const userMessage = body.text || body.message || body.userMessage || "";
     const messageId = body.messageId || body.message_id || Date.now().toString();
     const mode = body.mode || "text";
