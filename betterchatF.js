@@ -806,11 +806,9 @@ UNIVERSAL LESSON POLICY — STRICT EXECUTION
 4. CORRECTION: Model the correct version naturally in your response. 
    - Example: Student: "I go store." -> You: "That's right, you went to the store! What did you buy?"
 5. VILLAGE LORE (FLAVOR ONLY):
-   - Use a short, gentle village reference ONLY when it fits naturally and keeps the tone appropriate.
-   - Warm-up, praise, calm moments, everyday topics → OK (e.g. "The Blue Cafe smells wonderful today!")
-   - Serious/emergency/urgent situations → avoid completely or keep extremely subtle.
-   - Never force a landmark if it would feel out of place, silly, or break emotional flow.
-   - Max one village reference per reply, and only if it adds warmth without distracting.
+   - In DEMO mode: NEVER mention any landmarks (Blue Cafe, Stone Bridge, Blacksmith Forge, etc.).
+   - Keep replies clean, simple, and focused only on the user's words and the lesson topic.
+   - In full school mode: use village flavor sparingly and only when it fits naturally.
 6. RESPONSE STRUCTURE:
    - Max 3 sentences total.
    - MUST end with EXACTLY ONE: (A) Question, (B) Task, or (C) Invitation.
@@ -1086,25 +1084,25 @@ app.post("/chat", async (req, res) => {
   try {
     const body = req.body || {};
 
-    // === DEMO ISOLATION + TURN LIMIT (Cadillac version) ===
+    // === ROCK-SOLID DEMO DETECTION ===
     const sessionId = body.sessionId || body.session_id || uuidv4();
-    const isDemo = !!(body.mode === "demo" || body.demo === true || 
+    const isDemo = !!(body.mode === "demo" || 
+                     body.demo === true || 
+                     body.demo === "true" ||
                      (sessionId && sessionId.startsWith("demo-")));
 
-    console.log(`[DEMO CHECK] isDemo=${isDemo} | mode=${body.mode} | demoFlag=${body.demo} | char=${body.character} | session=${sessionId}`);
+    console.log(`[DEMO CHECK] isDemo=${isDemo} | mode=${body.mode} | demo=${body.demo} | session=${sessionId}`);
 
     if (isDemo) {
-      console.log(`[DEMO] Starting fresh session ${sessionId} with character ${body.character || 'default'}`);
+      console.log(`[DEMO] Fresh session ${sessionId} | character=${body.character || 'default'}`);
 
-      // Clear all old data
       await redis.del(`session:${sessionId}`);
       await redis.del(`lessonState:${sessionId}`);
       await redis.del(`history:${sessionId}`);
       await redis.del(`demoTurns:${sessionId}`);
     }
-    // =======================================================
 
-    // === DEMO TURN LIMIT (max 8 turns) ===
+    // === DEMO TURN LIMIT (8 turns max) ===
     if (isDemo) {
       let demoTurnCount = parseInt((await redis.get(`demoTurns:${sessionId}`)) || "0", 10);
       demoTurnCount += 1;
@@ -1119,7 +1117,7 @@ app.post("/chat", async (req, res) => {
         });
       }
     }
-    // =======================================================
+    // ===================================
 
     const userMessage = body.text || body.message || body.userMessage || "";
     const messageId = body.messageId || body.message_id || Date.now().toString();
@@ -1166,8 +1164,6 @@ app.post("/chat", async (req, res) => {
 
     // --- 3. THE BRAIN: UPDATE LESSON STATE ---
     let lessonState = JSON.parse((await redis.get(`lessonState:${sessionId}`)) || "null");
-
-    // ... (rest of your existing code stays the same from here)
 
     // EMERGENCY RESET: Wipes old "Directions" memory if we switched chapters
     const currentChapter = sessionData.currentLesson?.chapter || "unknown";

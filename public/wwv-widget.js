@@ -1391,13 +1391,7 @@ async sendText(text, isVoice) {
     return;
   }
 
-  console.log("sendText ENTERED", { 
-    text, 
-    isVoice, 
-    demo: this.demo, 
-    character: this.activeCharacter,
-    sessionId: this.sessionId 
-  });
+  console.log("sendText ENTERED", { text, isVoice, demo: this.demo, character: this.activeCharacter });
 
   this.isProcessing = true;
   this.addTyping(true);
@@ -1418,8 +1412,8 @@ async sendText(text, isVoice) {
         isVoice: !!isVoice,
         name: userName,
         character: this.activeCharacter,
-        mode: this.demo ? "demo" : "text",     // ← Critical for isolation
-        demo: !!this.demo,
+        mode: "demo",                    // ← FORCE "demo" every time
+        demo: true,                      // ← Also send as backup
       }),
     });
 
@@ -1435,11 +1429,11 @@ async sendText(text, isVoice) {
 
     this.addMsg("bot", reply);
 
-    // Voice handling (demo limited)
+    // Voice handling (already limited)
     const charKey = d.character || this.activeCharacter || "mcarthur";
     const usedByChar = this.demoVoicedByCharacter?.[charKey] || 0;
     const canVoice = this.voice &&
-      (!this.demo || (this.demoVoiceUsed < this.demoVoiceMax && usedByChar < 2));
+      (this.demoVoiceUsed < this.demoVoiceMax && usedByChar < 2);
 
     if (canVoice) {
       const vid = d.voiceId || this.lastVoiceId || MCARTHUR_VOICE;
@@ -1450,20 +1444,19 @@ async sendText(text, isVoice) {
 
       for (const p of parts) this.enqueueSpeak(p, vid);
 
-      if (this.demo) {
-        this.demoVoiceUsed++;
-        this.demoVoicedByCharacter = this.demoVoicedByCharacter || {};
-        this.demoVoicedByCharacter[charKey] = usedByChar + 1;
-      }
+      this.demoVoiceUsed++;
+      this.demoVoicedByCharacter = this.demoVoicedByCharacter || {};
+      this.demoVoicedByCharacter[charKey] = usedByChar + 1;
     }
 
     if (d.newlyLearned) this.mergeNewlyLearned(d.newlyLearned);
 
-    // Handle demo limit response
+    // Stop everything when backend says limit reached
     if (d.limitReached || d.action === "DEMO_LIMIT_REACHED") {
       this.addMsg("bot", d.text);
-      // Optional: disable input
       if (this.ui.input) this.ui.input.disabled = true;
+      this.isProcessing = false;
+      return d;
     }
 
     console.log("SENDTEXT done. msg count =", this.ui.chat?.children?.length);
