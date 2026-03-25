@@ -607,22 +607,29 @@ initSession() {
   const isDemo = this.getAttribute("mode") === "demo";
 
   if (isDemo) {
-    // FORCE fresh session + reset any cached data every time demo loads
-    this.sessionId = "demo-" + Date.now() + "-" + Math.random().toString(36).slice(2, 11);
-    
-    // Optional: clear localStorage for demo to be extra safe
+    // Force fresh session every time demo loads
+    this.sessionId =
+      "demo-" + Date.now() + "-" + Math.random().toString(36).slice(2, 11);
+
     localStorage.removeItem("wwv-sessionId");
-    
+    this.demoVoiceUsed = 0;
+    this.demoVoicedByCharacter = {};
+
     console.log("🚀 WWV DEMO forced fresh sessionId =", this.sessionId);
     return;
   }
 
   // Main school - normal persistent session
-    localStorage.removeItem("wwv-sessionId");   // already there — good
-    this.demoVoiceUsed = 0;                     // reset voice counter
-    this.demoVoicedByCharacter = {};
-      if (!sid) {
-    sid = crypto?.randomUUID ? crypto.randomUUID() : String(Date.now()) + "-" + Math.random().toString(36).slice(2);
+  this.demoVoiceUsed = 0;
+  this.demoVoicedByCharacter = {};
+
+  let sid = localStorage.getItem("wwv-sessionId");
+
+  if (!sid) {
+    sid = crypto?.randomUUID
+      ? crypto.randomUUID()
+      : String(Date.now()) + "-" + Math.random().toString(36).slice(2);
+
     localStorage.setItem("wwv-sessionId", sid);
   }
 

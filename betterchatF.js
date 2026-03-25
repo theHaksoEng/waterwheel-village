@@ -806,9 +806,9 @@ UNIVERSAL LESSON POLICY — STRICT EXECUTION
 4. CORRECTION: Model the correct version naturally in your response. 
    - Example: Student: "I go store." -> You: "That's right, you went to the store! What did you buy?"
 5. VILLAGE LORE (FLAVOR ONLY):
-   - In DEMO mode: NEVER mention any landmarks (Blue Cafe, Stone Bridge, Blacksmith Forge, etc.).
-   - Keep replies clean, simple, and focused only on the user's words and the lesson topic.
-   - In full school mode: use village flavor sparingly and only when it fits naturally.
+   - In DEMO mode: DO NOT mention any village landmarks (Stone Bridge, Blue Cafe, Blacksmith Forge, river, garden, etc.).
+   - Keep replies clean, natural, and focused only on the user's words and basic daily life.
+   - In full school mode: use light village flavor only when it fits naturally.
 6. RESPONSE STRUCTURE:
    - Max 3 sentences total.
    - MUST end with EXACTLY ONE: (A) Question, (B) Task, or (C) Invitation.
@@ -1108,14 +1108,16 @@ app.post("/chat", async (req, res) => {
       await redis.del(`demoTurns:${sessionId}`);
     }
 
-    // === DEMO TURN LIMIT ===
+    // === DEMO TURN LIMIT (max 8 turns) - Aggressive version ===
     if (isDemo) {
       let demoTurnCount = parseInt((await redis.get(`demoTurns:${sessionId}`)) || "0", 10);
       demoTurnCount += 1;
       await redis.set(`demoTurns:${sessionId}`, demoTurnCount.toString(), "EX", 1800);
 
+      console.log(`[DEMO TURN] Current count = ${demoTurnCount}`);
+
       if (demoTurnCount > 8) {
-        console.log(`[DEMO LIMIT] Reached ${demoTurnCount} turns`);
+        console.log(`[DEMO LIMIT] Reached ${demoTurnCount} turns - stopping`);
         return res.json({
           text: "You've reached the free demo limit (8 turns). Great job practicing! Click below to unlock the full Waterwheel Village school.",
           action: "DEMO_LIMIT_REACHED",
@@ -1123,9 +1125,8 @@ app.post("/chat", async (req, res) => {
         });
       }
     }
-    // ===================================
+    // =======================================================
 
-    // ←←← YOUR ORIGINAL CODE CONTINUES HERE (do NOT delete this)
     const userMessage = body.text || body.message || body.userMessage || "";
     const messageId = body.messageId || body.message_id || Date.now().toString();
     const mode = body.mode || "text";
