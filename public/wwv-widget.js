@@ -163,7 +163,6 @@ const isDemoMode = getWWVMode() === "demo";
 class WaterwheelChat extends HTMLElement {   
   constructor() {
     super();
-    this.demo = isDemoMode;
     this.activeCharacter = this.activeCharacter || "mcarthur";
     this.isProcessing = false; // The safety lock
     this.starting = false;
@@ -192,7 +191,7 @@ class WaterwheelChat extends HTMLElement {
       this._lastAudioUrl = null;
 
       // ====== WWV PATCH: MODE + SEPARATE SESSIONS (DEMO vs SCHOOL) ======
-this.mode = (this.getAttribute("mode") || "demo").toLowerCase();
+this.mode = (this.getAttribute("mode") || "school").toLowerCase();
 this.demo = (this.mode === "demo");
 
 // Demo limits (only apply when this.demo === true)
@@ -200,9 +199,7 @@ this.demoVoiceMax = 5;
 this.demoVoiceUsed = 0;
 this.demoVoicedByCharacter = {};
 this.demoMaxChars = 220;
-this.activeCharacter = "mcarthur";
-// ====== END PATCH ======
-
+this.activeCharacter = this.activeCharacter || "mcarthur";
 
       this.audioReady = true;
 
@@ -1379,7 +1376,6 @@ for (const p of parts) {
   }
 }
 
-// --- REPLACE FROM HERE ---
 async send() {
     if (this.isProcessing) return;
 
@@ -1398,7 +1394,14 @@ async sendText(text, isVoice) {
     return;
   }
 
-  console.log("sendText ENTERED", { text, isVoice, demo: this.demo, character: this.activeCharacter });
+  const isDemo = this.getAttribute("mode") === "demo";
+
+  console.log("sendText ENTERED", {
+    text,
+    isVoice,
+    demo: isDemo,
+    character: this.activeCharacter
+  });
 
   this.isProcessing = true;
   this.addTyping(true);
@@ -1419,8 +1422,8 @@ async sendText(text, isVoice) {
         isVoice: !!isVoice,
         name: userName,
         character: this.activeCharacter,
-        mode: "demo",                    // ← FORCE "demo" every time
-        demo: true,                      // ← Also send as backup
+        mode: isDemo ? "demo" : "school",
+        demo: isDemo,
       }),
     });
 
@@ -1436,11 +1439,11 @@ async sendText(text, isVoice) {
 
     this.addMsg("bot", reply);
 
-    // Voice handling (already limited)
     const charKey = d.character || this.activeCharacter || "mcarthur";
     const usedByChar = this.demoVoicedByCharacter?.[charKey] || 0;
-    const canVoice = this.voice &&
-      (this.demoVoiceUsed < this.demoVoiceMax && usedByChar < 2);
+    const canVoice = this.voice && (
+      !isDemo || (this.demoVoiceUsed < this.demoVoiceMax && usedByChar < 2)
+    );
 
     if (canVoice) {
       const vid = d.voiceId || this.lastVoiceId || MCARTHUR_VOICE;
@@ -1451,18 +1454,17 @@ async sendText(text, isVoice) {
 
       for (const p of parts) this.enqueueSpeak(p, vid);
 
-      this.demoVoiceUsed++;
-      this.demoVoicedByCharacter = this.demoVoicedByCharacter || {};
-      this.demoVoicedByCharacter[charKey] = usedByChar + 1;
+      if (isDemo) {
+        this.demoVoiceUsed++;
+        this.demoVoicedByCharacter = this.demoVoicedByCharacter || {};
+        this.demoVoicedByCharacter[charKey] = usedByChar + 1;
+      }
     }
 
     if (d.newlyLearned) this.mergeNewlyLearned(d.newlyLearned);
 
-    // Stop everything when backend says limit reached
     if (d.limitReached || d.action === "DEMO_LIMIT_REACHED") {
-      this.addMsg("bot", d.text);
       if (this.ui.input) this.ui.input.disabled = true;
-      this.isProcessing = false;
       return d;
     }
 
