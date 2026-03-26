@@ -1108,7 +1108,7 @@ app.post("/chat", async (req, res) => {
       await redis.del(`demoTurns:${sessionId}`);
     }
 
-    // === DEMO TURN LIMIT (max 8 turns) - Aggressive version ===
+    // === DEMO TURN LIMIT (max 8 turns) ===
     if (isDemo) {
       let demoTurnCount = parseInt((await redis.get(`demoTurns:${sessionId}`)) || "0", 10);
       demoTurnCount += 1;
@@ -1173,7 +1173,7 @@ app.post("/chat", async (req, res) => {
     // --- 3. THE BRAIN: UPDATE LESSON STATE ---
     let lessonState = JSON.parse((await redis.get(`lessonState:${sessionId}`)) || "null");
 
-    // EMERGENCY RESET: Wipes old "Directions" memory if we switched chapters
+    // EMERGENCY RESET
     const currentChapter = sessionData.currentLesson?.chapter || "unknown";
     if (lessonState && lessonState.chapterId !== currentChapter) {
       console.log(`♻️ CHAPTER MISMATCH: Resetting brain to ${currentChapter}`);
@@ -1183,70 +1183,50 @@ app.post("/chat", async (req, res) => {
 
     let newlyLearned = [];
     if (normalizedText) {
-      // A: Analyze the text for drift and counters
       lessonState = detectDrift(normalizedText, sessionData, lessonState);
       lessonState = bumpLessonCounters(lessonState);
       lessonState.stage = getNextStage(lessonState);
 
-    // B: PHRASE-FIRST WORD MATCHING — improved version (handles extra spaces, plurals better)
-const userNorm = normalizedText
-  .toLowerCase()
-  .replace(/[^\w\s-]/g, "")     // remove punctuation
-  .replace(/\s+/g, " ")         // collapse multiple spaces → very important for phrases
-  .trim();
+      // B: PHRASE-FIRST WORD MATCHING (your existing code)
+      const userNorm = normalizedText
+        .toLowerCase()
+        .replace(/[^\w\s-]/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
 
-const userWords = userNorm.split(" ").filter(Boolean);
-const userSet = new Set(userWords);
+      const userWords = userNorm.split(" ").filter(Boolean);
+      const userSet = new Set(userWords);
 
-const wordsRemaining = [];
-const currentList = sessionData.lessonWordlist || [];
+      const wordsRemaining = [];
+      const currentList = sessionData.lessonWordlist || [];
 
-for (const rawWord of currentList) {
-  let lessonWord = String(rawWord || "").toLowerCase().trim();
-  let isMatch = false;
+      for (const rawWord of currentList) {
+        let lessonWord = String(rawWord || "").toLowerCase().trim();
+        let isMatch = false;
 
-  if (lessonWord.includes(" ")) {
-    // Normalize the target phrase the same way
-    const lessonPhraseNorm = lessonWord.replace(/\s+/g, " ").trim();
+        if (lessonWord.includes(" ")) {
+          const lessonPhraseNorm = lessonWord.replace(/\s+/g, " ").trim();
+          if (userNorm.includes(lessonPhraseNorm)) isMatch = true;
+          else if (userNorm.includes(lessonPhraseNorm.replace(/ /g, "-"))) isMatch = true;
+        } else {
+          const normLesson = normalizeToken(lessonWord);
+          isMatch = userSet.has(lessonWord) || userSet.has(normLesson);
+        }
 
-    // Check if the full normalized phrase appears anywhere
-    if (userNorm.includes(lessonPhraseNorm)) {
-      isMatch = true;
-    }
-    // Optional extra tolerance: allow hyphenated version
-    else if (userNorm.includes(lessonPhraseNorm.replace(/ /g, "-"))) {
-      isMatch = true;
-    }
-  } else {
-    // single word — keep the existing normalization logic
-    const normLesson = normalizeToken(lessonWord);
-    isMatch = userSet.has(lessonWord) || userSet.has(normLesson);
-  }
+        if (isMatch && !sessionData.learnedWords.includes(lessonWord)) {
+          sessionData.learnedWords.push(lessonWord);
+          newlyLearned.push(lessonWord);
 
-  if (isMatch && !sessionData.learnedWords.includes(lessonWord)) {
-    sessionData.learnedWords.push(lessonWord);
-    newlyLearned.push(lessonWord);
-
-    // Sync vocab status (green highlighting)
-    if (lessonState) {
-      const vIndex = lessonState.vocab.findIndex(
-        v => v.word.toLowerCase() === lessonWord
-      );
-      if (vIndex !== -1) {
-        lessonState.vocab[vIndex].status = "produced";
-        // Optional: if you later want to count multiple uses → lessonState.vocab[vIndex].producedCount += 1;
+          if (lessonState) {
+            const vIndex = lessonState.vocab.findIndex(v => v.word.toLowerCase() === lessonWord);
+            if (vIndex !== -1) lessonState.vocab[vIndex].status = "produced";
+          }
+        } else if (!isMatch) {
+          wordsRemaining.push(lessonWord);
+        }
       }
-    }
-  } else if (!isMatch) {
-    wordsRemaining.push(lessonWord);
-  }
-}
 
-// Update the remaining words list
-sessionData.lessonWordlist = wordsRemaining;
-      
-      // Save the brain state back to Redis
-      await redis.set(`lessonState:${sessionId}`, JSON.stringify(lessonState));
+      sessionData.lessonWordlist = wordsRemaining;
     }
 
     // 4. CHECK COMPLETION
@@ -1276,6 +1256,7 @@ sessionData.lessonWordlist = wordsRemaining;
     // 6. SAVE & RESPOND
     await saveHistory(sessionId, messages);
     await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
+    await redis.set(`lessonState:${sessionId}`, JSON.stringify(lessonState));
 
     return res.json({
       text: reply,
