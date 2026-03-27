@@ -604,17 +604,18 @@ initSession() {
   const isDemo = this.getAttribute("mode") === "demo";
 
   if (isDemo) {
-    // Force fresh session every time demo loads
-    this.sessionId =
-      "demo-" + Date.now() + "-" + Math.random().toString(36).slice(2, 11);
+  this.sessionId =
+    "demo-" + Date.now() + "-" + Math.random().toString(36).slice(2, 11);
 
-    localStorage.removeItem("wwv-sessionId");
-    this.demoVoiceUsed = 0;
-    this.demoVoicedByCharacter = {};
+  localStorage.removeItem("wwv-sessionId");
+  this.demoVoiceUsed = 0;
+  this.demoVoicedByCharacter = {};
+  this.demoTextUsed = 0;
+  this.demoTextMax = 8;
 
-    console.log("🚀 WWV DEMO forced fresh sessionId =", this.sessionId);
-    return;
-  }
+  console.log("🚀 WWV DEMO forced fresh sessionId =", this.sessionId);
+  return;
+}
 
   // Main school - normal persistent session
   this.demoVoiceUsed = 0;
@@ -1396,11 +1397,24 @@ async sendText(text, isVoice) {
 
   const isDemo = this.getAttribute("mode") === "demo";
 
+  // Demo text cap
+  this.demoTextUsed = Number(this.demoTextUsed || 0);
+  this.demoTextMax = Number(this.demoTextMax || 8);
+
+  if (isDemo && this.demoTextUsed >= this.demoTextMax) {
+    this.addMsg("bot", "That is the end of the demo. Please continue in the full version.");
+    if (this.ui.input) this.ui.input.disabled = true;
+    if (this.ui.send) this.ui.send.disabled = true;
+    return;
+  }
+
   console.log("sendText ENTERED", {
     text,
     isVoice,
     demo: isDemo,
-    character: this.activeCharacter
+    character: this.activeCharacter,
+    demoTextUsed: this.demoTextUsed,
+    demoTextMax: this.demoTextMax
   });
 
   this.isProcessing = true;
@@ -1439,6 +1453,12 @@ async sendText(text, isVoice) {
 
     this.addMsg("bot", reply);
 
+    // Count demo TEXT replies
+    if (isDemo) {
+      this.demoTextUsed += 1;
+      console.log("[DEMO TEXT COUNT]", this.demoTextUsed, "/", this.demoTextMax);
+    }
+
     const charKey = d.character || this.activeCharacter || "mcarthur";
     const usedByChar = this.demoVoicedByCharacter?.[charKey] || 0;
     const canVoice = this.voice && (
@@ -1465,7 +1485,15 @@ async sendText(text, isVoice) {
 
     if (d.limitReached || d.action === "DEMO_LIMIT_REACHED") {
       if (this.ui.input) this.ui.input.disabled = true;
+      if (this.ui.send) this.ui.send.disabled = true;
       return d;
+    }
+
+    // Hard stop immediately after the last allowed demo reply
+    if (isDemo && this.demoTextUsed >= this.demoTextMax) {
+      this.addMsg("bot", "That is the end of the demo. Please continue in the full version.");
+      if (this.ui.input) this.ui.input.disabled = true;
+      if (this.ui.send) this.ui.send.disabled = true;
     }
 
     console.log("SENDTEXT done. msg count =", this.ui.chat?.children?.length);
