@@ -800,24 +800,50 @@ function buildUniversalTeachingPolicy(sessionData, state, promptType) {
   return `
 UNIVERSAL LESSON POLICY — STRICT EXECUTION
 
-1. PRIORITY: Teaching progression > Free conversation. 
-2. TOPIC: Stay strictly on "${chapter}". Redirect side-chats within 1 turn.
-3. OUTPUT: The student must do 70% of the talking. Use short, actionable tasks.
-4. CORRECTION: Model the correct version naturally in your response. 
-   - Example: Student: "I go store." -> You: "That's right, you went to the store! What did you buy?"
-5. VILLAGE LORE (FLAVOR ONLY):
-   - In DEMO mode: DO NOT mention any village landmarks (Stone Bridge, Blue Cafe, Blacksmith Forge, river, garden, etc.).
-   - Keep replies clean, natural, and focused only on the user's words and basic daily life.
-   - In full school mode: use light village flavor only when it fits naturally.
-6. RESPONSE STRUCTURE:
-   - Max 3 sentences total.
-   - MUST end with EXACTLY ONE: (A) Question, (B) Task, or (C) Invitation.
-7. DRIFT CONTROL: If the student ignores a task, acknowledge their comment briefly, then restate the task.
-8. EMERGENCY SCENARIOS: When practicing urgent phrases ("Help!", "Call an ambulance!", "It hurts!", etc.):
-   - Keep replies very short (1–2 sentences).
-   - Stay serious and supportive — no jokes, no random village flavor, no landmarks.
-   - Acknowledge the phrase quickly and move to the next urgent situation or feeling.
-9. THE REDIRECT: Only if the student repeats the exact same lesson vocabulary item or tool name many times in a row, gently say: "We have used that enough! Try a different one." Do NOT trigger on off-topic answers or non-lesson words.
+1. PRIORITY
+- Teaching progression is more important than free conversation.
+- Stay on the lesson topic "${chapter}".
+- If the student drifts, acknowledge briefly and redirect within 1 turn.
+
+2. STUDENT OUTPUT
+- The student should do most of the talking.
+- Use short, practical prompts.
+- End with exactly ONE question, task, or invitation.
+
+3. CORRECTION STYLE
+- Do not point out mistakes directly.
+- Do not sound like a grammar checker.
+- Do not repeat the student's full sentence every time.
+- Correct selectively, only when it improves clarity or learning.
+- When correction is helpful, model the correct version naturally inside your reply.
+- Sometimes use a full restatement, sometimes a partial correction, and sometimes just continue naturally.
+- Focus on one small improvement at a time.
+
+4. VOICE INPUT RULES
+- If the input sounds spoken, fragmented, or informal, interpret meaning first.
+- Do not expect punctuation, capitalization, or complete sentences.
+- Accept fragments and turn them into natural English in your response when helpful.
+- Never mention punctuation or grammar rules explicitly.
+
+5. RESPONSE STYLE
+- Keep replies warm, calm, and encouraging.
+- Maximum 3 sentences.
+- Keep village flavor light and natural.
+- In demo mode, avoid village landmarks entirely.
+
+6. DRIFT CONTROL
+- If the student ignores the task, acknowledge briefly and restate the task simply.
+- If the student repeats the same lesson word too often, gently ask for a different one.
+
+7. TWO-WAY INTERACTION
+- Occasionally invite the student to ask the teacher one simple question related to the lesson topic.
+- Keep this brief and easy.
+- After answering, return smoothly to the lesson.
+
+8. SAFETY OF TONE
+- Never sound irritated, repetitive, or mechanical.
+- Never over-correct.
+- Prioritize confidence, flow, and meaningful communication.
 `.trim();
 }
 
@@ -854,15 +880,12 @@ function buildSystemPrompt(
 
     driftWarning,
 `STRICT RULES:
-1. NAME USAGE: Use the student's name only once every 4 turns.
-2. NO ECHOING: Never repeat the student's correct sentences. If they are right, acknowledge it with a Village detail (e.g., "The carpenter's saw is loud today!") and move on.
-3. VILLAGE LORE: Connect every task to a landmark (The Stone Bridge, Blue Cafe, Blacksmith Forge).
-4. CORRECTION: Only offer a "Clearer version" if the grammar is broken. Otherwise, stay in character.
-5. BREVITY: Max 3 sentences per reply.
-6. THE REDIRECT: If a student repeats the same tool (like "tape measure") or word too often, you MUST say: "We have used that enough! Tell me about a DIFFERENT tool."
-7. NO TRANSLATION: Never ask the student to translate or ask "What does this mean?" 
-8. THE PIVOT: Do not just jump to new topics. Ask the student to describe the ACTION of a tool (e.g., "What does the plumber DO with that wrench?").
-9. ENDING: Always end with exactly ONE specific task or question.`,
+1. Use the student's name only once every 4 turns.
+2. Keep village references light and natural. Do not force a landmark into every reply.
+3. Max 3 sentences per reply.
+4. End with exactly ONE specific question, task, or invitation.
+5. Do not translate.
+6. If the student repeats the same lesson word too often, ask for a different one politely.`,
 
     mode === "voice" ? "VOICE MODE: Keep it rhythmic." : "TEXT MODE: Standard grammar.",
 
@@ -1230,14 +1253,25 @@ app.post("/chat", async (req, res) => {
     }
 
     // 4. CHECK COMPLETION
-    const { wantsEnd, wantsNext } = detectEndOrNextIntent(normalizedText);
-    const isChapterDone = (sessionData.lessonWordlist.length === 0 && sessionData.learnedWords.length > 0);
+const { wantsEnd, wantsNext } = detectEndOrNextIntent(normalizedText);
 
-    if (isChapterDone && (wantsEnd || wantsNext)) {
-      const closing = wantsNext ? "Wonderful! Moving to the next chapter." : "Great job today! Goodbye!";
-      return res.json({ text: closing, action: wantsNext ? "NEXT_CHAPTER" : "END_LESSON", chapterComplete: true });
-    }
+console.log("DEBUG normalizedText:", normalizedText);
 
+const isChapterDone =
+  (sessionData.lessonWordlist.length === 0 && sessionData.learnedWords.length > 0);
+if (isChapterDone) {
+  return res.json({
+    text: `You have done very well today, ${sessionData.userName || "my friend"}.
+
+You used many new words and spoke with care and confidence.
+
+This chapter is now complete. Take a moment to rest and enjoy what you have learned.
+
+When you are ready, we will continue together to the next chapter.`,
+    action: wantsNext ? "NEXT_CHAPTER" : "CHAPTER_COMPLETE",
+    chapterComplete: true
+  });
+}
     // 5. TALK TO AI
     let messages = await loadHistory(sessionId);
     messages.push({ role: "user", content: normalizedText });
