@@ -925,6 +925,16 @@ Avoid repeating phrases like "Now, let's..." or "Can you tell me..." multiple ti
 - Never over-correct.
 - Prioritize confidence, flow, and meaningful communication.
 - Do not sound like a parrot repeating the student's sentence.
+11. ANTI-PARROT RULE
+- Do not repeat the student's full sentence with small corrections.
+- Do not use "You could say..." as a default correction pattern.
+
+- Instead:
+  - reformulate naturally
+  - shorten the correction
+  - or embed it into a new sentence
+
+- Only restate the full sentence if it is completely broken and needs full repair.
 `.trim();
 }
 
@@ -1382,6 +1392,14 @@ When you are ready, we will continue together to the next chapter.`,
     await saveHistory(sessionId, messages);
     await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
     await redis.set(`lessonState:${sessionId}`, JSON.stringify(lessonState));
+    let milestone = null;
+
+const learnedCount = sessionData.learnedWords.length;
+
+if (learnedCount >= 10 && !sessionData.milestone10Shown) {
+  milestone = 10;
+  sessionData.milestone10Shown = true;
+}
 
     return res.json({
       text: reply,
@@ -1390,7 +1408,8 @@ When you are ready, we will continue together to the next chapter.`,
       newlyLearned,
       remainingWords: sessionData.lessonWordlist.slice(0, 5),
       chapterComplete: isChapterDone,
-      version: WWV_VERSION
+      milestone, 
+       version: WWV_VERSION
     });
 
   } catch (err) {
