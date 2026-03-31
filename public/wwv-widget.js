@@ -639,7 +639,9 @@ avatarUrl(name) {
   return `${this.backend}/avatars/${name}.png`;
 }
 // 🎉 Milestone celebration (optionally pass milestone number: 10,20,30...)
-celebrateMilestone(milestone = null) {
+  celebrateMilestone(milestone = null) {
+  console.log("🎉 celebrateMilestone CALLED", milestone);
+
   // Longer + feels “bigger” on higher milestones
   const baseMs = 3500;                 // overall celebration length
   const extra = milestone ? Math.min(milestone * 15, 2500) : 0; // scale a bit
@@ -650,6 +652,7 @@ celebrateMilestone(milestone = null) {
 }
 
 confettiBurst(totalMs = 3500) {
+  console.log("🎊 confettiBurst CALLED", totalMs);
   const layer = document.createElement("div");
   layer.style.position = "fixed";
   layer.style.left = "0";
