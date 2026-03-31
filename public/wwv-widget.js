@@ -248,273 +248,126 @@ const headerText = this.demo
   ? "Waterwheel Village Academy — Demo"
   : "Waterwheel Village Academy";
 
-      this.shadowRoot.innerHTML = `
+/* --- PREMIUM STYLING --- */
+this.shadowRoot.innerHTML = `
+<style>
+  :host { 
+    --primary: #0ea5e9; 
+    --success: #10b981; 
+    --bg-main: #f8fafc;
+    --text-dark: #0f172a;
+    font-family: 'Inter', -apple-system, sans-serif;
+  }
+  .wrap { 
+    border: none; 
+    border-radius: 24px; 
+    overflow: hidden; 
+    background: var(--bg-main); 
+    box-shadow: 0 20px 50px rgba(0,0,0,0.1); 
+    display: flex; flex-direction: column;
+  }
+  .top { 
+    padding: 20px; 
+    background: linear-gradient(135deg, #0ea5e9 0%, #3b82f6 100%); 
+    color: #fff; font-weight: 800; font-size: 1.2rem;
+    text-align: center; letter-spacing: -0.5px;
+  }
+  .dash { 
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); 
+    gap: 15px; padding: 20px; background: white; border-bottom: 1px solid #f1f5f9;
+  }
+  .card { 
+    background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 16px; 
+    padding: 15px; transition: transform 0.2s;
+  }
+  .card:hover { transform: translateY(-2px); }
+  .card .label { font-size: 11px; text-transform: uppercase; color: #64748b; font-weight: 700; }
+  .card .value { font-size: 20px; font-weight: 800; color: var(--text-dark); margin: 4px 0; }
 
-        <style>
-          :host { all: initial; font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial; color:#0f172a }
-          .wrap { border:1px solid #e5e7eb; border-radius:16px; overflow:hidden; background:#fff; box-shadow:0 10px 30px rgba(0,0,0,.06) }
-          .top { display:flex; align-items:center; gap:10px; padding:12px 14px; background:#0ea5e9; color:#fff; font-weight:700 }
-          .grid { display:flex; gap:0; align-items:stretch }
-          .col-chat { flex:2; min-width:0; border-right:1px solid #e5e7eb }
-          .col-words { flex:1; min-width:260px; background:#fff }
+  /* Premium Word Cards */
+  .words { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; padding: 20px; }
+  .pill { 
+    background: white; border: 1px solid #e2e8f0; border-radius: 12px; 
+    padding: 12px; display: flex; flex-direction: column; align-items: center;
+    transition: all 0.2s; cursor: pointer; text-align: center;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+  }
+  .pill:hover { border-color: var(--primary); box-shadow: 0 4px 12px rgba(14, 165, 233, 0.1); }
+  .pill.learned { background: #f0fdf4; border-color: #86efac; }
+  .pill .en-text { font-weight: 700; font-size: 15px; margin-bottom: 4px; }
+  .pill .fi-text { font-size: 12px; color: #64748b; font-weight: 500; }
+  .pill .say { 
+    margin-top: 8px; width: 100%; background: #f1f5f9; border-radius: 8px; 
+    font-size: 11px; padding: 4px; font-weight: 700;
+  }
 
-          /* Flash animation for vocab panel on milestones */
-          .col-words.flash-border { animation: flash-border 2s ease-in-out; }
-          @keyframes flash-border {
-            0%   { box-shadow: 0 0 0 0 rgba(255, 215, 0, 0.0); }
-            25%  { box-shadow: 0 0 10px 3px rgba(255, 215, 0, 0.9); }
-            50%  { box-shadow: 0 0 0 0 rgba(255, 215, 0, 0.0); }
-            75%  { box-shadow: 0 0 10px 3px rgba(255, 215, 0, 0.9); }
-            100% { box-shadow: 0 0 0 0 rgba(255, 215, 0, 0.0); }
-          }
-            .avatar{
-  width:40px;
-  height:40px;
-  border-radius:50%;
-  object-fit:cover;
-  margin-right:6px;
-}
-.char{
-  display:flex;
-  align-items:center;
-  gap:6px;
-}
+  /* Chat Bubbles */
+  .chat { height: 500px; padding: 20px; background: #fff; scroll-behavior: smooth; }
+  .bubble { 
+    padding: 14px 18px; border-radius: 20px; font-size: 15px; line-height: 1.6;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.03);
+  }
+  .bot .bubble { background: #f1f5f9; color: var(--text-dark); border-bottom-left-radius: 4px; }
+  .user .bubble { background: var(--primary); color: white; border-bottom-right-radius: 4px; }
 
-          .pane { display:flex; gap:8px; padding:10px 12px; background:#f8fafc; border-bottom:1px solid #e5e7eb; flex-wrap:wrap; align-items:center }
-          .pane input, .pane select { border:1px solid #d1d5db; border-radius:10px; padding:8px 10px; outline:none; min-width:140px }
-          .btn { border:0; background:#0ea5e9; color:#fff; padding:9px 12px; border-radius:10px; cursor:pointer; font-weight:600 }
-          .btn.secondary { background:#334155 }
-          .btn.ghost { background:#e2e8f0; color:#0f172a }
-          .chat { height:460px; overflow:auto; padding:14px; background:#fff }
-          .msg { margin:10px 0; display:flex; gap:10px }
-          .msg.user { justify-content:flex-end }
-          .bubble { max-width:78%; padding:10px 12px; border-radius:14px; line-height:1.45; white-space:pre-wrap; word-wrap:break-word }
-          .bot .bubble { background:#f1f5f9; border:1px solid #e2e8f0 }
-          .user .bubble { background:#dcfce7; border:1px solid #86efac }
-          .typing { font-size:12px; color:#64748b; padding:0 2px }
-          .bar { display:flex; gap:8px; padding:12px; border-top:1px solid #e5e7eb; background:#f8fafc; align-items:center }
-          textarea { flex:1; resize:none; min-height:44px; max-height:140px; border:1px solid #d1d5db; border-radius:12px; padding:10px; outline:none }
-          .mic { background:#e2e8f0; color:#0f172a; padding:9px 12px; border-radius:10px; cursor:pointer }
-          .mic.rec { background:#ef4444; color:#fff }
-          .hint { font-size:12px; color:#334155 }
-          .err { color:#b91c1c; font-size:12px }
-          .interim { font-style:italic; color:#64748b; }
+  /* Input Bar */
+  .bar { padding: 20px; background: white; border-top: 1px solid #f1f5f9; display: flex; gap: 12px; }
+  textarea { 
+    border-radius: 15px; border: 1px solid #e2e8f0; padding: 12px; 
+    background: #f8fafc; font-size: 15px;
+  }
+  .btn-primary { 
+    background: var(--primary); color: white; padding: 0 20px; border-radius: 15px; 
+    font-weight: 700; transition: opacity 0.2s;
+  }
+  .mic-btn { 
+    width: 50px; height: 50px; border-radius: 15px; background: #f1f5f9; 
+    display: flex; align-items: center; justify-content: center;
+  }
+  .mic-btn.rec { background: #ef4444; color: white; animation: pulse 1.5s infinite; }
+  
+  @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+</style>
 
-          .words-head { padding:12px 12px 6px 12px; border-bottom:1px solid #e2e8f0 }
-          .progress-wrap { margin-top:8px; background:#f1f5f9; border:1px solid #e2e8f0; border-radius:10px; height:14px; overflow:hidden }
-          .progress-bar { height:100%; width:0%; background:#10b981; transition:width .3s ease }
-          .progress-label { font-size:12px; color:#64748b; margin-top:6px }
-          .words { padding:10px; display:flex; flex-wrap:wrap; gap:6px }
-          .pill { border:1px solid #e2e8f0; border-radius:9999px; padding:6px 10px; font-size:13px; cursor:pointer; background:#f8fafc; color:#0f172a }
-          .pill.learned { background:#dcfce7; color:#065f46; border-color:#86efac }
-          .pill .say { margin-left:6px; border:0; background:#e2e8f0; color:#0f172a; border-radius:9999px; padding:2px 8px; font-size:12px; cursor:pointer }
-          .pill .say:hover { background:#cbd5e1 }
-
-          /* Demo character buttons w/ avatars */
-.demoRow { display:flex; gap:10px; flex-wrap:wrap; align-items:center; padding:10px 12px; border-bottom:1px solid #e5e7eb; background:#ffffff }
-
-.char{
-  display:flex;
-  align-items:center;
-  gap:10px;
-  border:1px solid #e2e8f0;
-  background:#ffffff;
-  color:#0f172a;
-  border-radius:9999px;
-  padding:8px 12px 8px 8px;
-  cursor:pointer;
-  font-weight:700;
-  transition: background .2s ease, color .2s ease, border-color .2s ease;
-}
-
-.char:hover{ background:#f1f5f9; }
-
-.char.active{
-  background:#0ea5e9;
-  color:#ffffff;
-  border-color:#0ea5e9;
-}
-
-.char img{
-  width:32px;
-  height:32px;
-  border-radius:9999px;
-  border:1px solid #e2e8f0;
-  object-fit:cover;
-  flex:0 0 32px;
-}
-
-.char.active img{
-  border-color: rgba(255,255,255,.55);
-}
-
-/* --- Dashboard styles START --- */
-
-.dash {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-  padding: 12px 14px;
-  background: #f8fafc;
-  border-bottom: 1px solid #e5e7eb;
-}
-
-.dash .card {
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 14px;
-  padding: 10px 12px;
-  box-shadow: 0 8px 18px rgba(0,0,0,.04);
-}
-
-.dash .label { font-size: 12px; color:#475569; margin-bottom: 6px; }
-.dash .value { font-size: 18px; font-weight: 800; color:#0f172a; }
-
-/* --- Dashboard styles END --- */
-
-        </style>
-
-       <div class="wrap" role="region" aria-label="Waterwheel Village Chat">
-<div class="top">${headerText}</div>
-
-  ${demoOnlyUI}
-
-${this.demo ? "" : `
-  <!-- Dashboard goes BETWEEN banner and inputs -->
-  <div class="dash" aria-label="Student dashboard">
-    <div class="card">
-      <div class="label">Completion</div>
-      <div class="value"><span id="dashCompletion">65%</span></div>
-      <div class="meter"><div id="dashCompletionBar"></div></div>
-      <div class="sub" id="dashCourse">Month 5 • Doctor & Medicine</div>
-    </div>
-
-    <div class="card">
-      <div class="label">Words learned</div>
-      <div class="value"><span id="dashWords">2</span> / <span id="dashWordsTotal">44</span></div>
-      <div class="sub" id="dashWordsPct">5% mastered</div>
-    </div>
-
-    <div class="card">
-      <div class="label">Streak</div>
-      <div class="value"><span id="dashStreak">5</span> days 🔥</div>
-      <div class="sub" id="dashLastActive">Last active: Today</div>
-    </div>
-
-    <div class="card cta">
-      <button id="dashContinue">Continue</button>
-      <div class="sub" id="dashNext">Next: Practice conversation</div>
-    </div>
+<div class="wrap">
+  <div class="top">${headerText}</div>
+  
+  <!-- Dashboard Section -->
+  <div class="dash">
+     <div class="card">
+       <div class="label">Progress</div>
+       <div class="value" id="dashCompletion">0%</div>
+     </div>
+     <div class="card">
+       <div class="label">Vocabulary</div>
+       <div class="value"><span id="dashWords">0</span> / <span id="dashWordsTotal">0</span></div>
+     </div>
+     <div class="card">
+       <div class="label">Unit</div>
+       <div class="value" style="font-size:14px;" id="dashCourse">Ready to start</div>
+     </div>
   </div>
-
-  <div class="pane">
-    <div class="row">
-      <input id="name" placeholder="Your name" />
-
-      <!-- Month + Chapter on SAME line -->
-      <div class="selrow">
-        <select id="month">
-          <option value="">Month...</option>
-          <option value="month1">Month 1 – Greetings & Daily Life</option>
-          <option value="month2">Month 2 – Home & Feelings</option>
-          <option value="month3">Month 3 – Work & School</option>
-          <option value="month4">Month 4 – Travel & Shopping</option>
-          <option value="month5">Month 5 – Health & Community</option>
-          <option value="month6">Month 6 – Nature & Culture</option>
-        </select>
-
-        <select id="chapter">
-          <option value="">Chapter...</option>
-
-          <!-- Month 1 -->
-          <option value="greetings_introductions">Greetings & Introductions (M1)</option>
-          <option value="numbers_days_questions">Numbers, Days & Questions (M1)</option>
-          <option value="food_drink">Food & Drink (M1)</option>
-          <option value="daily_phrases">Daily Phrases (M1)</option>
-
-          <!-- Month 2 -->
-          <option value="family_members">Family Members (M2)</option>
-          <option value="house_furniture">House & Furniture (M2)</option>
-          <option value="routines_chores">Routines & Chores (M2)</option>
-          <option value="feelings_emotions">Feelings & Emotions (M2)</option>
-
-          <!-- Month 3 -->
-          <option value="professions_tools">Professions & Tools (M3)</option>
-          <option value="classroom_office">Classroom & Office (M3)</option>
-          <option value="common_tasks">Common Tasks (M3)</option>
-          <option value="workplace_dialogues">Workplace Dialogues (M3)</option>
-
-          <!-- Month 4 -->
-          <option value="transport">Transport (M4)</option>
-          <option value="shops_money">Shops & Money (M4)</option>
-          <option value="asking_directions">Asking Directions (M4)</option>
-          <option value="eating_restaurants">Eating & Restaurants (M4)</option>
-
-          <!-- Month 5 -->
-          <option value="body_health">Body & Health (M5)</option>
-          <option value="doctor_medicine">Doctor & Medicine (M5)</option>
-          <option value="community_places">Community Places (M5)</option>
-          <option value="emergency_phrases">Emergency Phrases (M5)</option>
-
-          <!-- Month 6 -->
-          <option value="weather_seasons">Weather & Seasons (M6)</option>
-          <option value="animals_plants_environment">Animals, Plants & Environment (M6)</option>
-          <option value="traditions_celebrations">Traditions & Celebrations (M6)</option>
-          <option value="review_integration">Review & Integration (M6)</option>
-        </select>
-      </div>
-
-      <!-- Start button nicer color -->
-      <button id="start" class="btn primary">Start Lesson</button>
-
-      <button id="voiceToggle" class="btn ghost">Voice: ON</button>
-      <button id="voiceTest" class="btn ghost">Test Voice</button>
-
-      <!-- Download renamed + moved next to Test Voice -->
-      <button id="download" class="btn ghost">Download Lesson</button>
-
-      <span id="status" class="hint" aria-live="polite" style="margin-left:auto"></span>
-    </div>
-  </div>
-`}
-
 
   <div class="grid">
-
-            <div class="col-chat">
-              <div id="chat" class="chat"></div>
-              <div class="bar">
-                <button id="mic" class="mic" aria-label="Start recording">Mic</button>
-                <textarea id="input" placeholder="Type or use the mic... (Shift+Enter = newline)"></textarea>
-                <button id="send" class="btn" aria-label="Send message">Send</button>
-              </div>
-              <div class="pane">
-                <span id="micInfo" class="hint"></span>
-                <span id="micErr" class="err"></span>
-              </div>
-            </div>
-            ${this.demo ? "" : `
-            <div class="col-words">
-              <div class="words-head">
-                <div style="font-weight:700; color:#0f172a">Wordlist & Progress</div>
-                <div class="progress-wrap">
-                  <div id="progBar" class="progress-bar"></div>
-                </div>
-                <div id="progLbl" class="progress-label">0 / 0 learned (0%)</div>
-                <label style="display:flex;gap:6px;align-items:center;margin-top:8px;font-size:12px;color:#334155">
-                  <input type="checkbox" id="showFi"> Show Finnish
-                </label>
-              </div>
-              <div id="words" class="words"></div>
-            </div>
-            `}
-
-          </div>
-        </div>
-
-        <audio id="player" controls playsinline></audio>
-        <audio id="milestone-sound" preload="auto"></audio>
-      `;
+    <div class="col-chat">
+      <div id="chat" class="chat"></div>
+      <div class="bar">
+        <button id="mic" class="mic-btn">🎤</button>
+        <textarea id="input" placeholder="Type in English..."></textarea>
+        <button id="send" class="btn-primary">Send</button>
+      </div>
+    </div>
+    
+    <div class="col-words">
+       <div style="padding:20px 20px 0; font-weight:800; display:flex; justify-content:space-between;">
+         Unit Wordlist
+         <label style="font-weight:400; font-size:12px;"><input type="checkbox" id="showFi"> Finnish</label>
+       </div>
+       <div id="words" class="words"></div>
+    </div>
+  </div>
+</div>
+`;
       const sr = this.shadowRoot;
 if (sr) {
   sr.addEventListener("click", (e) => {
