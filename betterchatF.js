@@ -1387,17 +1387,26 @@ When you are ready, we will continue together to the next chapter.`,
     const reply = completion.choices[0].message.content;
     messages.push({ role: "assistant", content: reply });
     
-    // 6. SAVE & RESPOND
-    await saveHistory(sessionId, messages);
-    await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
-    await redis.set(`lessonState:${sessionId}`, JSON.stringify(lessonState));
-  let milestone = null;
-const learnedCount = sessionData.learnedWords.length;
+  // 6. SAVE & RESPOND
 
-if (learnedCount >= 10 && !sessionData.milestone10Shown) {
+let milestone = null;
+
+// Count learned words in the CURRENT CHAPTER only
+const chapterLearnedCount = Array.isArray(lessonState?.vocab)
+  ? lessonState.vocab.filter(
+      v => v.status === "produced" || v.status === "mastered"
+    ).length
+  : 0;
+
+// Fire milestone once per chapter
+if (chapterLearnedCount >= 10 && !lessonState.milestone10Shown) {
   milestone = 10;
-  sessionData.milestone10Shown = true;
+  lessonState.milestone10Shown = true;
 }
+
+await saveHistory(sessionId, messages);
+await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
+await redis.set(`lessonState:${sessionId}`, JSON.stringify(lessonState));
 
 return res.json({
   text: reply,
