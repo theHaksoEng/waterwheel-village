@@ -1311,54 +1311,89 @@ app.post("/chat", async (req, res) => {
       lessonState = bumpLessonCounters(lessonState);
       lessonState.stage = getNextStage(lessonState);
 
-      // B: PHRASE-FIRST WORD MATCHING (your existing code)
-      const userNorm = normalizedText
-        .toLowerCase()
-        .replace(/[^\w\s-]/g, "")
-        .replace(/\s+/g, " ")
-        .trim();
+     // B: PHRASE-FIRST WORD MATCHING
+const userNorm = normalizedText
+  .toLowerCase()
+  .replace(/[^\w\s-]/g, "")
+  .replace(/\s+/g, " ")
+  .trim();
 
-      const userWords = userNorm.split(" ").filter(Boolean);
-      const userSet = new Set(userWords);
+const userWords = userNorm.split(" ").filter(Boolean);
+const userSet = new Set(userWords);
 
-      const wordsRemaining = [];
-      const currentList = sessionData.lessonWordlist || [];
+const wordsRemaining = [];
+const currentList = sessionData.lessonWordlist || [];
 
-      for (const rawWord of currentList) {
-        let lessonWord = String(rawWord || "").toLowerCase().trim();
-        let isMatch = false;
+console.log("=== MATCH DEBUG START ===");
+console.log("RAW USER TEXT:", normalizedText);
+console.log("NORMALIZED USER TEXT:", userNorm);
+console.log("CURRENT LESSON WORDLIST:", currentList);
 
-       if (lessonWord.includes(" ")) {
-  const lessonPhraseNorm = String(lessonWord || "")
-    .toLowerCase()
-    .replace(/[^\w\s-]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
+for (const rawWord of currentList) {
+  let lessonWord = String(rawWord || "").toLowerCase().trim();
+  let isMatch = false;
 
-  if (userNorm.includes(lessonPhraseNorm)) {
-    isMatch = true;
-  } else if (userNorm.includes(lessonPhraseNorm.replace(/ /g, "-"))) {
-    isMatch = true;
+  if (lessonWord.includes(" ")) {
+    const lessonPhraseNorm = String(lessonWord || "")
+      .toLowerCase()
+      .replace(/[^\w\s-]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    if (userNorm.includes(lessonPhraseNorm)) {
+      isMatch = true;
+    } else if (userNorm.includes(lessonPhraseNorm.replace(/ /g, "-"))) {
+      isMatch = true;
+    }
+
+    console.log("PHRASE CHECK:", {
+      lessonWord,
+      lessonPhraseNorm,
+      userNorm,
+      isMatch
+    });
+  } else {
+    const normLesson = normalizeToken(lessonWord);
+    isMatch =
+      userSet.has(String(lessonWord || "").toLowerCase()) ||
+      userSet.has(normLesson);
+
+    console.log("WORD CHECK:", {
+      lessonWord,
+      normLesson,
+      userWords: Array.from(userSet),
+      isMatch
+    });
   }
-} else {
-  const normLesson = normalizeToken(lessonWord);
-  isMatch = userSet.has(String(lessonWord || "").toLowerCase()) || userSet.has(normLesson);
+
+  if (isMatch && !sessionData.learnedWords.includes(lessonWord)) {
+    sessionData.learnedWords.push(lessonWord);
+    newlyLearned.push(lessonWord);
+
+    if (lessonState) {
+      const vIndex = lessonState.vocab.findIndex(
+        v => String(v.word || "").toLowerCase() === lessonWord
+      );
+      if (vIndex !== -1) {
+        lessonState.vocab[vIndex].status = "produced";
+      }
+    }
+
+    console.log("✅ MATCHED:", lessonWord);
+  } else if (!isMatch) {
+    wordsRemaining.push(lessonWord);
+    console.log("❌ NOT MATCHED:", lessonWord);
+  } else {
+    console.log("⚠️ ALREADY LEARNED, NOT ADDING AGAIN:", lessonWord);
+  }
 }
 
-        if (isMatch && !sessionData.learnedWords.includes(lessonWord)) {
-          sessionData.learnedWords.push(lessonWord);
-          newlyLearned.push(lessonWord);
+console.log("NEWLY LEARNED THIS TURN:", newlyLearned);
+console.log("TOTAL LEARNED WORDS:", sessionData.learnedWords);
+console.log("WORDS REMAINING:", wordsRemaining);
+console.log("=== MATCH DEBUG END ===");
 
-          if (lessonState) {
-            const vIndex = lessonState.vocab.findIndex(v => v.word.toLowerCase() === lessonWord);
-            if (vIndex !== -1) lessonState.vocab[vIndex].status = "produced";
-          }
-        } else if (!isMatch) {
-          wordsRemaining.push(lessonWord);
-        }
-      }
-
-      sessionData.lessonWordlist = wordsRemaining;
+sessionData.lessonWordlist = wordsRemaining;
     }
 
     // 4. CHECK COMPLETION
