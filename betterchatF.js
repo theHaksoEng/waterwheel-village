@@ -1328,14 +1328,22 @@ app.post("/chat", async (req, res) => {
         let lessonWord = String(rawWord || "").toLowerCase().trim();
         let isMatch = false;
 
-        if (lessonWord.includes(" ")) {
-          const lessonPhraseNorm = lessonWord.replace(/\s+/g, " ").trim();
-          if (userNorm.includes(lessonPhraseNorm)) isMatch = true;
-          else if (userNorm.includes(lessonPhraseNorm.replace(/ /g, "-"))) isMatch = true;
-        } else {
-          const normLesson = normalizeToken(lessonWord);
-          isMatch = userSet.has(lessonWord) || userSet.has(normLesson);
-        }
+       if (lessonWord.includes(" ")) {
+  const lessonPhraseNorm = String(lessonWord || "")
+    .toLowerCase()
+    .replace(/[^\w\s-]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (userNorm.includes(lessonPhraseNorm)) {
+    isMatch = true;
+  } else if (userNorm.includes(lessonPhraseNorm.replace(/ /g, "-"))) {
+    isMatch = true;
+  }
+} else {
+  const normLesson = normalizeToken(lessonWord);
+  isMatch = userSet.has(String(lessonWord || "").toLowerCase()) || userSet.has(normLesson);
+}
 
         if (isMatch && !sessionData.learnedWords.includes(lessonWord)) {
           sessionData.learnedWords.push(lessonWord);
