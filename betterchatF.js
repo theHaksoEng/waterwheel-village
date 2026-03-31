@@ -790,10 +790,6 @@ function buildStageMode(sessionData, state) {
   }
 }
 
-// =====================================================
-// UNIVERSAL TEACHING POLICY (Version 2.0 - Optimized)
-// =====================================================
-
 function buildUniversalTeachingPolicy(sessionData, state, promptType) {
   const chapter = sessionData?.currentLesson?.chapter || "daily life";
 
@@ -803,7 +799,8 @@ UNIVERSAL LESSON POLICY — STRICT EXECUTION
 1. PRIORITY
 - Teaching progression is more important than free conversation.
 - Stay on the lesson topic "${chapter}".
-- If the student drifts, acknowledge briefly and redirect within 1 turn.
+- If the student drifts, acknowledge briefly and redirect within the same reply.
+- Do not follow side stories or jokes for more than one turn.
 
 2. STUDENT OUTPUT
 - The student should do most of the talking.
@@ -811,133 +808,92 @@ UNIVERSAL LESSON POLICY — STRICT EXECUTION
 - End with exactly ONE question, task, or invitation.
 
 3. CORRECTION STYLE
-
 - Always check the student's sentence for small grammar, word order, and spelling mistakes.
-
-- If a clear mistake appears, you MUST include a natural corrected version in your reply.
-- Do not skip correction, even if the student is slightly off-topic.
-
+- If a clear mistake appears, include a natural corrected version in your reply.
+- Do not skip correction just because the student is slightly off-topic.
 - Do NOT point out mistakes directly.
-- Do NOT say "this is wrong" or explain rules.
-
-- Instead, model the correct sentence naturally:
-  - Student: "i was very angery"
-    You: "That sounds stressful—you were dealing with a very angry customer."
-  - Student: "when i fall off my bike it hurt alot"
-    You: "That sounds painful—when you fell off your bike, it hurt a lot."
-
-- Do not repeat the student's full sentence every time.
-- Only include the corrected version when it helps learning.
-
-- Focus on ONE small improvement at a time.
+- Do NOT say "this is wrong" or explain grammar rules.
+- Correct only ONE small thing at a time.
 - Prioritize common errors:
   - verb tense
   - word order
   - basic spelling
-  - missing small words (a, the, to, etc.)
+  - missing small words
+- If the sentence is already clear and correct, do NOT restate it.
+- Keep correction natural, short, and useful.
 
-- If the sentence is already clear and correct:
-  - do NOT restate it
-  - respond naturally
+4. ANTI-PARROT RULE
+- Do not repeat the student's full sentence with only small corrections.
+- Do not use "You could say..." or "You might say..." as a default correction pattern.
+- Prefer these correction styles:
+  - natural reformulation
+  - partial correction
+  - corrected phrase embedded in a new sentence
+- Only restate the full sentence if it is badly broken and needs full repair.
 
-- Balance correction and flow:
-  - correct consistently, but not mechanically every turn
-  - keep the conversation smooth and human
-
-- If the student is off-topic:
-  - first acknowledge and include the corrected version
-  - then gently redirect back to the lesson in the same reply
-
-4. VOICE INPUT RULES
+5. VOICE INPUT RULES
 - If the input sounds spoken, fragmented, or informal, interpret meaning first.
 - Do not expect punctuation, capitalization, or complete sentences.
-- Accept fragments and turn them into natural English in your response when helpful.
+- Accept fragments and turn them into natural English in your reply when helpful.
 - Never mention punctuation or grammar rules explicitly.
 
-5. RESPONSE STYLE
-
+6. RESPONSE STYLE
 - Keep replies warm, calm, and encouraging.
 - Maximum 3 sentences.
-- Use small, natural village details occasionally to create atmosphere.
+- Use specific, meaningful praise instead of generic praise.
+- Do not sound overly poetic in every turn.
+- Use small, natural village details occasionally for atmosphere.
 - Do not include village references in every reply.
 - In demo mode, avoid village landmarks entirely.
-- Avoid sounding overly poetic in every turn.
-- Use specific, meaningful praise instead of generic praise.
-- Make praise respond to the student's actual content.
 
-6. RESPONSE COMPOSITION
-
+7. RESPONSE COMPOSITION
 - Do NOT use the same structure every turn.
-
 - Each reply should include:
-  - a short acknowledgement or reaction
+  - a short acknowledgement, reaction, correction, or expansion
   - AND one question, task, or invitation
-
-- Do NOT include all of the following in every reply:
+- Do NOT include all of these in every reply:
   - praise
   - example sentence
   - instruction template
-
-- Vary your responses:
-  - Sometimes just acknowledge + ask
-  - Sometimes correct + ask
-  - Sometimes expand + ask
-  - Sometimes ask directly without instruction
-
+- Vary response shape:
+  - sometimes acknowledge + ask
+  - sometimes correct + ask
+  - sometimes expand + ask
+  - sometimes ask directly
+- Occasionally skip praise and go straight to the next useful question.
 - Keep responses simple and natural, not formulaic.
 
-6.1 DRIFT CONTROL
-- If the student drifts, first acknowledge their sentence and include a natural correction if needed.
-- Then gently redirect back to the lesson within the same reply.
+8. DRIFT CONTROL
+- If the student drifts, first acknowledge the sentence and include a natural correction if needed.
+- Then redirect back to the lesson within the same reply.
+- If the student gives a humorous, exaggerated, or unrealistic answer, acknowledge it briefly but do not build the lesson around it.
+- Return quickly to practical lesson language.
 
-7. TWO-WAY INTERACTION
+9. PROMPT VARIATION
+- Do not use the same question pattern in consecutive turns.
+- Avoid repeating phrases like "Now, let's..." or "Can you tell me..." multiple times in a row.
+- Do not provide an example sentence every turn.
+- Use examples only when the task might otherwise be unclear.
 
-- From time to time, invite the student to ask ONE simple question related to the CURRENT lesson topic or vocabulary.
-- Make the invitation specific when possible (e.g., a place, person, or situation from the lesson).
-
+10. TWO-WAY INTERACTION
+- Occasionally invite the student to ask ONE simple question related to the current lesson topic or vocabulary.
+- Make the invitation specific when possible.
 - Keep it short and easy.
 - After answering, immediately guide the student back to the lesson with a new task.
-
 - Use this mainly in ACTIVATE, GUIDED, SCENARIO, or CONSOLIDATE modes.
 - Do NOT use this in CLOSE mode.
 
-- Example:
-  "You can ask me one simple question about the library."
-
-8. PROMPT VARIATION
-Do not use the same question pattern in consecutive turns.
-Avoid repeating phrases like "Now, let's..." or "Can you tell me..." multiple times in a row.
-- Vary prompts naturally.
-- Examples of useful prompt styles, depending on the context:
-  - "What is he like?"
-  - "What does she enjoy doing?"
-  - "Tell me a little about..."
-  - "And your brother?"
-  - "What do you usually do there?"
-
-9. FACT TRACKING
+11. FACT TRACKING
 - Remember key facts the student already shared, especially names, relationships, jobs, places, and family roles.
 - Do not contradict earlier information.
-- Reuse known names and relationships naturally when helpful.
+- Reuse known details naturally when helpful.
 
-10. SAFETY OF TONE
+12. SAFETY OF TONE
 - Never sound irritated, repetitive, or mechanical.
 - Never over-correct.
-- Prioritize confidence, flow, and meaningful communication.
-- Do not sound like a parrot repeating the student's sentence.
-11. ANTI-PARROT RULE
-- Do not repeat the student's full sentence with small corrections.
-- Do not use "You could say..." as a default correction pattern.
-
-- Instead:
-  - reformulate naturally
-  - shorten the correction
-  - or embed it into a new sentence
-
-- Only restate the full sentence if it is completely broken and needs full repair.
+- Prioritize confidence, flow, clarity, and meaningful communication.
 `.trim();
 }
-
 function buildSystemPrompt(
   activeCharacterKey,
   sessionData,
@@ -1435,8 +1391,7 @@ When you are ready, we will continue together to the next chapter.`,
     await saveHistory(sessionId, messages);
     await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
     await redis.set(`lessonState:${sessionId}`, JSON.stringify(lessonState));
-    let milestone = null;
-
+  let milestone = null;
 const learnedCount = sessionData.learnedWords.length;
 
 if (learnedCount >= 10 && !sessionData.milestone10Shown) {
@@ -1444,16 +1399,16 @@ if (learnedCount >= 10 && !sessionData.milestone10Shown) {
   sessionData.milestone10Shown = true;
 }
 
-    return res.json({
-      text: reply,
-      character: sessionData.character,
-      voiceId: characters[sessionData.character].voiceId,
-      newlyLearned,
-      remainingWords: sessionData.lessonWordlist.slice(0, 5),
-      chapterComplete: isChapterDone,
-      milestone, 
-       version: WWV_VERSION
-    });
+return res.json({
+  text: reply,
+  character: sessionData.character,
+  voiceId: characters[sessionData.character].voiceId,
+  newlyLearned,
+  remainingWords: sessionData.lessonWordlist.slice(0, 5),
+  chapterComplete: isChapterDone,
+  milestone,
+  version: WWV_VERSION
+});
 
   } catch (err) {
     console.error("CRASH:", err);
@@ -1482,82 +1437,84 @@ function cleanTextForSpeech(input) {
 }
 console.log("Reached end of /chat route definition");
 app.post("/speakbase", async (req, res) => {
-const { text, voiceId } = req.body || {};
-if (!process.env.ELEVENLABS_API_KEY) {
-console.error("❌ Missing ELEVENLABS_API_KEY");
-return res.status(500).json({ error: "Missing ELEVENLABS_API_KEY" });
+  const { text, voiceId } = req.body || {};
+  
+  if (!process.env.ELEVENLABS_API_KEY) {
+    console.error("❌ Missing ELEVENLABS_API_KEY");
+    return res.status(500).json({ error: "Missing ELEVENLABS_API_KEY" });
   }
-if (!text || !voiceId) {
-return res.status(400).json({ error: "Missing text or voiceId" });
+  
+  if (!text || !voiceId) {
+    return res.status(400).json({ error: "Missing text or voiceId" });
   }
-  // 🔊 Clean text for speech (removes Mr. pause etc.)
-const speechText = cleanTextForSpeech(text);
 
-// 1) Compute cache key & path
-const key = hashTextForCache(speechText, voiceId);
-const cachedPath = path.join(AUDIO_CACHE_DIR, `${key}.mp3`);
-try {
-// 2) If cached, stream file and return (no ElevenLabs cost)
-if (fs.existsSync(cachedPath)) {
-console.log(`🔁 Serving cached audio: ${cachedPath}`);
-res.setHeader("Content-Type", "audio/mpeg");
-const stream = fs.createReadStream(cachedPath);
-stream.on("error", (err) => {
-console.error("❌ Error reading cached audio:", err.message);
-if (!res.headersSent) {
-res.status(500).json({ error: "Failed to read cached audio" });
-        } else {
-res.end();
-        }
-      });
-return stream.pipe(res);
+  // 🔊 Clean text for speech (removes Mr. pause, colons etc.)
+  const speechText = cleanTextForSpeech(text);
+
+  // 1) Compute cache key & path
+  const key = hashTextForCache(speechText, voiceId);
+  const cachedPath = path.join(AUDIO_CACHE_DIR, `${key}.mp3`);
+
+  try {
+    // 2) If cached, stream file and return
+    if (fs.existsSync(cachedPath)) {
+      console.log(`🔁 Serving cached audio: ${cachedPath}`);
+      res.setHeader("Content-Type", "audio/mpeg");
+      const stream = fs.createReadStream(cachedPath);
+      return stream.pipe(res);
     }
-// 3) Not cached → call ElevenLabs, save, then send
-console.log(`🔊 Generating new audio for cache key: ${key}`);
-const response = await fetch(
-`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
-      {
-method: "POST",
-headers: {
-"Content-Type": "application/json",
-"xi-api-key": process.env.ELEVENLABS_API_KEY,
-Accept: "audio/mpeg",
-        },
-body: JSON.stringify({
-  text: speechText,
 
-model_id: "eleven_multilingual_v2", // keep your current model
+    // 3) Not cached → call ElevenLabs with "Stability" fixes
+    console.log(`🔊 Generating high-quality audio for: ${key}`);
+    const response = await fetch(
+      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "xi-api-key": process.env.ELEVENLABS_API_KEY,
+          "Accept": "audio/mpeg",
+        },
+        body: JSON.stringify({
+          text: speechText,
+          model_id: "eleven_multilingual_v2", 
+          voice_settings: {
+            stability: 0.75,         // Fixes slurring: makes the voice consistent
+            similarity_boost: 0.75,  // Makes the voice clearer
+            style: 0.0,              // Prevents "random" emotional glitches
+            use_speaker_boost: true  // Boosts clarity for educational use
+          }
         }),
       }
     );
-if (!response.ok) {
-const errorText = await response.text();
-console.error("❌ ElevenLabs API error:", response.status, errorText);
-return res
-        .status(response.status)
-        .json({ error: "ElevenLabs generation failed", details: errorText });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("❌ ElevenLabs API error:", response.status, errorText);
+      return res.status(response.status).json({ error: "ElevenLabs failed", details: errorText });
     }
-const arrayBuffer = await response.arrayBuffer();
-const buffer = Buffer.from(arrayBuffer);
-// 3a) Save to cache
-try {
-fs.writeFileSync(cachedPath, buffer);
-console.log(`✅ Cached new audio at: ${cachedPath}`);
+
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    // 3a) Save to cache
+    try {
+      fs.writeFileSync(cachedPath, buffer);
+      console.log(`✅ Cached new audio at: ${cachedPath}`);
     } catch (err) {
-console.error("⚠️ Failed to write audio cache:", err.message);
-// We still continue and send the audio; caching just fails silently
+      console.error("⚠️ Cache write failed:", err.message);
     }
-// 3b) Send audio to client
-res.setHeader("Content-Type", "audio/mpeg");
-res.end(buffer);
+
+    // 3b) Send audio to client
+    res.setHeader("Content-Type", "audio/mpeg");
+    res.end(buffer);
+
   } catch (err) {
-console.error("❌ Speakbase processing error:", err.message);
-if (!res.headersSent) {
-return res
-        .status(500)
-        .json({ error: "TTS Generation Failed", details: err.message });
+    console.error("❌ Speakbase error:", err.message);
+    if (!res.headersSent) {
+      return res.status(500).json({ error: "TTS Generation Failed" });
     }
-res.end();
+    res.end();
   }
 });
 // Alias so frontend can POST /speak

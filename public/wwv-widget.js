@@ -1224,6 +1224,11 @@ async playSpeakQueue() {
     });
 
     const d = await r.json().catch(() => ({}));
+    console.log("chat response milestone:", d.milestone);
+
+if (d.milestone) {
+  this.celebrateMilestone(d.milestone);
+}
     this.addTyping(false);
 
     if (!r.ok) {
