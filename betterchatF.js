@@ -1209,7 +1209,7 @@ When you are ready, we will continue together to the next chapter.`,
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [{ role: "system", content: systemPrompt }, ...messages],
-      temperature: 0.5,
+      temperature: 0.85,
     });
 
     const reply = completion.choices[0].message.content;
