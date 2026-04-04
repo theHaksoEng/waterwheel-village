@@ -1456,21 +1456,23 @@ function normalizeToken(t) {
 }
 
 function buildSystemPrompt(characterKey, sessionData, mode, lessonState) {
-  // 1. Get character details (default to McArthur if missing)
   const c = characters[characterKey] || characters['mcarthur'];
-  
-  // 2. Prepare the vocabulary list
-  const targetWordsString = (sessionData.lessonWordlist || []).join(', ');
-  
-  // 3. Build the prompt string
-  return `### MANDATORY INSTRUCTIONS:
-- YOU ARE ${c.name.toUpperCase()}. 
-- ROLE: ${c.role}
-- PERSONALITY: ${c.personality}
-- STRICT LIMIT: 3 sentences maximum.
-- MISSION: You must use at least one word from this list: ${targetWordsString}.
-- STYLE: Be a warm ESL coach from Waterwheel Village, Finland.
-- PIVOT: If the student doesn't use a target word, ask a question that forces them to use one.`;
+  // Ensure we always have an array to join
+  const targetWords = sessionData.lessonWordlist || [];
+  const targetWordsString = targetWords.join(', ');
+
+  return `### IDENTITY:
+You are ${c.name} from Waterwheel Village. ${c.personality}.
+
+### MISSION:
+1. RECAST: Start by saying "You could say: [Better Version]" if the user made a grammar mistake.
+2. VILLAGE CONTEXT: You must mention a village location (the forge, the bakery, or the forest).
+3. VOCAB FOCUS: You MUST use at least one of these words: ${targetWordsString}.
+4. ACKNOWLEDGE: If the user uses a word from the list, say "Great use of the word [word]!"
+
+### RULES:
+- STRICT 3 SENTENCE MAX.
+- End with a question about ${targetWordsString}.`;
 }
 
 // Boot-time load of monthly wordlists
