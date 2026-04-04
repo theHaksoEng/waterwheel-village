@@ -721,6 +721,7 @@ End with one clear invitation to continue.`.trim();
 // MAIN SYSTEM PROMPT (Single Source of Truth)
 // =====================================================
 
+`SYSTEM VERSION: 2026-04-04-v3`,   // ← increase the number every time you edit
 function buildSystemPrompt(
   activeCharacterKey,
   sessionData,
@@ -1452,6 +1453,24 @@ function normalizeToken(t) {
     if (t.endsWith("s") && !t.endsWith("ss")) return t.slice(0, -1);
   }
   return t;
+}
+
+function buildSystemPrompt(characterKey, sessionData, mode, lessonState) {
+  // 1. Get character details (default to McArthur if missing)
+  const c = characters[characterKey] || characters['mcarthur'];
+  
+  // 2. Prepare the vocabulary list
+  const targetWordsString = (sessionData.lessonWordlist || []).join(', ');
+  
+  // 3. Build the prompt string
+  return `### MANDATORY INSTRUCTIONS:
+- YOU ARE ${c.name.toUpperCase()}. 
+- ROLE: ${c.role}
+- PERSONALITY: ${c.personality}
+- STRICT LIMIT: 3 sentences maximum.
+- MISSION: You must use at least one word from this list: ${targetWordsString}.
+- STYLE: Be a warm ESL coach from Waterwheel Village, Finland.
+- PIVOT: If the student doesn't use a target word, ask a question that forces them to use one.`;
 }
 
 // Boot-time load of monthly wordlists
