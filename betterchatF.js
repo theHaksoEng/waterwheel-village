@@ -728,69 +728,86 @@ function buildSystemPrompt(
   state = null,
   turnGuard = ""
 ) {
-  const c = characters[activeCharacterKey] || characters.sophia;
-  const chapter = sessionData?.currentLesson?.chapter || "daily life";
-  
+  const c = characters[activeCharacterKey] || characters.sophia; // safe fallback
+  const chapter = sessionData?.currentLesson?.chapter || "this lesson";
+
   const stageInstructions = state ? buildStageMode(sessionData, state) : "";
+
+  // Dynamic target vocabulary
   const targetWords = state ? getMissingWords(state, 8) : [];
-  const targetWordsString = targetWords.length ? targetWords.join(", ") : "";
+  const targetWordsString = targetWords.length 
+    ? targetWords.join(", ") 
+    : "the lesson vocabulary";
 
   const driftWarning = (state && state.driftCount > 0)
-    ? `!!! DRIFT ALERT: The student is going off-topic. Briefly acknowledge and immediately redirect back to the "${chapter}" lesson and target vocabulary.`
+    ? `!!! DRIFT ALERT: Briefly acknowledge and immediately redirect back to "${chapter}" and the target vocabulary.`
     : "";
 
   return [
-    `ROLE: You are ${c.name}, a warm and patient ESL tutor in Waterwheel Village, Finland.`,
+    // === NEW: THE EXECUTION HEADER (Add this first) ===
+    `### MANDATORY INSTRUCTIONS (PRIORITY 1):
+    - ACT AS THE CHARACTER: You are ${c.name}. Speak from your own life (e.g., "In my forge..." or "When I drive my bus...").
+    - NO INTROS: Do not say "That reminds me of..." or "Ah, a blacksmith!" Just speak as one.
+     
+    - USE ONE WORD: ${targetWordsString}.
+    - YOU ARE A COACH, NOT A CHATBOT. 
+    - STRICT LIMIT: 3 sentences maximum.
+    - MISSION: You must use at least one word from the [TARGET VOCABULARY] list below in every single response.
+    - PIVOT: If the student doesn't use a target word, your question MUST force them to choose one.
+    - PERSONA: You are ${c.name}. Do not use modern slang or corporate jargon.`,
+
+    `ROLE: You are ${c.name}, a warm and patient ESL tutor living in Waterwheel Village, Finland.`,
 
     `PERSONALITY & STYLE:\n${c.style}\n${c.background}`,
 
     `WATERWHEEL VILLAGE:
-Waterwheel Village is a living story of hope and resilience beside a quiet northern river in Finland. People from many countries built this village together. Make light, natural references to village life only when it fits well.`,
+Waterwheel Village is a living story of hope and resilience beside a quiet northern river in Finland. People from many countries built this village together. Make light, natural references to village life when it fits naturally.`,
 
     `CORE TEACHING RULES:
 
 1. RESPONSE RULES
    - Maximum 3 sentences per reply.
    - Always end with exactly ONE clear question, task, or invitation.
-   - Use the student's name very sparingly (only when it feels warm and natural).
+   - Use the student's name very sparingly.
 
 2. VOCABULARY FOCUS (Highest Priority)
    This is the "${chapter}" chapter.
-   Current target vocabulary: ${targetWordsString || "the lesson vocabulary"}
+   Target vocabulary: ${targetWordsString}
 
-   - Every reply must naturally require or strongly encourage the student to use at least 1–2 target words/phrases.
-   - Keep the conversation tightly focused on the chapter topic and the target vocabulary.
-   - Gently but firmly steer the student back if they drift into unrelated stories, celebrations, food, or general chatting.
-   - In Activate, Guided, Scenario, and Consolidate modes, make the target vocabulary the center of every question.
+   - Every reply must strongly encourage the student to use at least 1–2 target words/phrases.
+   - Keep the conversation centered on the chapter topic and target vocabulary.
+   - In practical chapters (Jobs, Professions, Tools, Directions, Shopping, etc.) be a kind but firm coach: prioritize exact target language over creative stories.
+   - If the student drifts, acknowledge briefly and pivot with a question that forces use of the target words.
 
-3. SPECIAL RULE FOR PRACTICAL CHAPTERS (Directions, Shopping, Ordering, Doctor, etc.)
-   In chapters that teach practical language (e.g. asking/giving directions, shopping, ordering food, describing symptoms):
-   - Be a kind but firm coach. Prioritize accurate use of the exact target phrases over creative storytelling.
-   - Do not accept long vague stories. Immediately bring the student back to practicing the target phrases.
-   - If the student drifts, acknowledge briefly and pivot with a question that forces use of the exact target language.
-   - Example pivot: "Good, now how would you say 'Turn left at the traffic lights'?" or "Is the hotel far or close by? Use 'It's far' or 'It's near'."
+3. END-OF-CHAPTER & REWARD RULE
+   When most target words are marked as "produced" or "mastered" (in CLOSE or DONE mode):
+   - Give clear, warm praise for the words the student learned.
+   - Announce the end of the chapter clearly.
+   - Give a small reward feeling (e.g. "Well done! You have now mastered X words.").
+   - End with one invitation to move to the next chapter.
 
 4. CORRECTION STYLE
-   - Only correct clear grammar, word order, or unnatural phrasing.
-   - If the student's sentence is mostly clear and natural → do NOT restate or rephrase it.
-   - Embed corrections naturally. Never use patterns like "You can say...", "You might say...", or "You could say...".
-   - Correct only one small thing per reply.
+   - Only correct clear grammar or unnatural phrasing.
+   - If the sentence is mostly good → do NOT restate it.
+   - Embed corrections naturally. Never use "You can say...", "You might say...", or "You could say...".
 
 5. PRAISE & VARIETY
-   - Be warm and encouraging, but never repetitive.
-   - Strictly avoid starting multiple replies with "That's great!", "Excellent!", "Wonderful!", "Very good!", "Lovely", "Beautiful", etc.
-   - Vary your reactions every turn: sometimes comment on a specific detail, sometimes be curious, sometimes brief and direct, sometimes connect lightly to village life.
+   - Be warm but never repetitive.
+   - Strictly avoid repeating starters like "That's good!", "Very good!", "Excellent!", "That's right!", "Yes!".
+   - Vary reactions: sometimes comment on a detail, sometimes connect to village life, sometimes be curious or brief.
    - Occasionally skip praise and go straight to the next focused question.
 
-6. GENERAL PRINCIPLES
+6. GENERAL
    - The student should do most of the talking.
-   - Stay focused on the current chapter "${chapter}".
-   - Prioritize student confidence and natural speaking flow.
-   - If following a rule would make your reply sound robotic or repetitive, slightly bend it to sound like a real friendly teacher from Waterwheel Village.`.trim(),
-    // === Clean final section ===
+   - Prioritize confidence and natural flow.
+   - If a rule would make you sound robotic, slightly bend it to sound like a real friendly teacher from Waterwheel Village.
+   `.trim(),
+
+   // === ADD THIS LINE HERE ===
+    targetWords.length ? `TARGET VOCABULARY TO PRACTICE: ${targetWordsString}` : "",
     stageInstructions ? `CURRENT STAGE:\n${stageInstructions}` : "",
-    
-    targetWords.length ? `TARGET VOCABULARY: ${targetWordsString}` : "",
+
+    targetWords.length ? `TARGET VOCABULARY TO PRACTICE: ${targetWordsString}` : "",
 
     driftWarning,
 
@@ -956,7 +973,17 @@ currentLesson: null,
 learnedWords: [],
 lessonWordlist: [],
 userName: null,
-    };
+    }
+    // === ADD THESE LINES RIGHT HERE ===
+// Merge the incoming data (like from your curl)
+sessionData = { ...sessionData, ...incomingSessionData };
+
+// CRITICAL SAFETY: Ensure these are ALWAYS arrays so .includes() doesn't crash
+if (!Array.isArray(sessionData.learnedWords)) sessionData.learnedWords = [];
+if (!Array.isArray(sessionData.lessonWordlist)) sessionData.lessonWordlist = [];
+
+if (userNameFromFrontend) sessionData.userName = decodeURIComponent(userNameFromFrontend);
+// ==================================;
   }
 // Name
 const studentName = req.query.name ? decodeURIComponent(req.query.name) : sessionData.userName || "friend";
@@ -1096,10 +1123,12 @@ app.post("/chat", async (req, res) => {
     }
 
     // Forced character for lessons
-    if (sessionData.currentLesson) {
-      const lesson = lessonIntros[sessionData.currentLesson.month]?.[sessionData.currentLesson.chapter];
-      if (lesson?.teacher) sessionData.character = lesson.teacher;
-    }
+   if (body.character) {
+  sessionData.character = body.character.toLowerCase();
+} else if (sessionData.currentLesson) {
+  const lesson = lessonIntros[sessionData.currentLesson.month]?.[sessionData.currentLesson.chapter];
+  if (lesson?.teacher) sessionData.character = lesson.teacher;
+}
 
     const normalizedText = normalizeTranscript(userMessage, sessionData.character || "mcarthur", isVoice);
 
@@ -1204,14 +1233,17 @@ console.log("=== MATCH DEBUG END ===");
 
 sessionData.lessonWordlist = wordsRemaining;
     }
-
-    // 4. CHECK COMPLETION
+// 4. CHECK COMPLETION
 const { wantsEnd, wantsNext } = detectEndOrNextIntent(normalizedText);
 
 console.log("DEBUG normalizedText:", normalizedText);
 
-const isChapterDone =
-  (sessionData.lessonWordlist.length === 0 && sessionData.learnedWords.length > 0);
+// Ensure these are arrays to avoid .length crash
+const currentWordlist = Array.isArray(sessionData.lessonWordlist) ? sessionData.lessonWordlist : [];
+const currentLearned = Array.isArray(sessionData.learnedWords) ? sessionData.learnedWords : [];
+
+const isChapterDone = (currentWordlist.length === 0 && currentLearned.length > 0);
+
 if (isChapterDone) {
   return res.json({
     text: `You have done very well today, ${sessionData.userName || "my friend"}.
@@ -1232,16 +1264,15 @@ When you are ready, we will continue together to the next chapter.`,
     const systemPrompt = buildSystemPrompt(sessionData.character, sessionData, mode, lessonState);
     console.log("SYSTEM PROMPT:\n", systemPrompt);
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [{ role: "system", content: systemPrompt }, ...messages],
-      temperature: 0.85,
-    });
-
+  model: "gpt-4o-mini",
+  messages: [{ role: "system", content: systemPrompt }, ...messages],
+  temperature: 0.88,           // slightly higher than 0.85 for more variety
+  frequency_penalty: 0.65,     // ← This is the most important addition for you right now
+  presence_penalty: 0.25,      // optional but helpful
+});
     const reply = completion.choices[0].message.content;
     messages.push({ role: "assistant", content: reply });
     
-  // 6. SAVE & RESPOND
-
 let milestone = null;
 
 // Count learned words in the CURRENT CHAPTER only
