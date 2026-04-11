@@ -718,107 +718,38 @@ End with one clear invitation to continue.`.trim();
 }
 
 // =====================================================
-// MAIN SYSTEM PROMPT (Single Source of Truth)
+// MAIN SYSTEM PROMPT (Single Source of Truth) VERSION 10.4
 // =====================================================
 
-`SYSTEM VERSION: 2026-04-04-v3`,   // ← increase the number every time you edit
-function buildSystemPrompt(
-  activeCharacterKey,
-  sessionData,
-  mode,
-  state = null,
-  turnGuard = ""
-) {
-  const c = characters[activeCharacterKey] || characters.sophia; // safe fallback
-  const chapter = sessionData?.currentLesson?.chapter || "this lesson";
+function buildSystemPrompt(activeCharacterKey, sessionData, mode, state = null, turnGuard = "") {
+  // 1. Setup Variables
+  const c = characters[activeCharacterKey] || characters.sophia;
+  const targetWords = (state && typeof getMissingWords === 'function') 
+    ? getMissingWords(state, 8) 
+    : (sessionData.lessonWordlist || []);
+  const targetWordsString = targetWords.length ? targetWords.join(", ") : "vocabulary";
 
-  const stageInstructions = state ? buildStageMode(sessionData, state) : "";
+  // 2. Build the string using simple addition (much safer than arrays)
+  let p = "### IDENTITY:\n";
+  p += "You are " + c.name + " from Waterwheel Village. " + c.personality + ".\n\n";
 
-  // Dynamic target vocabulary
-  const targetWords = state ? getMissingWords(state, 8) : [];
-  const targetWordsString = targetWords.length 
-    ? targetWords.join(", ") 
-    : "the lesson vocabulary";
+  p += "### TEACHING RULES:\n";
+  p += "1. RECAST: Start with 'You could say: [Corrected Version]' if there is a mistake.\n";
+  p += "2. LIMIT: 3 sentences maximum.\n";
+  p += "3. VOCAB: Use the word '" + (targetWords[0] || "village") + "' in your reply.\n\n";
 
-  const driftWarning = (state && state.driftCount > 0)
-    ? `!!! DRIFT ALERT: Briefly acknowledge and immediately redirect back to "${chapter}" and the target vocabulary.`
-    : "";
+  p += "### CONTEXT:\n";
+  p += "Target Words: " + targetWordsString + "\n";
+  p += "Style: " + c.style + "\n";
 
-  return [
-    // === NEW: THE EXECUTION HEADER (Add this first) ===
-    `### MANDATORY INSTRUCTIONS (PRIORITY 1):
-    - ACT AS THE CHARACTER: You are ${c.name}. Speak from your own life (e.g., "In my forge..." or "When I drive my bus...").
-    - NO INTROS: Do not say "That reminds me of..." or "Ah, a blacksmith!" Just speak as one.
-     
-    - USE ONE WORD: ${targetWordsString}.
-    - YOU ARE A COACH, NOT A CHATBOT. 
-    - STRICT LIMIT: 3 sentences maximum.
-    - MISSION: You must use at least one word from the [TARGET VOCABULARY] list below in every single response.
-    - PIVOT: If the student doesn't use a target word, your question MUST force them to choose one.
-    - PERSONA: You are ${c.name}. Do not use modern slang or corporate jargon.`,
+  // 3. Final safety check: if p is somehow empty, we give it a default
+  if (!p || p.length < 20) {
+    p = "You are Liang, a teacher in Waterwheel Village. Speak in 3 sentences.";
+  }
 
-    `ROLE: You are ${c.name}, a warm and patient ESL tutor living in Waterwheel Village, Finland.`,
-
-    `PERSONALITY & STYLE:\n${c.style}\n${c.background}`,
-
-    `WATERWHEEL VILLAGE:
-Waterwheel Village is a living story of hope and resilience beside a quiet northern river in Finland. People from many countries built this village together. Make light, natural references to village life when it fits naturally.`,
-
-    `CORE TEACHING RULES:
-
-1. RESPONSE RULES
-   - Maximum 3 sentences per reply.
-   - Always end with exactly ONE clear question, task, or invitation.
-   - Use the student's name very sparingly.
-
-2. VOCABULARY FOCUS (Highest Priority)
-   This is the "${chapter}" chapter.
-   Target vocabulary: ${targetWordsString}
-
-   - Every reply must strongly encourage the student to use at least 1–2 target words/phrases.
-   - Keep the conversation centered on the chapter topic and target vocabulary.
-   - In practical chapters (Jobs, Professions, Tools, Directions, Shopping, etc.) be a kind but firm coach: prioritize exact target language over creative stories.
-   - If the student drifts, acknowledge briefly and pivot with a question that forces use of the target words.
-
-3. END-OF-CHAPTER & REWARD RULE
-   When most target words are marked as "produced" or "mastered" (in CLOSE or DONE mode):
-   - Give clear, warm praise for the words the student learned.
-   - Announce the end of the chapter clearly.
-   - Give a small reward feeling (e.g. "Well done! You have now mastered X words.").
-   - End with one invitation to move to the next chapter.
-
-4. CORRECTION STYLE
-   - Only correct clear grammar or unnatural phrasing.
-   - If the sentence is mostly good → do NOT restate it.
-   - Embed corrections naturally. Never use "You can say...", "You might say...", or "You could say...".
-
-5. PRAISE & VARIETY
-   - Be warm but never repetitive.
-   - Strictly avoid repeating starters like "That's good!", "Very good!", "Excellent!", "That's right!", "Yes!".
-   - Vary reactions: sometimes comment on a detail, sometimes connect to village life, sometimes be curious or brief.
-   - Occasionally skip praise and go straight to the next focused question.
-
-6. GENERAL
-   - The student should do most of the talking.
-   - Prioritize confidence and natural flow.
-   - If a rule would make you sound robotic, slightly bend it to sound like a real friendly teacher from Waterwheel Village.
-   `.trim(),
-
-   // === ADD THIS LINE HERE ===
-    targetWords.length ? `TARGET VOCABULARY TO PRACTICE: ${targetWordsString}` : "",
-    stageInstructions ? `CURRENT STAGE:\n${stageInstructions}` : "",
-
-    targetWords.length ? `TARGET VOCABULARY TO PRACTICE: ${targetWordsString}` : "",
-
-    driftWarning,
-
-    mode === "voice" 
-      ? "VOICE MODE: Keep language rhythmic, clear, and easy for learners to listen to and repeat." 
-      : "",
-
-    turnGuard || ""
-
-  ].filter(Boolean).join("\n\n");
+  // 4. THE HANDSHAKE
+  console.log("DEBUG: buildSystemPrompt is returning a string of length:", p.length);
+  return p;
 }
 
 // History helper: 20 messages is usually the "sweet spot" for context vs speed
@@ -1258,18 +1189,33 @@ When you are ready, we will continue together to the next chapter.`,
     chapterComplete: true
   });
 }
-    // 5. TALK TO AI
-    let messages = await loadHistory(sessionId);
-    messages.push({ role: "user", content: normalizedText });
+  // 5. TALK TO AI
+let messages = await loadHistory(sessionId);
+messages.push({ role: "user", content: normalizedText });
 
-    const systemPrompt = buildSystemPrompt(sessionData.character, sessionData, mode, lessonState);
-    console.log("SYSTEM PROMPT:\n", systemPrompt);
-    const completion = await openai.chat.completions.create({
+// We pass 5 arguments: character, sessionData, mode, lessonState, and an empty turnGuard
+const systemPrompt = buildSystemPrompt(
+  sessionData.character, 
+  sessionData, 
+  mode, 
+  lessonState, 
+  "" 
+);
+
+// --- CRITICAL SAFETY CHECK ---
+// If for some reason the prompt is still undefined, this prevents the 400 Error crash.
+if (!systemPrompt) {
+  throw new Error("System Prompt generation failed. Check buildSystemPrompt return statement.");
+}
+
+console.log("SYSTEM PROMPT:\n", systemPrompt);
+
+const completion = await openai.chat.completions.create({
   model: "gpt-4o-mini",
   messages: [{ role: "system", content: systemPrompt }, ...messages],
-  temperature: 0.88,           // slightly higher than 0.85 for more variety
-  frequency_penalty: 0.65,     // ← This is the most important addition for you right now
-  presence_penalty: 0.25,      // optional but helpful
+  temperature: 0.88,           
+  frequency_penalty: 0.65,     
+  presence_penalty: 0.25,      
 });
     const reply = completion.choices[0].message.content;
     messages.push({ role: "assistant", content: reply });
@@ -1453,26 +1399,6 @@ function normalizeToken(t) {
     if (t.endsWith("s") && !t.endsWith("ss")) return t.slice(0, -1);
   }
   return t;
-}
-
-function buildSystemPrompt(characterKey, sessionData, mode, lessonState) {
-  const c = characters[characterKey] || characters['mcarthur'];
-  // Ensure we always have an array to join
-  const targetWords = sessionData.lessonWordlist || [];
-  const targetWordsString = targetWords.join(', ');
-
-  return `### IDENTITY:
-You are ${c.name} from Waterwheel Village. ${c.personality}.
-
-### MISSION:
-1. RECAST: Start by saying "You could say: [Better Version]" if the user made a grammar mistake.
-2. VILLAGE CONTEXT: You must mention a village location (the forge, the bakery, or the forest).
-3. VOCAB FOCUS: You MUST use at least one of these words: ${targetWordsString}.
-4. ACKNOWLEDGE: If the user uses a word from the list, say "Great use of the word [word]!"
-
-### RULES:
-- STRICT 3 SENTENCE MAX.
-- End with a question about ${targetWordsString}.`;
 }
 
 // Boot-time load of monthly wordlists
