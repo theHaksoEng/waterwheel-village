@@ -734,7 +734,7 @@ function buildSystemPrompt(activeCharacterKey, sessionData, mode, state = null, 
   p += "You are " + c.name + " from Waterwheel Village. " + c.personality + ".\n\n";
 
   p += "### TEACHING RULES:\n";
-  p += "1. RECAST: Start with 'You could say: [Corrected Version]' if there is a mistake.\n";
+  p += "1. RECAST: ONLY if the student makes a grammar or spelling error, start your response with 'You could say: [Corrected Version]'. If their sentence is perfect, do NOT use this phrase.\n";
   p += "2. LIMIT: 3 sentences maximum.\n";
   p += "3. VOCAB: Use the word '" + (targetWords[0] || "village") + "' in your reply.\n\n";
 
