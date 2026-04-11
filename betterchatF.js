@@ -721,122 +721,37 @@ End with one clear invitation to continue.`.trim();
 // MAIN SYSTEM PROMPT (Single Source of Truth) VERSION 10.4
 // =====================================================
 
-// =====================================================
-// MAIN SYSTEM PROMPT (Single Source of Truth)
-// =====================================================
+function buildSystemPrompt(activeCharacterKey, sessionData, mode, state = null, turnGuard = "") {
+  // 1. Setup Variables
+  const c = characters[activeCharacterKey] || characters.sophia;
+  const targetWords = (state && typeof getMissingWords === 'function') 
+    ? getMissingWords(state, 8) 
+    : (sessionData.lessonWordlist || []);
+  const targetWordsString = targetWords.length ? targetWords.join(", ") : "vocabulary";
 
-`SYSTEM VERSION: 2026-04-04-v3`,   // ← increase the number every time you edit
-function buildSystemPrompt(
-  activeCharacterKey,
-  sessionData,
-  mode,
-  state = null,
-  turnGuard = ""
-) {
-  const c = characters[activeCharacterKey] || characters.sophia; // safe fallback
-  const chapter = sessionData?.currentLesson?.chapter || "this lesson";
+  // 2. Build the string using simple addition (much safer than arrays)
+  let p = "### IDENTITY:\n";
+  p += "You are " + c.name + " from Waterwheel Village. " + c.personality + ".\n\n";
 
-  const stageInstructions = state ? buildStageMode(sessionData, state) : "";
+  p += "### TEACHING RULES:\n";
+  p += "1. RECAST: ONLY if the student makes a grammar or spelling error, start your response with 'You could say: [Corrected Version]'. If their sentence is perfect, do NOT use this phrase.\n";
+  p += "2. LIMIT: 3 sentences maximum.\n";
+  p += "3. VOCAB: Use the word '" + (targetWords[0] || "village") + "' in your reply.\n\n";
 
-// Dynamic target vocabulary with safety fallback
-const targetWords = (state) 
-  ? getMissingWords(state, 8) 
-  : (sessionData.lessonWordlist || []); // Fallback to full list if no state exists
+  p += "### CONTEXT:\n";
+  p += "Target Words: " + targetWordsString + "\n";
+  p += "Style: " + c.style + "\n";
 
-const targetWordsString = targetWords.length 
-  ? targetWords.join(", ") 
-  : "the lesson vocabulary";
-
-  const driftWarning = (state && state.driftCount > 0)
-    ? `!!! DRIFT ALERT: Briefly acknowledge and immediately redirect back to "${chapter}" and the target vocabulary.`
-    : "";
-
-  return [
-    // === NEW: THE EXECUTION HEADER (Add this first) ===
-    `### MANDATORY INSTRUCTIONS (PRIORITY 1):
-    - ACT AS THE CHARACTER: You are ${c.name}. Speak from your own life (e.g., "In my forge..." or "When I drive my bus...").
-    - NO INTROS: Do not say "That reminds me of..." or "Ah, a blacksmith!" Just speak as one.
-     
-    - USE ONE WORD: ${targetWordsString}.
-    - YOU ARE A COACH, NOT A CHATBOT. 
-    - STRICT LIMIT: 3 sentences maximum.
-    - MISSION: You must use at least one word from the [TARGET VOCABULARY] list below in every single response.
-    - PIVOT: If the student doesn't use a target word, your question MUST force them to choose one.
-    - PERSONA: You are ${c.name}. Do not use modern slang or corporate jargon.`,
-
-    `ROLE: You are ${c.name}, a warm and patient ESL tutor living in Waterwheel Village, Finland.`,
-
-    `PERSONALITY & STYLE:\n${c.style}\n${c.background}`,
-
-    `WATERWHEEL VILLAGE:
-Waterwheel Village is a living story of hope and resilience beside a quiet northern river in Finland. People from many countries built this village together. Make light, natural references to village life when it fits naturally.`,
-
-    `CORE TEACHING RULES:
-
-1. RESPONSE RULES
-   - Maximum 3 sentences per reply.
-   - Always end with exactly ONE clear question, task, or invitation.
-   - Use the student's name very sparingly.
-
-2. VOCABULARY FOCUS (Highest Priority)
-   This is the "${chapter}" chapter.
-   Target vocabulary: ${targetWordsString}
-   - Every 3rd turn, you MUST challenge the student to ask YOU a question about Waterwheel Village using a word they haven't mastered yet from: ${targetWordsString}.
-   - PIVOT: If the student drifts or uses 0 target words, immediately ask a question that forces them to choose between two words (e.g., "Do you prefer the [word1] or the [word2]?").
-   - PROGRESS: Once a student uses a word, stop focusing on it and move to the next word in the list.
-
-3. END-OF-CHAPTER & REWARD RULE
-   When most target words are marked as "produced" or "mastered" (in CLOSE or DONE mode):
-   - Give clear, warm praise for the words the student learned.
-   - Announce the end of the chapter clearly.
-   - Give a small reward feeling (e.g. "Well done! You have now mastered X words.").
-   - End with one invitation to move to the next chapter.
-
-4. CORRECTION STYLE
-   - Always start your response with a "Natural Recast" if the student makes an error.
-   - Use the format: "You could say: [Corrected Sentence]" followed by a line break.
-
-5. PRAISE & VARIETY
-   - Be warm but never repetitive.
-   - Strictly avoid repeating starters like "That's good!", "Very good!", "Excellent!", "That's right!", "Yes!".
-   - Vary reactions: sometimes comment on a detail, sometimes connect to village life, sometimes be curious or brief.
-   - Occasionally skip praise and go straight to the next focused question.
-
-6. GENERAL
-   - The student should do most of the talking.
-   - Prioritize confidence and natural flow.
-   - If a rule would make you sound robotic, slightly bend it to sound like a real friendly teacher from Waterwheel Village.
-   `.trim(),
-
-   // === ADD THIS LINE HERE ===
-    targetWords.length ? `TARGET VOCABULARY TO PRACTICE: ${targetWordsString}` : "",
-    stageInstructions ? `CURRENT STAGE:\n${stageInstructions}` : "",
-
-    targetWords.length ? `TARGET VOCABULARY TO PRACTICE: ${targetWordsString}` : "",
-
-    driftWarning,
-
-    mode === "voice" 
-      ? "VOICE MODE: Keep language rhythmic, clear, and easy for learners to listen to and repeat." 
-      : "",
-
-  turnGuard || ""
-
-  ].filter(Boolean).join("\n\n");
-
-  // We are going to capture the result of the join we just did
-  const result = [
-    // (This represents the huge block of text you already have above)
-  ]; 
-
-  // INSTEAD, just do this at the very end of the function:
-  if (!targetWordsString) {
-      return "You are a teacher in Waterwheel Village. Help me learn English.";
+  // 3. Final safety check: if p is somehow empty, we give it a default
+  if (!p || p.length < 20) {
+    p = "You are Liang, a teacher in Waterwheel Village. Speak in 3 sentences.";
   }
 
-  // Ensure the very last line of the function is exactly this:
-  return Array.isArray(arguments[0]) ? arguments[0].join("\n\n") : "Error generating prompt";
+  // 4. THE HANDSHAKE
+  console.log("DEBUG: buildSystemPrompt is returning a string of length:", p.length);
+  return p;
 }
+
 
 
 // History helper: 20 messages is usually the "sweet spot" for context vs speed
