@@ -722,36 +722,45 @@ End with one clear invitation to continue.`.trim();
 // =====================================================
 
 function buildSystemPrompt(activeCharacterKey, sessionData, mode, state = null, turnGuard = "") {
-  // 1. Setup Variables
   const c = characters[activeCharacterKey] || characters.sophia;
+  const chapter = sessionData?.currentLesson?.chapter || "this lesson";
+  
+  // 1. DYNAMIC VOCABULARY
   const targetWords = (state && typeof getMissingWords === 'function') 
     ? getMissingWords(state, 8) 
     : (sessionData.lessonWordlist || []);
-  const targetWordsString = targetWords.length ? targetWords.join(", ") : "vocabulary";
+  const targetWordsString = targetWords.length ? targetWords.join(", ") : "the lesson vocabulary";
 
-  // 2. Build the string using simple addition (much safer than arrays)
-  let p = "### IDENTITY:\n";
-  p += "You are " + c.name + " from Waterwheel Village. " + c.personality + ".\n\n";
+// 2. THE BRAIN (The instructions)
+  let p = `### IDENTITY:
+You are ${c.name} from Waterwheel Village.
 
-  p += "### TEACHING RULES:\n";
-  p += "1. RECAST: ONLY if the student makes a grammar or spelling error, start your response with 'You could say: [Corrected Version]'. If their sentence is perfect, do NOT use this phrase.\n";
-  p += "2. LIMIT: 3 sentences maximum.\n";
-  p += "3. VOCAB: Use the word '" + (targetWords[0] || "village") + "' in your reply.\n\n";
+STYLE & PERSONALITY:
+${c.style}
 
-  p += "### CONTEXT:\n";
-  p += "Target Words: " + targetWordsString + "\n";
-  p += "Style: " + c.style + "\n";
+BACKGROUND:
+${c.background}\n\n`;
 
-  // 3. Final safety check: if p is somehow empty, we give it a default
-  if (!p || p.length < 20) {
-    p = "You are Liang, a teacher in Waterwheel Village. Speak in 3 sentences.";
+  p += `### CORE TEACHING RULES (STRICT):
+1. RECAST (MANDATORY): If the student makes a grammar error (like missing 'to' in 'want to'), you MUST start your response with 'You could say: [Corrected Version]'. This is your first priority.
+2. LIMIT: Max 3 sentences per reply.
+3. THE INVERSION: Every 3rd turn, you MUST ask the student to ask YOU a question about your life in Waterwheel Village using the word "${targetWords[0] || 'village'}".
+4. PIVOT: If the student drifts away from "${chapter}", briefly acknowledge them and use a target word to pivot back.\n\n`;
+
+  p += `### WATERWHEEL VILLAGE LORE:
+This is a peaceful village in Finland. Use your specific background (${c.background}) to make the conversation feel real. Don't just talk about farming if you are a blacksmith or a driver!\n\n`;
+
+  p += `### ACTIVE VOCABULARY:
+Target words for this turn: ${targetWordsString}\n\n`;
+
+  // 3. DRIFT & STATE LOGIC
+  if (state && state.driftCount > 0) {
+    p += `!!! DRIFT ALERT: The student is off-topic. Firmly but kindly lead them back to ${chapter}.\n`;
   }
 
   // 4. THE HANDSHAKE
-  console.log("DEBUG: buildSystemPrompt is returning a string of length:", p.length);
-  return p;
+  return p || "You are a teacher in Waterwheel Village.";
 }
-
 
 
 // History helper: 20 messages is usually the "sweet spot" for context vs speed
