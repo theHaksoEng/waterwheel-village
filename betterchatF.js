@@ -718,48 +718,46 @@ End with one clear invitation to continue.`.trim();
 }
 
 // =====================================================
-// MAIN SYSTEM PROMPT (Single Source of Truth) VERSION 10.4
+// MAIN SYSTEM PROMPT (Single Source of Truth) VERSION 10.5
 // =====================================================
 
 function buildSystemPrompt(activeCharacterKey, sessionData, mode, state = null, turnGuard = "") {
   const c = characters[activeCharacterKey] || characters.sophia;
   const chapter = sessionData?.currentLesson?.chapter || "this lesson";
   
-  // 1. DYNAMIC VOCABULARY
+  // 1. GET THE STAGE (Warmup, Intro, etc.) - This brings in the "Brains"
+  const stageInstructions = state ? buildStageMode(sessionData, state) : "";
+
+  // 2. DYNAMIC VOCABULARY
   const targetWords = (state && typeof getMissingWords === 'function') 
     ? getMissingWords(state, 8) 
     : (sessionData.lessonWordlist || []);
-  const targetWordsString = targetWords.length ? targetWords.join(", ") : "the lesson vocabulary";
+  const targetWordsString = targetWords.length ? targetWords.join(", ") : "vocabulary";
 
-// 2. THE BRAIN (The instructions)
-  let p = `### IDENTITY:
-You are ${c.name} from Waterwheel Village.
+  // 3. THE BRAIN (Unified Instructions)
+  const sections = [
+    `### IDENTITY:
+You are ${c.name} from Waterwheel Village. 
+Style: ${c.style}
+Background: ${c.background}`,
 
-STYLE & PERSONALITY:
-${c.style}
+    `### TEACHING RULES (STRICT):
+1. RECAST: ONLY if the student makes an error, start with "You could say: [Corrected Version]". If they are correct, start with short praise (e.g., "Exactly!", "Spot on!").
+2. SIMPLICITY: Use Intermediate (B1) English. No complex metaphors. Talk like a friendly neighbor, not a philosopher.
+3. LIMIT: Max 3 short sentences. 
+4. THE INVERSION: Every 3rd turn, ask the student to ask YOU a question about village life using the word "${targetWords[0] || 'village'}".
+5. PIVOT: If the student drifts, briefly acknowledge and use a target word to pull them back to ${chapter}.`,
 
-BACKGROUND:
-${c.background}\n\n`;
+    `### ACTIVE LESSON CONTEXT:
+${stageInstructions}
+Target words for this turn: ${targetWordsString}`,
 
-  p += `### CORE TEACHING RULES (STRICT):
-1. RECAST (MANDATORY): If the student makes a grammar error (like missing 'to' in 'want to'), you MUST start your response with 'You could say: [Corrected Version]'. This is your first priority.
-2. LIMIT: Max 3 sentences per reply.
-3. THE INVERSION: Every 3rd turn, you MUST ask the student to ask YOU a question about your life in Waterwheel Village using the word "${targetWords[0] || 'village'}".
-4. PIVOT: If the student drifts away from "${chapter}", briefly acknowledge them and use a target word to pivot back.\n\n`;
+    mode === "voice" ? "VOICE MODE: Keep sentences rhythmic and clear." : "",
+    turnGuard || ""
+  ];
 
-  p += `### WATERWHEEL VILLAGE LORE:
-This is a peaceful village in Finland. Use your specific background (${c.background}) to make the conversation feel real. Don't just talk about farming if you are a blacksmith or a driver!\n\n`;
-
-  p += `### ACTIVE VOCABULARY:
-Target words for this turn: ${targetWordsString}\n\n`;
-
-  // 3. DRIFT & STATE LOGIC
-  if (state && state.driftCount > 0) {
-    p += `!!! DRIFT ALERT: The student is off-topic. Firmly but kindly lead them back to ${chapter}.\n`;
-  }
-
-  // 4. THE HANDSHAKE
-  return p || "You are a teacher in Waterwheel Village.";
+  // 4. THE HANDSHAKE (Single Source of Truth)
+  return sections.filter(Boolean).join("\n\n");
 }
 
 
