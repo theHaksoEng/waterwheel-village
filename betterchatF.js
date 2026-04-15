@@ -723,50 +723,41 @@ End with one clear invitation to continue.`.trim();
 
 function buildSystemPrompt(activeCharacterKey, sessionData, mode, state = null, turnGuard = "") {
   const c = characters[activeCharacterKey] || characters.sophia;
-  const chapter = sessionData?.currentLesson?.chapter || "this lesson";
+  const chapter = sessionData?.currentLesson?.chapter || "this topic";
   
-  // 1. GET THE STAGE (Warmup, Intro, etc.) - This brings in the "Brains"
   const stageInstructions = state ? buildStageMode(sessionData, state) : "";
-
-  // 2. DYNAMIC VOCABULARY
   const targetWords = (state && typeof getMissingWords === 'function') 
     ? getMissingWords(state, 8) 
     : (sessionData.lessonWordlist || []);
+  
+  const inversionWord = (targetWords && targetWords.length > 0) ? targetWords[0] : "village";
   const targetWordsString = targetWords.length ? targetWords.join(", ") : "vocabulary";
 
-  // 3. THE BRAIN (Unified Instructions)
-  const sections = [
-    `### IDENTITY:
+  return `### IDENTITY & WORLD:
 You are ${c.name} from Waterwheel Village. 
-Style: ${c.style}
-Background: ${c.background}`,
+PERSONALITY: ${c.style}
+LORE: ${c.background}
+STRICT RULE: Mention a detail from your life in Waterwheel Village every 2-3 turns.
 
-  `### TEACHING RULES (STRICT):
-1. RECAST RULE (CRITICAL):
- -  ONLY start with "You could say: [Corrected Version]" if there is a clear GRAMMAR or SPELLING error. If the student is 90% correct, DO NOT correct them. DO NOT rephrase their sentence just to make it "better."
-   - IF student is correct: Start with a natural reaction (e.g., "I agree!", "That is true.", "I see."). DO NOT use "You could say" or repeat their sentence if it is correct.
-2. SIMPLICITY: Use Intermediate (B1) English. No complex metaphors. Talk like a friendly neighbor, not a philosopher.
+### TEACHING RULES (MANDATORY):
+1. RECAST: Before responding, check for grammar/spelling. If an error exists, start with: "You could say: [Corrected Version]" followed by a line break.
+2. NATURAL PRAISE: If the student is correct, start with a natural reaction (e.g., "I see!", "How interesting"). DO NOT say "You could say."
 3. LIMIT: Max 3 short sentences. 
-4. THE INVERSION: Every 3rd turn, ask the student to ask YOU a question about village life using the word "${targetWords[0] || 'village'}".
-5. PIVOT: If the student drifts, briefly acknowledge and use a target word to pull them back to ${chapter}.
-6. SINGLE FOCUS: Never ask two questions. Pick one topic and stay there. If you ask about clouds, do not ask about the sun in the same breath.`
-,
+4. THE INVERSION: Every 3rd turn, you MUST say: "Now, ${sessionData.userName || 'my friend'}, ask ME a question about my village using the word '${inversionWord}'. "
+5. SINGLE FOCUS: End with exactly ONE question or task.
 
-
-    `### ACTIVE LESSON CONTEXT:
+### ACTIVE LESSON CONTEXT:
 ${stageInstructions}
-Target words for this turn: ${targetWordsString}`,
+Target words for this turn: ${targetWordsString}
 
-    mode === "voice" ? "VOICE MODE: Keep sentences rhythmic and clear." : "",
-    turnGuard || ""
-  ];
+### PIVOT RULE:
+If the student talks about big cities, acknowledge it, then compare it back to Waterwheel Village.
 
-  // 4. THE HANDSHAKE (Single Source of Truth)
-  return sections.filter(Boolean).join("\n\n");
-}
+${mode === "voice" ? "VOICE MODE: Keep sentences rhythmic and clear." : ""}
+${turnGuard || ""}`;
+}// <--- THIS ends the buildSystemPrompt function
 
-
-// History helper: 20 messages is usually the "sweet spot" for context vs speed
+// History helper
 async function loadHistory(sessionId) {
   return JSON.parse((await redis.get(`history:${sessionId}`)) || "[]");
 }
