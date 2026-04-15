@@ -748,7 +748,9 @@ Background: ${c.background}`,
 2. SIMPLICITY: Use Intermediate (B1) English. No complex metaphors. Talk like a friendly neighbor, not a philosopher.
 3. LIMIT: Max 3 short sentences. 
 4. THE INVERSION: Every 3rd turn, ask the student to ask YOU a question about village life using the word "${targetWords[0] || 'village'}".
-5. PIVOT: If the student drifts, briefly acknowledge and use a target word to pull them back to ${chapter}.`,
+5. PIVOT: If the student drifts, briefly acknowledge and use a target word to pull them back to ${chapter}.
+6. ONE QUESTION: Never ask two separate questions in one turn. Combine your thoughts into one single invitation to speak.`,
+
 
     `### ACTIVE LESSON CONTEXT:
 ${stageInstructions}
