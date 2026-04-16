@@ -45,7 +45,9 @@ const PORT = process.env.PORT || 3000;
 // 🔒 CORS MUST come before static files (so /app.js works from WordPress)
 const allowed = [
   "https://www.aaronhakso.com",
-  "https://aaronhakso.com"
+  "https://aaronhakso.com",
+  "http://localhost:3000",
+  "http://127.0.0.1:3000"
 ];
 
 app.use(cors({
