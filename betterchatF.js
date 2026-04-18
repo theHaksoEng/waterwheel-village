@@ -52,13 +52,19 @@ const allowed = [
 
 app.use(cors({
   origin: function (origin, cb) {
-    if (!origin) return cb(null, true); // allow curl / server calls
-    if (allowed.includes(origin)) return cb(null, true);
+    // 1. Allow tools like curl or Postman (no origin)
+    if (!origin) return cb(null, true);
+    
+    // 2. Allow your specific websites
+    if (allowed.includes(origin)) {
+      return cb(null, true);
+    }
 
     console.warn("Blocked CORS origin:", origin);
-    return cb(null, false); // reject without throwing error
+    return cb(null, false);
   },
-  credentials: false,
+  // 3. IMPORTANT: Set to true so WordPress can pass session data
+  credentials: true 
 }));
 
 app.options("*", cors());
