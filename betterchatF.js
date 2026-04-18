@@ -918,17 +918,7 @@ currentLesson: null,
 learnedWords: [],
 lessonWordlist: [],
 userName: null,
-    }
-    // === ADD THESE LINES RIGHT HERE ===
-// Merge the incoming data (like from your curl)
-sessionData = { ...sessionData, ...incomingSessionData };
-
-// CRITICAL SAFETY: Ensure these are ALWAYS arrays so .includes() doesn't crash
-if (!Array.isArray(sessionData.learnedWords)) sessionData.learnedWords = [];
-if (!Array.isArray(sessionData.lessonWordlist)) sessionData.lessonWordlist = [];
-
-if (userNameFromFrontend) sessionData.userName = decodeURIComponent(userNameFromFrontend);
-// ==================================;
+    };
   }
 // Name
 const studentName = req.query.name ? decodeURIComponent(req.query.name) : sessionData.userName || "friend";
