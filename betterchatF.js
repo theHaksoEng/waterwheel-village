@@ -47,7 +47,9 @@ const allowed = [
   "https://www.aaronhakso.com",
   "https://aaronhakso.com",
   "http://localhost:3000",
-  "http://127.0.0.1:3000"
+  "http://127.0.0.1:3000",
+  "https://waterwheel-village.onrender.com", // ✅ Add your Render URL
+  "88.208.252.220" // ✅ REPLACE THIS with your actual WP Server IP
 ];
 
 app.use(cors({
