@@ -860,120 +860,135 @@ console.warn("⚠️ No valid monthly wordlists loaded; keeping previous in-memo
   }
 }
 // === Wordlist endpoint ===
-app.get("/wordlist/:month/:chapter", (req, res) => {
-const { month, chapter } = req.params;
-const monthData = monthlyWordlists[month];
-const ch = monthData?.chapters?.[chapter];
-if (!ch) {
-return res.status(404).json({ error: `Chapter '${chapter}' not found in ${month}` });
-  }
-// Normalize: prefer arrays under words|vocab|wordlist; else return the chapter object
-const payload =
-    (Array.isArray(ch.words) && ch.words) ||
-    (Array.isArray(ch.vocab) && ch.vocab) ||
-    (Array.isArray(ch.wordlist) && ch.wordlist) ||
-ch;
-res.json(payload);
-});
 // === Lesson endpoint ===
 app.get("/lesson/:month/:chapter", async (req, res) => {
-const { month, chapter } = req.params;
-console.log(`Fetching lesson: ${month}/${chapter}, query:`, req.query);
-const monthData = monthlyWordlists[month];
-const chData = monthData?.chapters?.[chapter];
-// Prefer lessonIntros; fall back to JSON teacher if present
-let intro = lessonIntros[month]?.[chapter];
-if (!intro && chData?.teacher && characters[chData.teacher]) {
-intro = {
-teacher: chData.teacher,
-text: `Hello, [name]. I am ${characters[chData.teacher].name}. Let’s explore ${humanizeChapter(chapter)}.`,
-story: `In our village, we learn step by step.`,
+  const { month, chapter } = req.params;
+  console.log(`Fetching lesson: ${month}/${chapter}, query:`, req.query);
+
+  const monthData = monthlyWordlists[month];
+  const chData = monthData?.chapters?.[chapter];
+
+  // Prefer lessonIntros; fall back to JSON teacher if present
+  let intro = lessonIntros[month]?.[chapter];
+  if (!intro && chData?.teacher && characters[chData.teacher]) {
+    intro = {
+      teacher: chData.teacher,
+      text: `Hello, [name]. I am ${characters[chData.teacher].name}. Let’s explore ${humanizeChapter(chapter)}.`,
+      story: `In our village, we learn step by step.`,
     };
-console.log(`ℹ️ Using fallback intro from JSON teacher: ${chData.teacher}`);
+    console.log(`ℹ️ Using fallback intro from JSON teacher: ${chData.teacher}`);
   }
-if (!intro) {
-console.error(`Lesson not found: ${month}/${chapter}`);
-return res.status(404).json({ error: `Lesson '${chapter}' not found in ${month}` });
+
+  if (!intro) {
+    console.error(`Lesson not found: ${month}/${chapter}`);
+    return res.status(404).json({ error: `Lesson '${chapter}' not found in ${month}` });
   }
-const sessionId = req.query.sessionId || uuidv4();
-// Load or initialize session
-let sessionData;
-try {
-const sessionRaw = await redis.get(`session:${sessionId}`);
-sessionData = sessionRaw
-? JSON.parse(sessionRaw)
-: {
-character: "mcarthur",
-currentLesson: null,
-learnedWords: [],
-lessonWordlist: [],
-userName: null,
+
+  const sessionId = req.query.sessionId || uuidv4();
+
+  // Load or initialize session
+  let sessionData;
+  try {
+    const sessionRaw = await redis.get(`session:${sessionId}`);
+    sessionData = sessionRaw
+      ? JSON.parse(sessionRaw)
+      : {
+          character: "mcarthur",
+          currentLesson: null,
+          learnedWords: [],
+          lessonWordlist: [],
+          userName: null,
         };
-console.log(`Session loaded: ${sessionId}`, sessionData);
+    console.log(`Session loaded: ${sessionId}`, sessionData);
   } catch (err) {
-console.error(`Redis error for session:${sessionId}:`, err.message);
-sessionData = {
-character: "mcarthur",
-currentLesson: null,
-learnedWords: [],
-lessonWordlist: [],
-userName: null,
+    console.error(`Redis error for session:${sessionId}:`, err.message);
+    sessionData = {
+      character: "mcarthur",
+      currentLesson: null,
+      learnedWords: [],
+      lessonWordlist: [],
+      userName: null,
     };
   }
-// Name
-const studentName = req.query.name ? decodeURIComponent(req.query.name) : sessionData.userName || "friend";
-sessionData.userName = studentName;
-// --- WORDS (accept words | vocab | wordlist) ---
-const rawList = chData?.words || chData?.vocab || chData?.wordlist || [];
-const words = Array.isArray(rawList) ? rawList : [];
-// Build a lowercase list of just the English tokens for matching (strings or {en:...})
-const wordlist = words
+
+  // === SAFETY FIXES (always run) ===
+  if (!Array.isArray(sessionData.learnedWords)) sessionData.learnedWords = [];
+  if (!Array.isArray(sessionData.lessonWordlist)) sessionData.lessonWordlist = [];
+
+  // Set student name safely
+  const studentName = req.query.name
+    ? decodeURIComponent(req.query.name)
+    : (sessionData.userName || "friend");
+  sessionData.userName = studentName;
+
+  // --- WORDS (accept words | vocab | wordlist) ---
+  const rawList = chData?.words || chData?.vocab || chData?.wordlist || [];
+  const words = Array.isArray(rawList) ? rawList : [];
+
+  // Build lowercase wordlist for matching
+  const wordlist = words
     .map((w) =>
-typeof w === "string"
-? w.toLowerCase()
-: (w?.en || w?.word || "").toLowerCase()
+      typeof w === "string"
+        ? w.toLowerCase()
+        : (w?.en || w?.word || "").toLowerCase()
     )
     .filter(Boolean);
-console.log(`Wordlist for ${month}/${chapter}:`, wordlist);
-// Save session state
-sessionData.currentLesson = { month, chapter };
-sessionData.lessonWordlist = wordlist;
-try {
-await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
-console.log(`Session saved: ${sessionId}`);
+
+  console.log(`Wordlist for ${month}/${chapter}:`, wordlist);
+
+  // Save session
+  sessionData.currentLesson = { month, chapter };
+  sessionData.lessonWordlist = wordlist;
+
+  try {
+    await redis.set(`session:${sessionId}`, JSON.stringify(sessionData));
+    console.log(`Session saved: ${sessionId}`);
   } catch (err) {
-console.error(`Failed to save session:${sessionId}:`, err.message);
+    console.error(`Failed to save session:${sessionId}:`, err.message);
   }
-// Welcome + lesson text
-let welcomeText = "";
-// Prefer explicit title from lessonIntros, fall back to slug-based label
-const chapterTitle =
-      (intro && intro.title) ? intro.title : humanizeChapter(chapter);
-const isMcArthurTeacher = intro.teacher === "mcarthur";  // Add this check
-if (chapter !== "greetings_introductions" && !isMcArthurTeacher) {
-  welcomeText = `Greetings, ${studentName}! I’m Mr. McArthur, the village elder. Welcome to Waterwheel Village, where we learn together like family. Today, you’ll meet ${characters[intro.teacher].name} to explore ${chapterTitle}. Let’s begin!`;
-}
-// For lessonText: Optionally trim redundant "I am Mr. McArthur" if already in welcome
-let teacherText = intro.text.replace(/\[name\]/g, studentName);
-if (isMcArthurTeacher && teacherText.startsWith(`Hello, ${studentName}. I am Mr. McArthur.`)) {  // Customize based on your lessonIntros patterns
-  teacherText = teacherText.replace(`Hello, ${studentName}. I am Mr. McArthur. `, `Hello, ${studentName}. `);  // Merge/skip repeat
-}
-const storyText = intro.story.replace(/\[name\]/g, studentName);
-const lessonText = `${teacherText}\n\n${storyText}`;
-// Initialize history
-const initialHistory = [];
-if (welcomeText) initialHistory.push({ role: "assistant", content: welcomeText });
-initialHistory.push({ role: "assistant", content: lessonText });
-try {
-await redis.set(`history:${sessionId}`, JSON.stringify(initialHistory));
-console.log(`History initialized for ${sessionId}:`, initialHistory);
+
+  // Welcome + lesson text
+  let welcomeText = "";
+  const chapterTitle = intro.title ? intro.title : humanizeChapter(chapter);
+  const isMcArthurTeacher = intro.teacher === "mcarthur";
+
+  if (chapter !== "greetings_introductions" && !isMcArthurTeacher) {
+    welcomeText = `Greetings, ${studentName}! I’m Mr. McArthur, the village elder. Welcome to Waterwheel Village, where we learn together like family. Today, you’ll meet ${characters[intro.teacher].name} to explore ${chapterTitle}. Let’s begin!`;
+  }
+
+  let teacherText = intro.text.replace(/\[name\]/g, studentName);
+  if (isMcArthurTeacher && teacherText.startsWith(`Hello, ${studentName}. I am Mr. McArthur.`)) {
+    teacherText = teacherText.replace(`Hello, ${studentName}. I am Mr. McArthur. `, `Hello, ${studentName}. `);
+  }
+
+  const storyText = intro.story.replace(/\[name\]/g, studentName);
+  const lessonText = `${teacherText}\n\n${storyText}`;
+
+  // Initialize history
+  const initialHistory = [];
+  if (welcomeText) initialHistory.push({ role: "assistant", content: welcomeText });
+  initialHistory.push({ role: "assistant", content: lessonText });
+
+  try {
+    await redis.set(`history:${sessionId}`, JSON.stringify(initialHistory));
+    console.log(`History initialized for ${sessionId}`);
   } catch (err) {
-console.error(`Failed to save history:${sessionId}:`, err.message);
+    console.error(`Failed to save history:${sessionId}:`, err.message);
   }
-const voiceId = characters[intro.teacher].voiceId;
-const response = { welcomeText, lessonText, words, sessionId, voiceId, character: intro.teacher };
-console.log(`Lesson response:`, response);
-res.json(response);
+
+  const voiceId = characters[intro.teacher].voiceId;
+
+  const response = {
+    welcomeText,
+    lessonText,
+    words,
+    sessionId,
+    voiceId,
+    character: intro.teacher,
+  };
+
+  console.log(`Lesson response sent:`, response);
+  res.json(response);
 });
 app.post("/chat", async (req, res) => {
   try {
