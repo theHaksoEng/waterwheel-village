@@ -1382,23 +1382,48 @@ app._router.handle(req, res);
 });
 // === Meta & Health ===
 app.get("/meta", async (_req, res) => {
-res.json({
-ok: true,
-version: WWV_VERSION,
-characters: Object.keys(characters),
-monthlySets: Object.keys(monthlyWordlists),
-redis: redis.status,
+  res.json({
+    ok: true,
+    version: WWV_VERSION,
+    characters: Object.keys(characters),
+    monthlySets: Object.keys(monthlyWordlists),
+    redis: redis.status,
   });
 });
+
 app.get("/months", (_req, res) => {
-const index = {};
-for (const [k, v] of Object.entries(monthlyWordlists)) {
-const ch = v && v.chapters && typeof v.chapters === "object" ? Object.keys(v.chapters) : [];
-index[k] = ch;
+  const index = {};
+  for (const [k, v] of Object.entries(monthlyWordlists)) {
+    const ch = v && v.chapters && typeof v.chapters === "object" 
+      ? Object.keys(v.chapters) 
+      : [];
+    index[k] = ch;
   }
-res.json({ months: index });
+  res.json({ months: index });
 });
-app.get("/health", (_req, res) => res.json({ ok: true, status: "Waterwheel backend alive", version: WWV_VERSION }));
+
+// IMPROVED HEALTH CHECK (this replaces your old one-liner)
+app.get("/health", async (_req, res) => {
+  const health = { 
+    ok: true, 
+    status: "Waterwheel backend alive", 
+    version: WWV_VERSION,
+    redis: "unknown"
+  };
+
+  try {
+    const pong = await redis.ping();
+    health.redis = "connected (" + pong + ")";
+  } catch (e) {
+    health.ok = false;
+    health.redis = "error";
+    health.redisError = e.message;
+    console.error("Health check Redis failed:", e.message);
+  }
+
+  res.status(health.ok ? 200 : 503).json(health);
+});
+
 // --- UTILITY HELPERS ---
 
 function normalizeToken(t) {
@@ -1406,11 +1431,10 @@ function normalizeToken(t) {
   // 1. Lowercase and trim
   t = String(t).toLowerCase().trim();
   
-  // 2. Remove punctuation but KEEP spaces (crucial for "police officer")
-  // This regex allows letters, numbers, spaces, and hyphens.
+  // 2. Remove punctuation but KEEP spaces
   t = t.replace(/[^\w\s-]/g, "");
 
-  // 3. Basic Plural/Suffix stripping (so "buses" matches "bus")
+  // 3. Basic Plural/Suffix stripping
   if (t.length > 4) {
     if (t.endsWith("ies")) return t.slice(0, -3) + "y";
     if (t.endsWith("es")) return t.slice(0, -2);
@@ -1421,5 +1445,24 @@ function normalizeToken(t) {
 
 // Boot-time load of monthly wordlists
 loadMonthlyWordlists();
+
+// === GLOBAL ERROR HANDLER + 404 (Very Important for preventing 503) ===
+app.use((err, req, res, next) => {
+  console.error("=== UNHANDLED ERROR ===", err.stack || err);
+  if (!res.headersSent) {
+    res.status(500).json({ 
+      error: "Internal server error", 
+      version: WWV_VERSION 
+    });
+  }
+});
+
+app.use((req, res) => {
+  console.warn(`404 Not Found: ${req.method} ${req.url}`);
+  res.status(404).json({ 
+    error: "Not found - this is the Waterwheel Village backend only" 
+  });
+});
+
 // === Start server ===
 app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
