@@ -47,10 +47,7 @@ const allowed = [
   "https://www.aaronhakso.com",
   "https://aaronhakso.com",
   "http://localhost:3000",
-  "https://waterwheel-village.onrender.com",
-  "http://88.208.252.220",  // Add this
-  "https://88.208.252.220", // and this
-  "88.208.252.220"
+  "http://127.0.0.1:3000"
 ];
 
 app.use(cors({
@@ -863,6 +860,25 @@ console.warn("⚠️ No valid monthly wordlists loaded; keeping previous in-memo
   }
 }
 // === Wordlist endpoint ===
+// === Wordlist endpoint ===
+app.get("/wordlist/:month/:chapter", (req, res) => {
+  const { month, chapter } = req.params;
+
+  console.log(`Fetching wordlist: ${month}/${chapter}`);
+
+  const monthData = monthlyWordlists[month];
+  const chData = monthData?.chapters?.[chapter];
+
+  if (!chData) {
+    return res.status(404).json({
+      error: `Wordlist '${chapter}' not found in ${month}`,
+      availableMonths: Object.keys(monthlyWordlists || {}),
+      availableChapters: monthData ? Object.keys(monthData.chapters || {}) : []
+    });
+  }
+
+  res.json(chData);
+});
 // === Lesson endpoint ===
 app.get("/lesson/:month/:chapter", async (req, res) => {
   const { month, chapter } = req.params;
